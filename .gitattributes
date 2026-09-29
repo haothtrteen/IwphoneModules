@@ -1,0 +1,39 @@
+# =====================================================
+# 换行符策略：一律 LF
+#
+# 对普通项目这只是洁癖，对本项目是**必需** ——
+# framework/ 下的脚本要推到 Android 设备上以 mksh 运行，
+# CRLF 会让 mksh 报 `syntax error: unexpected 'fi'`（踩过）。
+# 而 Windows 上 git 默认 core.autocrlf=true 会在检出时把 LF 换成 CRLF，
+# 所以必须在仓库里钉死策略，不能依赖每个人的本地配置。
+# =====================================================
+
+* text=auto eol=lf
+
+# 脚本与源码：强制 LF
+*.sh     text eol=lf
+*.py     text eol=lf
+*.dart   text eol=lf
+*.kt     text eol=lf
+*.kts    text eol=lf
+*.gradle text eol=lf
+*.prop   text eol=lf
+*.iwphone text eol=lf
+*.md     text eol=lf
+*.txt    text eol=lf
+*.json   text eol=lf
+*.xml    text eol=lf
+
+# 二进制：不做任何转换
+*.bin    binary
+*.so     binary
+*.jar    binary
+*.iwp    binary
+*.jks    binary
+*.keystore binary
+*.png    binary
+*.jpg    binary
+*.ico    binary
+*.ttf    binary
+*.woff   binary
+*.woff2  binary
