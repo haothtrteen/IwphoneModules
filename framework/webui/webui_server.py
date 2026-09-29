@@ -71,6 +71,34 @@ SDCARD_DIR = CFG.get("SDCARD_DIR", "/sdcard/iwphone")
 WEBUI_PORT = int(CFG.get("WEBUI_PORT", "8537") or "8537")
 WEBUI_TOKEN = CFG.get("WEBUI_TOKEN", "")
 
+# 访问密钥文件（APatch 式「用户自己设密钥」）：
+# 密钥由 App 在主页引导用户输入，然后经 adb 推到这里（600，shell 属主）。
+# 服务端按 mtime 缓存 —— 改密钥不需要重启 WebUI，下个请求就生效。
+TOKEN_FILE = os.path.join(IWPHONE_ROOT, "state", "webui_token")
+_token_cache = {"mtime": None, "value": ""}
+
+
+def current_token():
+    """当前生效的访问密钥。环境变量优先（手工调试用），否则读密钥文件。
+
+    ★ 没有密钥就返回空串 —— 调用方必须据此**拒绝**请求，
+      绝不因为"没配"就放行（那等于把 shell 权限挂在本机 127.0.0.1 上裸奔）。
+    """
+    if WEBUI_TOKEN:
+        return WEBUI_TOKEN
+    try:
+        st = os.stat(TOKEN_FILE)
+    except OSError:
+        return ""
+    if _token_cache["mtime"] != st.st_mtime:
+        try:
+            with open(TOKEN_FILE, encoding="utf-8", errors="replace") as f:
+                _token_cache["value"] = f.read().strip()
+            _token_cache["mtime"] = st.st_mtime
+        except OSError:
+            return ""
+    return _token_cache["value"]
+
 
 # ---------------- 框架状态查询 ----------------
 def pid_alive(pid):
@@ -815,9 +843,10 @@ def module_snapshot(name):
     返回每项的：资源名 / 还原命令 / 当前值 / 是否可自动还原。
     用户点「还原」之前能看清到底会改什么 —— 盲还原太吓人。
     """
-    mdir = module_dir(name)
-    if mdir is None:
-        return {"ok": False, "msg": "模块不存在：%s" % name}
+    # ★ 刻意不要求模块目录存在：模块被卸载后，它留下的快照仍应可查看/还原
+    #   （卸载时快照会保留，见 module_uninstall）。否则"卸载=兜底失效"。
+    if not _safe_module_name(name):
+        return {"ok": False, "msg": "非法模块名：%s" % name}
     path = os.path.join(SNAPSHOT_DIR, name + ".snap")
     if not os.path.isfile(path):
         return {"ok": False, "msg": "该模块没有快照（快照在模块首次写系统资源时生成）"}
@@ -855,6 +884,63 @@ def module_snapshot(name):
         "count": len([i for i in items if i["restorable"]]),
         "skipped": len([i for i in items if not i["restorable"]]),
     }
+
+
+def list_snapshots():
+    """列出所有快照（含已卸载模块留下的"孤儿快照"）。
+
+    孤儿快照是兜底的关键一环：模块被卸载了，但它改过的系统设置
+    仍然可以还原 —— 前提是这些快照能被找到。
+    """
+    items = []
+    try:
+        names = sorted(os.listdir(SNAPSHOT_DIR))
+    except OSError:
+        names = []
+    for f in names:
+        if not f.endswith(".snap"):
+            continue
+        name = f[:-5]
+        path = os.path.join(SNAPSHOT_DIR, f)
+        restorable = 0
+        skipped = 0
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("#"):
+                        skipped += 1
+                    else:
+                        restorable += 1
+        except OSError:
+            continue
+        if restorable == 0 and skipped == 0:
+            continue
+        items.append({
+            "name": name,
+            "restorable": restorable,
+            "skipped": skipped,
+            "orphan": not os.path.isdir(os.path.join(WORK_DIR, name)),
+            "mtime": int(os.path.getmtime(path)),
+        })
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return {"ok": True, "items": items}
+
+
+def delete_snapshot(name):
+    """删除某个快照（用户确认不再需要还原时清理）。"""
+    if not _safe_module_name(name):
+        return {"ok": False, "msg": "非法模块名：%s" % name}
+    path = os.path.join(SNAPSHOT_DIR, name + ".snap")
+    if not os.path.isfile(path):
+        return {"ok": False, "msg": "快照不存在：%s" % name}
+    try:
+        os.remove(path)
+    except OSError as e:
+        return {"ok": False, "msg": "删除失败：%s" % e}
+    return {"ok": True, "msg": "已删除 %s 的快照" % name}
 
 
 def module_action(name):
@@ -1710,12 +1796,16 @@ class Handler(BaseHTTPRequestHandler):
                    "application/json; charset=utf-8")
 
     def _auth(self):
-        if not WEBUI_TOKEN:
-            return True
+        token = current_token()
+        if not token:
+            # 还没设访问密钥 → 一律拒绝。
+            # 这里刻意不给"空即放行"的分支：WebUI 暴露着 /api/shell（shell 权限），
+            # 放行等于让同设备任何应用都能拿到 ADB 级权限。
+            return False
         q = parse_qs(urlparse(self.path).query)
-        if q.get("token", [""])[0] == WEBUI_TOKEN:
+        if q.get("token", [""])[0] == token:
             return True
-        return self.headers.get("X-Token", "") == WEBUI_TOKEN
+        return self.headers.get("X-Token", "") == token
 
     # ---- GET ----
     def do_GET(self):
@@ -1761,6 +1851,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
                 return None
+            if path == "/api/snapshots":
+                return self._json(list_snapshots())
             m = re.match(r"^/api/module/([^/]+)/snapshot$", path)
             if m:
                 return self._json(module_snapshot(m.group(1)))
@@ -1835,6 +1927,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.match(r"^/api/module/([^/]+)/action$", path)
             if m:
                 return self._json(module_action(m.group(1)))
+            m = re.match(r"^/api/snapshot/([^/]+)/delete$", path)
+            if m:
+                return self._json(delete_snapshot(m.group(1)))
             m = re.match(r"^/api/module/([^/]+)/restore$", path)
             if m:
                 # 快照还原：把模块改过的系统资源恢复到它动手之前的原值。

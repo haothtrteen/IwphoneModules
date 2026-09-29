@@ -363,10 +363,16 @@ object AdbBootstrap {
         // 普遍假设 busybox 语义（如 sed -i、awk 的某些用法）。部署时在 bin/ 下
         // 为全部 358 个 applet 建符号链接，兼容入口会把 bin 放到 PATH 最前，
         // 脚本就能优先拿到 busybox 版命令 —— 等效于 Magisk 的 standalone 效果。
+        // ★ 顺序很关键：必须先 chmod 再跑 busybox。
+        //   框架包可能在 Windows 上打包（NTFS 没有执行位，解出来全是 644），
+        //   先跑 ./busybox --list 会 Permission denied，导致 applet 链接一个都建不出来，
+        //   compat 层的 BusyBox 支持就静默失效了。
+        //   busybox 段用 `;` 收尾而非 `&&` —— 它只是兼容层的增强，失败不该让整个部署失败。
         val extractCmd = "mkdir -p $FW_ROOT_PARENT && " +
             "tar xzf $FW_TAR_ON_DEVICE -C $FW_ROOT_PARENT && " +
-            "cd $FRAME_DIR/bin && for a in \$(./busybox --list); do ln -sf busybox \"\$a\"; done && " +
             "chmod -R 777 $FRAME_DIR && " +
+            "if [ -x $FRAME_DIR/bin/busybox ]; then " +
+            "cd $FRAME_DIR/bin && for a in \$(./busybox --list); do ln -sf busybox \"\$a\"; done; fi; " +
             "rm -f $FW_TAR_ON_DEVICE && echo deployed"
         val extract = run(
             ctx,

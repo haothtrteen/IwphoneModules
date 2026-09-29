@@ -46,8 +46,14 @@ if [ ! -d "$FRAME_DIR/webui/runtime" ]; then
 fi
 
 PY_BIN="$FRAME_DIR/webui/runtime/bin/python3.12"
-if [ ! -x "$PY_BIN" ]; then
-    echo "⚠️  运行时里没有可执行的 bin/python3.12 —— 部署后 WebUI 起不来，请确认运行时完整"
+if [ ! -f "$PY_BIN" ]; then
+    echo "⚠️  运行时里没有 bin/python3.12 —— 部署后 WebUI 起不来，请确认运行时完整"
+elif [ ! -x "$PY_BIN" ]; then
+    # Windows / NTFS 没有执行位，这里必然会命中，属正常现象：
+    # App 侧 deployFramework 解压后会 `chmod -R 777`，权限在设备上补齐。
+    # 但**部署命令的顺序必须是「先 chmod 再跑 busybox」**，否则
+    # ./busybox --list 会 Permission denied，applet 链接一个都建不出来。
+    echo "ℹ️  本机没有执行位（Windows 正常现象）—— App 部署时会 chmod 补齐权限"
 fi
 
 TMP=$(mktemp -d 2>/dev/null || mktemp -d -t fwbuild)

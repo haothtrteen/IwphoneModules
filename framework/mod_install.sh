@@ -37,7 +37,82 @@ if echo "$NAME" | grep -q '[[:space:]]'; then
     exit 1
 fi
 
+# =====================================================
+# 包内容审计（解压前）：挡住 zip 里的路径穿越
+#
+# zip 条目名可以是 `../../x`、`/abs/path`，甚至是指向外部目录的符号链接 ——
+# 直接 `unzip -d 目标目录` 会写到目标之外。模块名本身有校验，但**包内条目**
+# 之前完全没扫，这是个真实缺口。
+#
+# 三层策略（尽量准，环境不全也不至于装不上）：
+#   1) 框架自带的 Python —— 能拿到原始条目名 + ZIP 里的符号链接目标，最可靠
+#   2) `unzip -Z1` 列条目 + grep 危险模式
+#   3) 两者都没有 → 明确警告后放行（不假装校验过）
+# 判定：有危险条目 → **拒绝安装**（这是明显的恶意/损坏包信号）
+# =====================================================
+audit_zip() {
+    _z="$1"
+    _py="$SCRIPT_DIR/webui/runtime/bin/python3.12"
+
+    if [ -x "$_py" ]; then
+        _out=$("$_py" -c 'import sys,zipfile,stat
+bad=[]
+try:
+    z=zipfile.ZipFile(sys.argv[1])
+except Exception as e:
+    print("AUDIT_ERROR:"+str(e)); sys.exit(2)
+for n in z.namelist():
+    if n.startswith("/") or "\\" in n or ".." in n.split("/"):
+        bad.append("path: "+n); continue
+    try:
+        info=z.getinfo(n)
+    except Exception:
+        continue
+    mode=info.external_attr >> 16
+    if stat.S_ISLNK(mode):
+        try:
+            tgt=z.read(n).decode("utf-8","replace").strip()
+        except Exception:
+            tgt=""
+        if tgt.startswith("/") or ".." in tgt.split("/"):
+            bad.append("link: "+n+" -> "+tgt)
+for b in bad[:8]:
+    print(b)
+sys.exit(1 if bad else 0)' "$_z" 2>/dev/null)
+        _rc=$?
+        if [ "$_rc" -eq 0 ]; then
+            return 0
+        elif [ "$_rc" -eq 1 ]; then
+            echo "❌ 模块包内含非法条目，已拒绝安装："
+            printf '   %s\n' "$_out"
+            echo "   （合法模块包不应含绝对路径、.. 逃逸或指向外部的符号链接）"
+            return 1
+        fi
+        # 2/3 的情况：Python 读不了这个包，往下走退路
+    fi
+
+    _list=$(unzip -Z1 "$_z" 2>/dev/null)
+    if [ -z "$_list" ]; then
+        _list=$(unzip -l "$_z" 2>/dev/null | awk 'NR>3 && NF>=4 {print $NF}')
+    fi
+    if [ -z "$_list" ]; then
+        echo "⚠️ 无法读取包内清单，跳过条目审计（请自行确认包来源可信）"
+        return 0
+    fi
+    _bad=$(printf '%s\n' "$_list" | grep -E '(^/)|(^|/)\.\.(/|$)|\\' | head -5)
+    if [ -n "$_bad" ]; then
+        echo "❌ 模块包内含非法条目，已拒绝安装："
+        printf '   %s\n' "$_bad"
+        return 1
+    fi
+    return 0
+}
+
 echo "📦 安装模块：$NAME ← $IPW"
+
+# 解压前审计包内条目（挡路径穿越 / 逃逸符号链接）
+audit_zip "$IPW" || exit 1
+
 unzip -o -q "$IPW" -d "${WORK_DIR}/${NAME}" || { echo "❌ 解压失败"; exit 1; }
 
 echo "✅ 已安装到 ${WORK_DIR}/${NAME}/"

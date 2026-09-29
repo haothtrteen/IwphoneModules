@@ -25,6 +25,10 @@ android/captures/
 .vscode/
 *.swp
 
+# ---- 框架内置 Python 运行时（36MB，与架构绑定，不入仓库）----
+# 生成方式见 framework/README.md
+framework/webui/runtime/
+
 # ---- 其他 ----
 *.log
 .flutter_tool_state
