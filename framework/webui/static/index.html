@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>iwphone modrunner</title>
+<style>
+  :root {
+    --bg: #0D0D0F;
+    --surface: #1A1A1E;
+    --surface-2: #222228;
+    --border: #2A2A30;
+    --accent: #00C853;
+    --accent-dim: rgba(0, 200, 83, 0.14);
+    --danger: #FF5252;
+    --danger-dim: rgba(255, 82, 82, 0.12);
+    --text: #E8E8EA;
+    --sub: #9E9EA6;
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); }
+  body {
+    font-family: -apple-system, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 560px; margin: 0 auto; padding: 0 16px 120px;
+    min-height: 100vh;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(13, 13, 15, 0.92); backdrop-filter: blur(12px);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 2px 14px; border-bottom: 1px solid var(--border);
+  }
+  .brand { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
+  .brand span { color: var(--accent); font-weight: 500; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--sub);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 12px;
+  }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: #555; }
+  .badge.on { color: var(--accent); border-color: rgba(0,200,83,0.35); background: var(--accent-dim); }
+  .badge.on .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+  /* ---------- 卡片 ---------- */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-top: 14px;
+  }
+  .card h2 {
+    font-size: 13px; font-weight: 600; color: var(--sub);
+    letter-spacing: 1px; margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card h2 .count { color: var(--accent); font-weight: 700; }
+
+  /* ---------- 守护进程控制 ---------- */
+  .daemon-row { display: flex; flex-direction: column; gap: 12px; }
+  .daemon-info { font-size: 13px; color: var(--sub); line-height: 1.7; }
+  .daemon-info b { color: var(--text); font-weight: 600; }
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-group button { flex: 1; min-width: 64px; }
+
+  button {
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface-2); color: var(--text);
+    padding: 8px 16px; cursor: pointer;
+    transition: transform 0.08s ease, opacity 0.15s ease, background 0.15s ease;
+  }
+  button:active { transform: scale(0.96); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #04150a; }
+  button.ghost-green { background: var(--accent-dim); border-color: rgba(0,200,83,0.3); color: var(--accent); }
+  button.ghost-red { background: var(--danger-dim); border-color: rgba(255,82,82,0.3); color: var(--danger); }
+  button.small { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+
+  /* ---------- 模块卡片 ---------- */
+  .mod {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-top: 12px;
+    transition: border-color 0.2s ease;
+  }
+  .mod.running { border-color: rgba(0,200,83,0.4); }
+  .mod-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .mod-name { font-size: 15px; font-weight: 700; word-break: break-all; }
+  .mod-meta { font-size: 12px; color: var(--sub); margin-top: 4px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); flex-shrink: 0; padding-top: 2px; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
+  .status.on { color: var(--accent); }
+  .status.on .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.45; } }
+  .mod-desc {
+    font-size: 12px; color: var(--sub); line-height: 1.65; margin-top: 10px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .mod-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .mod-actions button { flex: 1; }
+
+  /* ---------- 可安装包 ---------- */
+  .pkg {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 12px; margin-top: 8px;
+  }
+  .pkg-name { font-size: 13px; font-weight: 600; word-break: break-all; }
+  .pkg-tag { font-size: 11px; color: var(--sub); }
+  .pkg-tag.installed { color: var(--accent); }
+
+  /* ---------- 空态 ---------- */
+  .empty {
+    text-align: center; color: var(--sub); font-size: 13px;
+    padding: 34px 0; line-height: 2;
+  }
+  .empty .icon { font-size: 26px; display: block; margin-bottom: 6px; opacity: 0.6; }
+
+  /* ---------- 日志抽屉 ---------- */
+  .sheet-mask {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 40;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+  }
+  .sheet-mask.show { opacity: 1; pointer-events: auto; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 41;
+    max-width: 560px; margin: 0 auto;
+    background: var(--surface); border-top: 1px solid var(--border);
+    border-radius: 18px 18px 0 0;
+    height: 68vh; display: flex; flex-direction: column;
+    transform: translateY(100%); transition: transform 0.25s cubic-bezier(0.32, 0.72, 0.35, 1);
+  }
+  .sheet.show { transform: translateY(0); }
+  .sheet-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 16px 10px; border-bottom: 1px solid var(--border);
+  }
+  .sheet-title { font-size: 14px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tabs { display: flex; background: var(--surface-2); border-radius: 8px; padding: 3px; }
+  .tabs button {
+    border: none; background: transparent; color: var(--sub);
+    font-size: 12px; padding: 5px 12px; border-radius: 6px;
+  }
+  .tabs button.active { background: var(--accent-dim); color: var(--accent); }
+  .sheet-close {
+    border: none; background: var(--surface-2); color: var(--sub);
+    width: 30px; height: 30px; border-radius: 8px; padding: 0; font-size: 14px;
+  }
+  .sheet-body {
+    flex: 1; overflow-y: auto; padding: 12px 16px 20px;
+    font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px; line-height: 1.75; color: #C5C5CD;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .sheet-body .placeholder { color: var(--sub); }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%) translateY(20px);
+    background: #26262C; border: 1px solid var(--border); color: var(--text);
+    font-size: 13px; border-radius: 10px; padding: 10px 18px; z-index: 60;
+    opacity: 0; pointer-events: none; transition: all 0.25s ease;
+    max-width: 86vw; text-align: center; line-height: 1.5;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.ok { border-color: rgba(0,200,83,0.4); }
+  #toast.err { border-color: rgba(255,82,82,0.4); }
+
+  .refresh-hint { text-align: center; font-size: 11px; color: #55555e; margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">iwphone <span>modrunner</span></div>
+  <div id="daemonBadge" class="badge"><span class="dot"></span><span id="daemonBadgeText">检测中</span></div>
+</header>
+
+<!-- 守护进程控制 -->
+<section class="card">
+  <h2>守护进程</h2>
+  <div class="daemon-row">
+    <div class="daemon-info" id="daemonInfo">加载中…</div>
+    <div class="btn-group">
+      <button id="btnRunnerStart" class="primary small">启动</button>
+      <button id="btnRunnerStop" class="ghost-red small">停止</button>
+      <button id="btnRunnerLog" class="small">日志</button>
+      <button id="btnSync" class="small">同步</button>
+    </div>
+  </div>
+</section>
+
+<!-- 可安装模块包 -->
+<section class="card" id="pkgCard" hidden>
+  <h2>可安装模块包</h2>
+  <div id="pkgList"></div>
+</section>
+
+<!-- 模块列表 -->
+<h2 style="font-size:13px;font-weight:600;color:var(--sub);letter-spacing:1px;margin:22px 2px 0;display:flex;justify-content:space-between;">
+  模块 <span id="modCount" style="color:var(--accent);"></span>
+</h2>
+<div id="modList"></div>
+<div class="empty" id="modEmpty" hidden>
+  <span class="icon">📦</span>
+  暂无已安装模块<br>安装 .iwp 模块包后将显示在这里
+</div>
+
+<div class="refresh-hint">状态每 3 秒自动刷新</div>
+
+<!-- 日志抽屉 -->
+<div class="sheet-mask" id="sheetMask"></div>
+<div class="sheet" id="logSheet">
+  <div class="sheet-head">
+    <div class="sheet-title" id="logTitle">日志</div>
+    <div class="tabs" id="logTabs">
+      <button data-t="log" class="active">日志</button>
+      <button data-t="out">输出</button>
+      <button data-t="err">错误</button>
+    </div>
+    <button class="sheet-close" id="logClose">✕</button>
+  </div>
+  <div class="sheet-body" id="logBody"><span class="placeholder">加载中…</span></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= 基础 ================= */
+var TOKEN = new URLSearchParams(location.search).get('token') || localStorage.getItem('iwphone_token') || '';
+if (TOKEN) localStorage.setItem('iwphone_token', TOKEN);
+
+function withToken(path) {
+  if (!TOKEN) return path;
+  return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+}
+
+async function api(path, method) {
+  var r = await fetch(withToken(path), { method: method || 'GET' });
+  if (r.status === 403) return { ok: false, msg: '未授权：请在 URL 后加 ?token=你的令牌' };
+  try { return await r.json(); } catch (e) { return { ok: false, msg: '响应解析失败' }; }
+}
+
+function toast(msg, ok) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + (ok ? 'ok' : 'err');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function () { t.className = ''; }, 2600);
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+/* ================= 状态渲染 ================= */
+async function refresh() {
+  try {
+    var st = await api('/api/status');
+    if (!st.ok) { toast(st.msg || '状态获取失败', false); return; }
+    renderDaemon(st.daemon);
+    var mods = await api('/api/modules');
+    if (mods.ok) renderModules(mods.modules);
+    var pkgs = await api('/api/packages');
+    if (pkgs.ok) renderPackages(pkgs.packages);
+  } catch (e) { /* 网络错误时静默，下轮重试 */ }
+}
+
+function renderDaemon(d) {
+  var badge = document.getElementById('daemonBadge');
+  var txt = document.getElementById('daemonBadgeText');
+  var info = document.getElementById('daemonInfo');
+  if (d.running) {
+    badge.className = 'badge on';
+    txt.textContent = '运行中';
+    info.innerHTML = '状态：<b>运行中</b>　PID：<b>' + esc(d.pid) + '</b>';
+  } else {
+    badge.className = 'badge';
+    txt.textContent = '已停止';
+    info.innerHTML = '状态：<b>已停止</b>';
+  }
+  document.getElementById('btnRunnerStart').disabled = d.running;
+  document.getElementById('btnRunnerStop').disabled = !d.running;
+}
+
+function renderModules(mods) {
+  var list = document.getElementById('modList');
+  var empty = document.getElementById('modEmpty');
+  document.getElementById('modCount').textContent = mods.length ? mods.length + ' 个' : '';
+  if (!mods.length) { list.innerHTML = ''; empty.hidden = false; return; }
+  empty.hidden = true;
+
+  list.innerHTML = mods.map(function (m) {
+    var statusHtml = m.running
+      ? '<span class="status on"><span class="dot"></span>运行中' + (m.pid ? ' · ' + esc(m.pid) : '') + '</span>'
+      : '<span class="status"><span class="dot"></span>空闲</span>';
+    var meta = [m.author, m.version ? 'v' + m.version : ''].filter(Boolean).join(' · ');
+    var actions;
+    if (m.running) {
+      actions = '<button class="ghost-red" data-act="stop" data-name="' + esc(m.name) + '">停止</button>'
+              + '<button data-act="log" data-name="' + esc(m.name) + '">日志</button>';
+    } else {
+      actions = '<button class="primary" data-act="run" data-name="' + esc(m.name) + '"' + (m.has_main ? '' : ' disabled') + '>启动</button>'
+              + '<button data-act="log" data-name="' + esc(m.name) + '">日志</button>';
+    }
+    return '<div class="mod' + (m.running ? ' running' : '') + '">'
+      + '<div class="mod-head"><div><div class="mod-name">' + esc(m.name) + '</div>'
+      + (meta ? '<div class="mod-meta">' + esc(meta) + '</div>' : '')
+      + '</div>' + statusHtml + '</div>'
+      + (m.description ? '<div class="mod-desc">' + esc(m.description) + '</div>' : '')
+      + '<div class="mod-actions">' + actions + '</div></div>';
+  }).join('');
+}
+
+function renderPackages(pkgs) {
+  var card = document.getElementById('pkgCard');
+  var list = document.getElementById('pkgList');
+  if (!pkgs.length) { card.hidden = true; return; }
+  card.hidden = false;
+  list.innerHTML = pkgs.map(function (p) {
+    return '<div class="pkg"><div><div class="pkg-name">' + esc(p.name) + '</div>'
+      + '<div class="pkg-tag' + (p.installed ? ' installed' : '') + '">' + (p.installed ? '已安装' : '.iwp 模块包') + '</div></div>'
+      + '<button class="small ' + (p.installed ? 'ghost-green' : 'primary') + '" data-act="install" data-name="' + esc(p.name) + '">'
+      + (p.installed ? '重装' : '安装') + '</button></div>';
+  }).join('');
+}
+
+/* ================= 操作 ================= */
+document.addEventListener('click', async function (e) {
+  var btn = e.target.closest('button');
+  if (!btn) return;
+  var act = btn.dataset.act, name = btn.dataset.name;
+  if (!act || act === 'log') return;   // log 由专门的处理器负责
+  btn.disabled = true;
+  var label = { run: '启动', stop: '停止', install: '安装' }[act];
+  var r = await api('/api/module/' + encodeURIComponent(name) + '/' + act, 'POST');
+  toast(r.ok ? (label + '成功：' + name) : (r.msg || label + '失败'), r.ok);
+  btn.disabled = false;
+  setTimeout(refresh, 400);
+});
+
+document.getElementById('btnRunnerStart').onclick = async function () {
+  this.disabled = true;
+  var r = await api('/api/runner/start', 'POST');
+  toast(r.msg, r.ok);
+  setTimeout(refresh, 500);
+};
+document.getElementById('btnRunnerStop').onclick = async function () {
+  this.disabled = true;
+  var r = await api('/api/runner/stop', 'POST');
+  toast(r.msg, r.ok);
+  setTimeout(refresh, 500);
+};
+document.getElementById('btnSync').onclick = async function () {
+  this.disabled = true;
+  var r = await api('/api/sync', 'POST');
+  toast(r.ok ? '已同步到 ' + (r.msg.match(/state/) ? 'state/' : '状态目录') : (r.msg || '同步失败'), r.ok);
+  this.disabled = false;
+};
+document.getElementById('btnRunnerLog').onclick = function () { openRunnerLog(); };
+
+/* ================= 日志抽屉 ================= */
+var logState = { module: null, type: 'log', runner: false, timer: null };
+
+function openLog(name) {
+  logState.module = name; logState.type = 'log'; logState.runner = false;
+  document.getElementById('logTitle').textContent = name;
+  setActiveTab('log');
+  showSheet();
+  loadLog();
+}
+
+function openRunnerLog() {
+  logState.module = null; logState.runner = true;
+  document.getElementById('logTitle').textContent = '守护进程日志';
+  setActiveTab('log');
+  showSheet();
+  loadLog();
+}
+
+function showSheet() {
+  document.getElementById('sheetMask').classList.add('show');
+  document.getElementById('logSheet').classList.add('show');
+  clearInterval(logState.timer);
+  logState.timer = setInterval(loadLog, 2500);
+}
+
+function closeSheet() {
+  document.getElementById('sheetMask').classList.remove('show');
+  document.getElementById('logSheet').classList.remove('show');
+  clearInterval(logState.timer);
+}
+
+function setActiveTab(t) {
+  var tabs = document.getElementById('logTabs');
+  tabs.querySelectorAll('button').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.t === t);
+  });
+}
+
+async function loadLog() {
+  var body = document.getElementById('logBody');
+  var r;
+  if (logState.runner) {
+    r = await api('/api/runner/log?tail=150');
+  } else {
+    if (!logState.module) return;
+    r = await api('/api/module/' + encodeURIComponent(logState.module) + '/log?type=' + logState.type + '&tail=200');
+  }
+  if (!r.ok) { body.innerHTML = '<span class="placeholder">' + esc(r.msg || '加载失败') + '</span>'; return; }
+  var atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 60;
+  body.textContent = r.text || '（暂无内容）';
+  if (atBottom) body.scrollTop = body.scrollHeight;
+}
+
+document.getElementById('logTabs').addEventListener('click', function (e) {
+  var b = e.target.closest('button');
+  if (!b) return;
+  logState.type = b.dataset.t;
+  logState.runner = false;
+  setActiveTab(logState.type);
+  loadLog();
+});
+document.getElementById('logClose').onclick = closeSheet;
+document.getElementById('sheetMask').onclick = closeSheet;
+
+/* 模块卡片里的"日志"按钮 */
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest('button[data-act="log"]');
+  if (btn) openLog(btn.dataset.name);
+});
+
+/* ================= 启动 ================= */
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

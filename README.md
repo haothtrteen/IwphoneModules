@@ -134,6 +134,18 @@ App 用 `jniLibs` 技巧自带 adb 二进制（避免 `noexec` 限制），密�
 ## 目录结构
 
 ```
+README.md / LICENSE          仓库说明与许可证（GPL-3.0）
+framework/                   框架源码（可读、可改、可重新打包）
+  ├── Main.sh iwphone.sh     守护进程与命令文件
+  ├── core.sh env.sh         模块生命周期 / 全局变量
+  ├── sandbox.sh             运行时记账沙箱 + 写前快照
+  ├── conflict.sh            独占资源冲突检测
+  ├── compat.sh              Magisk / KernelSU / AxManager 兼容层
+  ├── mod_install/run/stop   安装、执行、停止
+  ├── restore_snapshot.sh    快照还原
+  ├── module/                内置模块（.iwp）
+  ├── webui/                 内置 WebUI（Python）+ 前端页面
+  └── tools/                 运行时构建、framework.bin 打包
 lib/                         Flutter 侧
   screens/                   主页 / 模块 / 安装 / 配置 / 快照 / 日志 / 设置 / 终端 / 自启 / 资源
   services/                  WebUI 客户端 · 自启通道 · 密钥管理 · 系统信息 · shell 执行
@@ -150,7 +162,9 @@ doc/
   iwphone_module_dev.md      **模块开发指南**（13 章：从最小模块到兼容层、快照、鉴权）
   iwphone_conflict_v1.md     冲突检测设计
 android/app/src/main/assets/
-  framework.bin             打包好的框架（含框架脚本 + Python 运行时 + BusyBox，约 14 MB）
+  framework.bin             App 内置的框架包（框架脚本 + Python 运行时 + BusyBox，约 14 MB）
+                            ⚠ 由 framework/ 打包而来，重新生成：
+                              cd framework && sh tools/build_framework_bin.sh
 ```
 
 ---
@@ -164,6 +178,13 @@ flutter build apk --release
 ```
 
 产物在 `build/app/outputs/flutter-apk/app-release.apk`（约 36 MB）。
+
+> **改动了 `framework/` 就要重新打包内置资产**，否则 App 里跑的还是旧框架：
+> ```bash
+> cd framework && sh tools/build_framework_bin.sh
+> ```
+> 打包需要 `framework/webui/runtime/`（约 36MB 的 Python 运行时，不入仓库），
+> 生成方式见 [framework/README.md](framework/README.md)。
 
 > 应用**零第三方 Flutter 依赖**：文件选择、WebView、通知输入框等都用原生能力实现，
 > 减少供应链风险与体积。国内建议先配好 pub / Gradle 镜像。
@@ -211,25 +232,41 @@ flutter build apk --release
 
 ---
 
-## 许可证与第三方组件
+## 许可证
 
-⚠ **上传前需要确认**：`assets/framework.bin` 内打包了 **BusyBox**（取自 Magisk 项目，**GPL-3.0**）。
-公开分发含 GPL 组件的二进制时，有对应的源码提供义务。三种处理方式：
+本项目采用 **GNU General Public License v3.0**（见 [LICENSE](LICENSE)）。
 
-1. **整个项目采用 GPL-3.0** —— 与内置组件一致，最省心
-2. **自己的代码用 MIT，但不把 BusyBox 打进公开构建**（改为首次使用时获取或用户自备），
-   仓库内不提交含 BusyBox 的 `framework.bin`
-3. 保留打包，但在 README 与 release 里明确声明并附 BusyBox 源码出处
+选 GPL-3.0 的原因很直接：`assets/framework.bin` 里打包了 **BusyBox**（取自 Magisk 项目，
+GPL-3.0），公开分发含 GPL 组件的二进制时有一致的许可要求。与其在混合许可上纠结，
+不如整个项目统一到 GPL-3.0 —— 这也是 Magisk 等同类项目的选择。
 
-致谢与参考：
+```
+Copyright (C) 2026 haothtrteen
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+```
+
+> 如果你希望自己的代码以更宽松的方式被使用（例如允许闭源集成），
+> 可以改成 MIT + 公开构建不含 BusyBox 的方案 —— 具体见 `doc/` 里的说明。
+
+### 第三方组件
+
+| 组件 | 出处 | 许可 |
+|---|---|---|
+| BusyBox（`framework.bin` 内） | Magisk 项目 | GPL-3.0 |
+| adb（`jniLibs/libadb.so`） | AOSP / platform-tools | Apache-2.0 |
+| Python 运行时（`framework.bin` 内） | python-build-standalone | PSF License |
+
+### 致敬与参考
 
 - **Magisk** —— BusyBox 二进制、模块格式设计（`module.prop` / `service.sh` / `action.sh`）
 - **Shizuku** —— 自持 adb、配对流程、WebUI JS 桥的思路
 - **APatch** —— 「用户自设密钥」的鉴权交互
 - **KernelSU** —— 模块 WebUI（`webroot/` + `ksu` API）规范
 - **AxManager** —— 免 root 插件体系与 BusyBox standalone 模式
-
----
 
 ## 免责声明
 
