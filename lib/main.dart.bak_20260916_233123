@@ -1,0 +1,108 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'screens/home_screen.dart';
+import 'screens/logs_screen.dart';
+import 'screens/modules_screen.dart';
+import 'screens/settings_screen.dart';
+import 'theme/app_theme.dart';
+import 'widgets/bottom_nav_bar.dart';
+import 'widgets/status_bar.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 隐藏系统状态栏 / 导航栏，以 1:1 呈现设计稿中自绘的状态栏与底部导航。
+  // 接入真实项目时可按需移除，并删除 StatusBar 组件改用 SafeArea。
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(statusBarIconBrightness: Brightness.light),
+  );
+  runApp(const ShellManagerApp());
+}
+
+class ShellManagerApp extends StatelessWidget {
+  const ShellManagerApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Shell Manager',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: AppColors.bg,
+        fontFamily: 'Inter', // 未打包字体文件时自动回退系统字体
+      ),
+      home: const ShellManagerHomePage(),
+    );
+  }
+}
+
+/// 应用根页面：自绘状态栏 + 四页内容（IndexedStack 保持各页状态）+ 底部导航
+class ShellManagerHomePage extends StatefulWidget {
+  const ShellManagerHomePage({super.key});
+
+  @override
+  State<ShellManagerHomePage> createState() => _ShellManagerHomePageState();
+}
+
+class _ShellManagerHomePageState extends State<ShellManagerHomePage> {
+  int _pageIndex = 0;
+
+  // 设置项开关（对应设计稿）
+  bool _darkTheme = true;
+  bool _autoStart = true;
+  bool _hideApp = false;
+  bool _biometricLock = true;
+
+  // 切回对应页时递增，触发该页重新读取设备/框架数据
+  int _homeReloadToken = 0;
+  int _modulesReloadToken = 0;
+  int _logsReloadToken = 0;
+
+  void _onPageChanged(int index) {
+    setState(() {
+      _pageIndex = index;
+      if (index == 0) _homeReloadToken++;
+      if (index == 1) _modulesReloadToken++;
+      if (index == 2) _logsReloadToken++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: Column(
+        children: [
+          const StatusBar(),
+          Expanded(
+            child: IndexedStack(
+              index: _pageIndex,
+              children: [
+                HomeScreen(reloadToken: _homeReloadToken),
+                ModulesScreen(reloadToken: _modulesReloadToken),
+                LogsScreen(reloadToken: _logsReloadToken),
+                SettingsScreen(
+                  darkTheme: _darkTheme,
+                  autoStart: _autoStart,
+                  hideApp: _hideApp,
+                  biometricLock: _biometricLock,
+                  onDarkThemeChanged: (v) => setState(() => _darkTheme = v),
+                  onAutoStartChanged: (v) => setState(() => _autoStart = v),
+                  onHideAppChanged: (v) => setState(() => _hideApp = v),
+                  onBiometricLockChanged: (v) => setState(() => _biometricLock = v),
+                ),
+              ],
+            ),
+          ),
+          BottomNavBar(
+            currentIndex: _pageIndex,
+            onChanged: _onPageChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}

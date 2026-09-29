@@ -1,0 +1,6 @@
+org.gradle.jvmargs=-Xmx8G -XX:MaxMetaspaceSize=4G -XX:ReservedCodeCacheSize=512m -XX:+HeapDumpOnOutOfMemoryError --enable-native-access=ALL-UNNAMED -Dfile.encoding=UTF-8
+android.useAndroidX=true
+# Android Studio 自带 JDK 25，与模板 Gradle 8.14 不兼容；显式指定 Gradle 使用 JDK 21
+org.gradle.java.home=F:\\jdk21\\jdk-21.0.12.1+1
+# Gradle 8.14 + JDK 21 daemon 在 native-platform 装载阶段会进入日志握手死锁。
+# 调试时用 `--no-daemon` 绕开；稳定后再恢复 daemon。

@@ -1,0 +1,38 @@
+name: shell_manager
+description: 安卓 Shell 模块插件管理 App（1:1 还原 Ardot 设计稿）
+publish_to: 'none'
+version: 1.2.3+123
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  # 仅用于解析器等纯逻辑的单元测试；本项目仍无第三方运行时依赖
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  # 设计稿使用 Inter 与 JetBrains Mono 字体。
+  # Flutter 未内置这两种字体，未打包字体文件时会回退到系统默认字体（Android 为 Roboto）。
+  # 如需完全一致的字体渲染，可将字体文件放入 assets/fonts/ 并取消以下注释：
+  #
+  # fonts:
+  #   - family: Inter
+  #     fonts:
+  #       - asset: assets/fonts/Inter-Regular.ttf
+  #         weight: 400
+  #       - asset: assets/fonts/Inter-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Inter-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Inter-Bold.ttf
+  #         weight: 700
+  #   - family: JetBrains Mono
+  #     fonts:
+  #       - asset: assets/fonts/JetBrainsMono-Medium.ttf
+  #         weight: 500

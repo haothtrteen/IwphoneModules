@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ============================================================
+         权限声明
+         注意：Google Play 会扫描「声明但未使用」的权限，可能触发额外审核。
+         以下每项都必须有对应代码实现；若某功能尚未实现，请先注释掉该行。
+         ============================================================ -->
+
+    <!-- 模块仓库下载、更新通道检查、打开源码页面 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 更新检查前判断网络可用性，避免无网时发起请求 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 设置页「开机自启」开关：接收开机广播后拉起模块挂载 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Android 13+ 发送更新/授权提醒通知（需配合运行时申请） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 生物识别锁无需在此声明：androidx.biometric 会自动合并 USE_BIOMETRIC -->
+
+    <!-- ============================================================
+         存储权限：读取 /sdcard/iwphone/ 状态镜像所必需
+
+         背景：iwphone 框架把模块状态镜像写在 /sdcard/iwphone/state/，
+         该目录属主是框架侧（另一个 App），本应用需「所有文件访问」才能读取。
+
+         Android 11+（API 30+）：必须用 MANAGE_EXTERNAL_STORAGE。
+           - 该权限无法用弹窗授予，只能引导用户到系统设置页手动开启
+           - Google Play 审核严格，但本应用 publish_to: 'none'（自用侧载）可接受
+         Android 10 及以下：READ_EXTERNAL_STORAGE 走常规运行时申请。
+         Android 13+ 的 READ_MEDIA_* 仅覆盖媒体文件，读不到 .prop / .sh，
+         故不适用于本场景。
+         ============================================================ -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- Android 10 及以下读取公共目录时，需写权限才能挂载可读写视图 -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"
+        tools:ignore="ScopedStorage" />
+
+    <application
+        android:label="Shell Manager"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:enableOnBackInvokedCallback="true">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
+        <!-- 模块自带 WebUI 的展示页（android.webkit，零第三方依赖）。
+             页面由框架 WebUI 在 127.0.0.1:8537/mod/<模块名>/ 下提供，
+             与特权 API 同源，模块里的 fetch 调用天然可用。 -->
+        <activity
+            android:name=".ModuleWebUIActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/LaunchTheme" />
+
+        <!-- ============================================================
+             开机自启
+
+             链路：BOOT_COMPLETED → BootReceiver（只负责排任务）
+                → AutostartJobService（扛住耗时的 adb 重认证 + 拉起框架）
+                → 通知用户结果
+
+             为什么绕一层 JobService：广播接收器只有约 10 秒窗口，
+             而自启要冷启动 adb、建连、取 shell、下发启动命令，容易超时被 ANR。
+             JobService 的执行窗口是分钟级，且 setPersisted(true) 让任务跨重启保留，
+             与广播形成双保险（MIUI 有拦截开机广播的情况）。
+             ============================================================ -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <!-- 部分 ROM 的快速开机广播 -->
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".AutostartJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- 配对码接收器：通知里的 RemoteInput 输入框提交后走这里。
+             exported=false —— 只有本应用的通知能触发它。 -->
+        <receiver
+            android:name=".PairingReceiver"
+            android:exported="false" />
+    </application>
+
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>
