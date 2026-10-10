@@ -94,7 +94,7 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                   ),
                   IconButton(
                     onPressed: _loading ? null : _load,
-                    icon: const Icon(Icons.refresh,
+                    icon: Icon(Icons.refresh,
                         size: 20, color: AppColors.textSecondary),
                     tooltip: '刷新',
                   ),
@@ -408,7 +408,7 @@ class _EmptyHint extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const Icon(Icons.inbox_outlined,
+          Icon(Icons.inbox_outlined,
               size: 28, color: AppColors.textInactive),
           const SizedBox(height: 10),
           Text(

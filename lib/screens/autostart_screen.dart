@@ -220,7 +220,7 @@ class _AutostartScreenState extends State<AutostartScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 '手机上操作：设置 → 开发者选项 → 无线调试 → '
                 '「使用配对码配对设备」。\n\n'
                 '把弹窗里的两个数字填到下面（**保持那个配对弹窗打开**，'
@@ -310,7 +310,7 @@ class _AutostartScreenState extends State<AutostartScreen> {
                   const Expanded(child: ScreenAppBar(title: '开机自启')),
                   IconButton(
                     onPressed: _loading || _busy ? null : _load,
-                    icon: const Icon(Icons.refresh,
+                    icon: Icon(Icons.refresh,
                         size: 20, color: AppColors.textSecondary),
                     tooltip: '刷新',
                   ),
@@ -390,7 +390,7 @@ class _AutostartScreenState extends State<AutostartScreen> {
                           onTap: _runNow,
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           '不必等到下次开机 —— 这里会完整走一遍'
                           '「重认证 → 取 shell → 拉起框架」并给出真实结果。',
                           style: AppText.desc12,
@@ -465,7 +465,7 @@ class _FrameworkCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text('框架包', style: AppText.rowLabel),
               ),
               Text(state, style: AppText.desc12.copyWith(color: stateColor)),
@@ -627,7 +627,7 @@ class _StepCard extends StatelessWidget {
                   ),
                 ),
                 child: done
-                    ? const Icon(Icons.check, size: 13, color: AppColors.accent)
+                    ? Icon(Icons.check, size: 13, color: AppColors.accent)
                     : Text('$index',
                         style: AppText.desc12.copyWith(fontSize: 11)),
               ),
@@ -748,7 +748,7 @@ class _NoticeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '· 小米 / Redmi 机型默认拦截开机广播，需要在系统的「自启动管理」里'
             '放行本应用，否则自启不会生效，而且**不会有任何报错**。\n\n'
             '· 自启依赖固定端口，因此该端口会常驻监听。它需要 ADB 密钥才能连接，'
@@ -771,7 +771,7 @@ class _NoticeCard extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.settings_applications_outlined,
+                  Icon(Icons.settings_applications_outlined,
                       size: 16, color: AppColors.textSecondary),
                   const SizedBox(width: 6),
                   Text('打开系统自启动管理',
@@ -813,11 +813,11 @@ class _Field extends StatelessWidget {
         isDense: true,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.divider),
+          borderSide: BorderSide(color: AppColors.divider),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.accent),
+          borderSide: BorderSide(color: AppColors.accent),
         ),
       ),
     );

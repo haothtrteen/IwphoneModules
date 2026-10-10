@@ -986,7 +986,7 @@ class _ModuleCardState extends State<_ModuleCard> {
         if (_expanded)
           Container(
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppColors.surface,
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(12)),
             ),
@@ -1183,17 +1183,17 @@ Future<void> _showConflictDetail(
                 Icon(Icons.warning_amber_rounded,
                     size: 18, color: AppColors.iconRed),
                 const SizedBox(width: 8),
-                const Text('资源冲突', style: AppText.cardTitle),
+                Text('资源冲突', style: AppText.cardTitle),
               ],
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '该模块与下列模块声明了同一系统资源。'
               '同时运行时，后启动的一方会被框架拒绝，避免配置互相覆盖。',
               style: AppText.desc12,
             ),
             const SizedBox(height: 14),
-            const Text('冲突模块', style: AppText.rowLabel),
+            Text('冲突模块', style: AppText.rowLabel),
             const SizedBox(height: 6),
             for (final w in item.blockedBy)
               Padding(
@@ -1213,7 +1213,7 @@ Future<void> _showConflictDetail(
               ),
             if (item.resources.isNotEmpty) ...[
               const SizedBox(height: 14),
-              const Text('涉及资源', style: AppText.rowLabel),
+              Text('涉及资源', style: AppText.rowLabel),
               const SizedBox(height: 6),
               for (final r in item.resources)
                 Padding(
@@ -1226,7 +1226,7 @@ Future<void> _showConflictDetail(
                 ),
             ],
             const SizedBox(height: 16),
-            const Text(
+            Text(
               '如需运行本模块，请先停止上述模块。',
               style: AppText.desc12,
             ),
@@ -1292,7 +1292,7 @@ class _CompatBadge extends StatelessWidget {
               Text(item.compatReasons.isEmpty ? '（无说明）' : item.compatReasons,
                   style: AppText.body13),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 '预检基于静态扫描，注释里的关键词也会命中（偏保守）。'
                 '实际行为以模块运行结果为准。',
                 style: AppText.desc12,
@@ -1326,12 +1326,12 @@ class _ModuleActionSheet extends StatelessWidget {
             const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(
+              leading: Icon(
                 Icons.refresh_rounded,
                 color: AppColors.iconOrange,
               ),
-              title: const Text('重装模块', style: AppText.rowLabel),
-              subtitle: const Text(
+              title: Text('重装模块', style: AppText.rowLabel),
+              subtitle: Text(
                 '用模块包覆盖当前版本，手动改动将丢失',
                 style: AppText.desc12,
               ),
@@ -1339,12 +1339,12 @@ class _ModuleActionSheet extends StatelessWidget {
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(
+              leading: Icon(
                 Icons.delete_outline,
                 color: AppColors.iconRed,
               ),
-              title: const Text('卸载模块', style: AppText.rowLabel),
-              subtitle: const Text(
+              title: Text('卸载模块', style: AppText.rowLabel),
+              subtitle: Text(
                 '删除模块目录与日志，不可恢复',
                 style: AppText.desc12,
               ),

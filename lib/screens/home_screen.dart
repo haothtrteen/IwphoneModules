@@ -5,6 +5,7 @@ import '../services/iwphone_service.dart';
 import '../services/webui_token.dart';
 import '../services/system_info_service.dart';
 import '../theme/app_theme.dart';
+import '../i18n/app_strings.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/webui_token_dialog.dart';
 
@@ -180,7 +181,7 @@ class _HomeAppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Expanded(child: Text('Shell Manager', style: AppText.appTitle)),
+        Expanded(child: Text('Shell Manager', style: AppText.appTitle)),
         SizedBox(
           width: 24,
           height: 24,
@@ -218,11 +219,13 @@ class _FrameworkStatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final running = !loading && status.daemonRunning;
-    final badgeText = loading ? '检测中' : (running ? '运行中' : '未运行');
+    final badgeText = loading
+        ? AppStrings.t('home.detecting')
+        : (running ? AppStrings.t('home.running') : AppStrings.t('home.notRunning'));
     final badgeColor = running ? AppColors.accent : AppColors.textInactive;
     final endpoint = loading
         ? '—'
-        : (running ? 'http://127.0.0.1:8537' : '未连接');
+        : (running ? 'http://127.0.0.1:8537' : AppStrings.t('home.notConnected'));
     final desc = loading
         ? '正在探测 iwphone 框架…'
         : running
@@ -241,7 +244,7 @@ class _FrameworkStatusCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('iwphone 框架', style: AppText.cardTitle),
+              Text(AppStrings.t('home.framework'), style: AppText.cardTitle),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -312,7 +315,7 @@ class _FrameworkActions extends StatelessWidget {
         Expanded(
           child: _ActionButton(
             icon: Icons.stop_rounded,
-            label: '停止',
+            label: AppStrings.t('home.stop'),
             color: AppColors.iconRed,
             onTap: (enabled && running) ? onStop : null,
           ),
@@ -321,7 +324,7 @@ class _FrameworkActions extends StatelessWidget {
         Expanded(
           child: _ActionButton(
             icon: Icons.restart_alt_rounded,
-            label: '重启',
+            label: AppStrings.t('home.restart'),
             color: AppColors.iconOrange,
             onTap: enabled ? onRestart : null,
           ),
@@ -330,7 +333,7 @@ class _FrameworkActions extends StatelessWidget {
         Expanded(
           child: _ActionButton(
             icon: Icons.sync_rounded,
-            label: '同步',
+            label: AppStrings.t('home.sync'),
             color: AppColors.iconBlue,
             onTap: enabled ? onSync : null,
           ),
@@ -448,14 +451,14 @@ class _StatsGrid extends StatelessWidget {
           children: [
             Expanded(
               child: _StatCard(
-                label: '模块总数',
+                label: AppStrings.t('home.modulesTotal'),
                 value: loading ? '—' : status.moduleCount.toString(),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _StatCard(
-                label: '运行中',
+                label: AppStrings.t('home.modulesRunning'),
                 value: loading ? '—' : status.runningCount.toString(),
                 valueColor: status.daemonRunning
                     ? AppColors.accent
@@ -477,7 +480,7 @@ class _StatsGrid extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: _StatCard(
-                label: '架构',
+                label: AppStrings.t('home.arch'),
                 value: _dash(abi),
               ),
             ),
@@ -494,22 +497,28 @@ class _StatsGrid extends StatelessWidget {
 /// 遇到 `arm64-v8a` 这种长文本时按比例縮小，**不换行** ——
 /// 卡片内宽有限，硬排会折成两行把卡片撑破。
 class _StatCard extends StatelessWidget {
-  const _StatCard({
+  _StatCard({
     required this.label,
     required this.value,
-    this.valueColor = AppColors.textPrimary,
+    this.valueColor,
   });
 
   final String label;
   final String value;
-  final Color valueColor;
+
+  /// 为空则用主题的主文字色。
+  ///
+  /// 刻意不写成默认值 `= AppColors.textPrimary` —— 主题色现在是运行时
+  /// getter，而默认参数值必须是编译期常量。在 build 里兜底即可。
+  final Color? valueColor;
 
   /// 超过这个字符数就交给 FittedBox 缩放，短值保持原字号。
   static const int _shrinkThreshold = 4;
 
   @override
   Widget build(BuildContext context) {
-    final style = AppText.statValue.copyWith(color: valueColor);
+    final style =
+        AppText.statValue.copyWith(color: valueColor ?? AppColors.textPrimary);
     final text = Text(
       value,
       style: style,
@@ -571,7 +580,7 @@ class _SystemInfoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('系统信息', style: AppText.infoTitle),
+          Text(AppStrings.t('home.systemInfo'), style: AppText.infoTitle),
           const SizedBox(height: 16),
           _InfoRow(
             label: 'Android 版本',
@@ -631,15 +640,15 @@ class _TokenSetupCard extends StatelessWidget {
               color: AppColors.iconOrange.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.key_outlined,
+            child: Icon(Icons.key_outlined,
                 size: 20, color: AppColors.iconOrange),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('先设置访问密钥', style: AppText.rowLabel),
+                Text(AppStrings.t('home.tokenCardTitle'), style: AppText.rowLabel),
                 SizedBox(height: 3),
                 Text(
                   '框架的 shell 接口监听在本机回环口，需要一把密钥才能对外开放。'
@@ -659,7 +668,7 @@ class _TokenSetupCard extends StatelessWidget {
                 color: AppColors.iconOrange.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text('去设置',
+              child: Text(AppStrings.t('home.tokenCardAction'),
                   style:
                       AppText.desc12.copyWith(color: AppColors.iconOrange)),
             ),

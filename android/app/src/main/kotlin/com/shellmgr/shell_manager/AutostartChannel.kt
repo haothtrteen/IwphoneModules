@@ -1,6 +1,7 @@
 package com.shellmgr.shell_manager
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
@@ -113,6 +114,25 @@ class AutostartChannel(private val activity: FlutterActivity) {
                     val name = call.argument<String>("name") ?: ""
                     val r = AdbBootstrap.importPackage(activity, path, name)
                     mapOf("ok" to r.ok, "msg" to r.message)
+                }
+
+                // ---- 界面偏好：主题 / 语言 / 首次引导 ----
+                "loadUiPrefs" -> result.success(UiPrefs.snapshot(activity))
+
+                "saveUiPrefs" -> {
+                    call.argument<String>("themeMode")?.let { UiPrefs.setThemeMode(activity, it) }
+                    call.argument<String>("locale")?.let { UiPrefs.setLocale(activity, it) }
+                    call.argument<Boolean>("onboardingDone")?.let {
+                        UiPrefs.setOnboardingDone(activity, it)
+                    }
+                    result.success(UiPrefs.snapshot(activity))
+                }
+
+                // 打开外部链接（关于页的项目地址用）。
+                // 刻意不走 url_launcher —— 项目约定零第三方依赖，一个 Intent 就够。
+                "openUrl" -> {
+                    val url = call.argument<String>("url") ?: ""
+                    result.success(openUrl(url))
                 }
 
                 // ---- WebUI 访问密钥（APatch 式：用户自己设）----
@@ -284,5 +304,24 @@ class AutostartChannel(private val activity: FlutterActivity) {
         pendingNotifyResult?.success(granted)
         pendingNotifyResult = null
         return true
+    }
+
+    /**
+     * 用系统浏览器打开链接。
+     *
+     * 只放行 http/https —— 这是从 UI 传进来的字符串，虽然当前来源可信，
+     * 但限制 scheme 能避免以后有人不小心把 file:// 之类传进来。
+     */
+    private fun openUrl(url: String): Boolean {
+        if (!url.startsWith("https://") && !url.startsWith("http://")) return false
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activity.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 }

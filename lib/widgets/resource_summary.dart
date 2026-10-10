@@ -63,7 +63,7 @@ class ResourceSummaryCard extends StatelessWidget {
           ),
           if (!healthy) ...[
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '同一资源被多个模块写入时，先启动的模块会赢，后写入的值可能被覆盖。'
               '如需长期稳定运行，建议只保留一个模块操作该资源。',
               style: AppText.desc12,
@@ -175,7 +175,7 @@ class ResourceSummaryBar extends StatelessWidget {
               ),
               const SizedBox(width: 6),
             ],
-            const Icon(
+            Icon(
               Icons.chevron_right,
               size: 20,
               color: AppColors.textSecondary,

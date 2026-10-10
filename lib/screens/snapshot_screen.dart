@@ -123,7 +123,7 @@ class _SnapshotScreenState extends State<SnapshotScreen> {
                   const Expanded(child: ScreenAppBar(title: '历史快照')),
                   IconButton(
                     onPressed: _loading ? null : _load,
-                    icon: const Icon(Icons.refresh,
+                    icon: Icon(Icons.refresh,
                         size: 20, color: AppColors.textSecondary),
                     tooltip: '刷新',
                   ),
@@ -155,7 +155,7 @@ class _SnapshotScreenState extends State<SnapshotScreen> {
                             const SizedBox(height: 8),
                           ],
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           '· 快照在模块**首次写入**某系统资源时自动生成，记录写入前的原值。\n'
                           '· 模块卸载后快照会保留 —— 它改过的设置仍然可以还原。\n'
                           '· 还原会先停止该模块（避免守卫循环把值改回去），'
@@ -303,7 +303,7 @@ class _EmptyCard extends StatelessWidget {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Text(
+      child: Text(
         '还没有任何快照。\n\n'
         '快照会在模块**首次修改系统设置**时自动生成 —— '
         '启动一个会改设置的模块（比如动画调速）之后回来就能看到。',

@@ -137,7 +137,7 @@ class _ModuleConfigScreenState extends State<ModuleConfigScreen> {
                   ),
                   IconButton(
                     onPressed: _loading || _saving ? null : _resetDefaults,
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.restart_alt_rounded,
                       size: 20,
                       color: AppColors.textSecondary,
@@ -405,11 +405,11 @@ class _InlineInputState extends State<_InlineInput> {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.divider),
+          borderSide: BorderSide(color: AppColors.divider),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.accent),
+          borderSide: BorderSide(color: AppColors.accent),
         ),
       ),
     );

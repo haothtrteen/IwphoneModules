@@ -197,7 +197,7 @@ class _LogsScreenState extends State<LogsScreen> {
             const SizedBox(height: 10),
             SelectableText(res.path, style: AppText.monoValue14),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '可在「文件管理器 → 内部存储 → Download → iwphone_logs」中找到，'
               '方便发给别人或转存到电脑。',
               style: AppText.desc12,

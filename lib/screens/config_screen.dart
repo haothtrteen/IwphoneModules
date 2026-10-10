@@ -118,10 +118,10 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 hintStyle: AppText.desc12,
                 helperText: isNum ? '取值范围 ${item.min} ~ ${item.max}' : null,
                 helperStyle: AppText.desc12,
-                enabledBorder: const UnderlineInputBorder(
+                enabledBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: AppColors.divider),
                 ),
-                focusedBorder: const UnderlineInputBorder(
+                focusedBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: AppColors.accent),
                 ),
               ),
@@ -221,7 +221,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
                     ),
                 ],
                 const SizedBox(height: 16),
-                const Text('配置写入框架的 env.sh（修改前会自动备份）',
+                Text('配置写入框架的 env.sh（修改前会自动备份）',
                     style: AppText.footer, textAlign: TextAlign.center),
                 const SizedBox(height: 16),
               ],
@@ -351,7 +351,7 @@ class _ConfigRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Icon(Icons.chevron_right,
+                Icon(Icons.chevron_right,
                     size: 18, color: AppColors.textSecondary),
               ],
             ),

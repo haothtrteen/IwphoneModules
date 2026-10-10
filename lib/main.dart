@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'screens/home_screen.dart';
 import 'screens/logs_screen.dart';
 import 'screens/modules_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/settings_screen.dart';
+import 'services/app_prefs.dart';
 import 'services/autostart_service.dart';
 import 'services/storage_permission_service.dart';
 import 'services/webui_token.dart';
@@ -16,47 +18,112 @@ void main() async {
   // 先把本地缓存的访问密钥装进 HTTP 客户端 —— 之后所有请求才带得上 X-Token。
   // 只读一次 SharedPreferences，开销可忽略；不这样做的话首屏请求必然 403。
   await WebuiTokenManager.instance.init();
+  // 主题 / 语言 / 首次引导状态也要在首帧前就位，否则会先闪一下默认主题再跳变。
+  await AppPrefs.instance.load();
   // 使用系统自带的状态栏与导航栏，不再自绘 StatusBar（避免与系统 UI 重复）。
-  // edgeToEdge：内容延伸到系统栏之下，由 SafeArea 负责避让 ——
-  // 既保留沉浸观感，又不会出现"两个顶栏"。
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      // 状态栏透明，让页面背景自然延伸上去
-      statusBarColor: Colors.transparent,
-      // 深色背景 → 亮色图标。
-      // Android 依据 statusBarIconBrightness，iOS 依据 statusBarBrightness，两者都设。
-      statusBarIconBrightness: Brightness.light,
-      statusBarBrightness: Brightness.dark,
-      // 底部系统导航栏跟随主题配色
-      systemNavigationBarColor: AppColors.bg,
-      systemNavigationBarIconBrightness: Brightness.light,
-      systemNavigationBarDividerColor: Colors.transparent,
-    ),
-  );
   runApp(const ShellManagerApp());
 }
 
-class ShellManagerApp extends StatelessWidget {
+/// 应用根：把「主题模式 / 语言 / 引导状态」的变化接进整棵树。
+///
+/// 主题色与文案是全局状态（`AppColors` / `AppStrings`），
+/// 它们变了必须让所有页面重新 build —— 所以这里监听 [AppPrefs] 并 setState，
+/// 由框架重建整棵树，而不是在每个页面里各自订阅。
+class ShellManagerApp extends StatefulWidget {
   const ShellManagerApp({super.key});
 
   @override
+  State<ShellManagerApp> createState() => _ShellManagerAppState();
+}
+
+class _ShellManagerAppState extends State<ShellManagerApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AppPrefs.instance.addListener(_onPrefsChanged);
+  }
+
+  @override
+  void dispose() {
+    AppPrefs.instance.removeListener(_onPrefsChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _onPrefsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 系统深浅色变化时也要重建（「跟随系统」模式下靠它生效）。
+  @override
+  void didChangePlatformBrightness() {
+    if (mounted) setState(() {});
+  }
+
+  /// 当前实际生效的亮度：跟随系统时取系统值。
+  Brightness _effectiveBrightness() {
+    switch (AppPrefs.instance.themeMode) {
+      case 'light':
+        return Brightness.light;
+      case 'dark':
+        return Brightness.dark;
+      default:
+        return WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    }
+  }
+
+  /// 状态栏 / 导航栏跟随主题。
+  ///
+  /// edgeToEdge 下页面会延伸到系统栏下方，图标颜色必须与背景相反才看得清 ——
+  /// 浅色主题用深色图标，深色主题用浅色图标。
+  void _applySystemUi(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+        systemNavigationBarColor: AppColors.bg,
+        systemNavigationBarIconBrightness:
+            isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // 语言可能被系统语言影响（「跟随系统」模式），每次构建同步一次。
+    AppPrefs.instance.syncLanguage();
+
+    final brightness = _effectiveBrightness();
+    AppColors.applyBrightness(brightness);
+    _applySystemUi(brightness);
+
     return MaterialApp(
       title: 'Shell Manager',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        brightness: Brightness.dark,
+        brightness: brightness,
         scaffoldBackgroundColor: AppColors.bg,
         fontFamily: 'Inter', // 未打包字体文件时自动回退系统字体
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.accent,
+          brightness: brightness,
+        ).copyWith(surface: AppColors.surface),
       ),
-      home: const ShellManagerHomePage(),
+      home: AppPrefs.instance.onboardingDone
+          ? const ShellManagerHomePage()
+          : const OnboardingScreen(),
     );
   }
 }
 
-/// 应用根页面：自绘状态栏 + 四页内容（IndexedStack 保持各页状态）+ 底部导航
+/// 应用根页面：四页内容（IndexedStack 保持各页状态）+ 底部导航
 class ShellManagerHomePage extends StatefulWidget {
   const ShellManagerHomePage({super.key});
 
@@ -68,8 +135,6 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
     with WidgetsBindingObserver {
   int _pageIndex = 0;
 
-  // 设置项开关（对应设计稿）
-  bool _darkTheme = true;
   /// 「开机自启」真实状态 —— 由原生侧持久化，这里只是镜像。
   bool _autoStart = false;
   bool _hideApp = false;
@@ -159,12 +224,10 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
                   ModulesScreen(reloadToken: _modulesReloadToken),
                   LogsScreen(reloadToken: _logsReloadToken),
                   SettingsScreen(
-                    darkTheme: _darkTheme,
                     autoStart: _autoStart,
                     hideApp: _hideApp,
                     biometricLock: _biometricLock,
                     storageStatus: _storageStatus,
-                    onDarkThemeChanged: (v) => setState(() => _darkTheme = v),
                     onAutoStartChanged: _setAutostart,
                     onHideAppChanged: (v) => setState(() => _hideApp = v),
                     onBiometricLockChanged: (v) => setState(() => _biometricLock = v),

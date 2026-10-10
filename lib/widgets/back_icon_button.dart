@@ -18,7 +18,7 @@ class BackIconButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap ?? () => Navigator.of(context).maybePop(),
       behavior: HitTestBehavior.opaque,
-      child: const Padding(
+      child: Padding(
         padding: EdgeInsets.only(right: 12, top: 2, bottom: 2),
         child: Icon(
           Icons.arrow_back_ios_new,

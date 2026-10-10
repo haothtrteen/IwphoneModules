@@ -280,6 +280,53 @@ class AutostartService {
     }
   }
 
+  // ---------------- 界面偏好：主题 / 语言 / 首次引导 ----------------
+
+  /// 读取界面偏好。失败时返回默认值（跟随系统 / 未完成引导）。
+  Future<({String themeMode, String locale, bool onboardingDone})>
+      loadUiPrefs() async {
+    try {
+      final raw = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('loadUiPrefs');
+      if (raw == null) {
+        return (themeMode: 'system', locale: 'system', onboardingDone: false);
+      }
+      return (
+        themeMode: (raw['themeMode'] as String?) ?? 'system',
+        locale: (raw['locale'] as String?) ?? 'system',
+        onboardingDone: raw['onboardingDone'] == true,
+      );
+    } catch (_) {
+      return (themeMode: 'system', locale: 'system', onboardingDone: false);
+    }
+  }
+
+  /// 保存界面偏好（只传需要改的字段）。
+  Future<void> saveUiPrefs({
+    String? themeMode,
+    String? locale,
+    bool? onboardingDone,
+  }) async {
+    try {
+      await _channel.invokeMethod<Map<dynamic, dynamic>>('saveUiPrefs', {
+        if (themeMode != null) 'themeMode': themeMode,
+        if (locale != null) 'locale': locale,
+        if (onboardingDone != null) 'onboardingDone': onboardingDone,
+      });
+    } catch (_) {
+      // 存不上不阻塞使用 —— 下次启动退回默认值
+    }
+  }
+
+  /// 用系统浏览器打开链接（关于页的项目地址）。
+  Future<bool> openUrl(String url) async {
+    try {
+      return await _channel.invokeMethod<bool>('openUrl', {'url': url}) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ---------------- WebUI 访问密钥（APatch 式：用户自己设）----------------
 
   /// 设备上是否已设访问密钥（决定 WebUI 现在能不能用）。

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/autostart_service.dart';
+import '../services/app_prefs.dart';
+import '../i18n/app_strings.dart';
 import '../services/iwphone_service.dart';
 import '../services/storage_permission_service.dart';
 import '../theme/app_theme.dart';
@@ -22,19 +24,16 @@ import 'terminal_screen.dart';
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({
     super.key,
-    required this.darkTheme,
     required this.autoStart,
     required this.hideApp,
     required this.biometricLock,
     required this.storageStatus,
-    required this.onDarkThemeChanged,
     required this.onAutoStartChanged,
     required this.onHideAppChanged,
     required this.onBiometricLockChanged,
     required this.onRequestStorage,
   });
 
-  final bool darkTheme;
   final bool autoStart;
   final bool hideApp;
   final bool biometricLock;
@@ -42,13 +41,86 @@ class SettingsScreen extends StatelessWidget {
   /// 存储权限（「所有文件访问」）当前状态。
   final StoragePermissionStatus storageStatus;
 
-  final ValueChanged<bool> onDarkThemeChanged;
   final ValueChanged<bool> onAutoStartChanged;
   final ValueChanged<bool> onHideAppChanged;
   final ValueChanged<bool> onBiometricLockChanged;
 
   /// 点击「授权」时回调，由宿主层发起系统授权流程。
   final VoidCallback onRequestStorage;
+
+  /// 弹出选择器（主题 / 语言共用）。
+  ///
+  /// 刻意不用 Radio 列表铺在设置页里 —— 设置项一多，三选一的展开会占掉半屏。
+  Future<void> _pickOption(
+    BuildContext context, {
+    required String title,
+    required String current,
+    required List<({String value, String label})> options,
+    required Future<void> Function(String value) onPick,
+  }) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Text(title, style: AppText.cardTitle),
+            ),
+            for (final o in options)
+              InkWell(
+                onTap: () => Navigator.of(ctx).pop(o.value),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(o.label, style: AppText.rowLabel),
+                      ),
+                      if (o.value == current)
+                        Icon(Icons.check, size: 18, color: AppColors.accent),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+    if (picked != null && picked != current) {
+      await onPick(picked);
+    }
+  }
+
+  String _themeLabel(String mode) => switch (mode) {
+        'light' => AppStrings.t('settings.themeLight'),
+        'dark' => AppStrings.t('settings.themeDark'),
+        _ => AppStrings.t('settings.themeSystem'),
+      };
+
+  String _localeLabel(String mode) => switch (mode) {
+        'zh' => AppStrings.t('settings.languageZh'),
+        'en' => AppStrings.t('settings.languageEn'),
+        _ => AppStrings.t('settings.languageSystem'),
+      };
+
+  Future<void> _openProjectPage(BuildContext context) async {
+    final url = AppStrings.t('about.github');
+    final ok = await AutostartService.instance.openUrl(url);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${AppStrings.t('settings.linkFailed')}\n$url')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,12 +131,43 @@ class SettingsScreen extends StatelessWidget {
         children: [
           const ScreenAppBar(title: '设置'),
           const SizedBox(height: 16),
-          // 常规
+          // 外观：主题 + 语言
+          //
+          // 主题支持「跟随系统」—— 系统切深色时 App 跟着切，
+          // 这是现在的默认值，也是多数人期望的行为。
           _SettingsSection(
-            title: '常规',
+            title: AppStrings.t('settings.section.appearance'),
             children: [
-              _ToggleRow(label: '深色主题', value: darkTheme, onChanged: onDarkThemeChanged),
-              _ValueRow(label: '语言', value: '简体中文'),
+              _NavRow(
+                label: AppStrings.t('settings.theme'),
+                hint: _themeLabel(AppPrefs.instance.themeMode),
+                onTap: () => _pickOption(
+                  context,
+                  title: AppStrings.t('settings.theme'),
+                  current: AppPrefs.instance.themeMode,
+                  options: [
+                    (value: 'system', label: AppStrings.t('settings.themeSystem')),
+                    (value: 'light', label: AppStrings.t('settings.themeLight')),
+                    (value: 'dark', label: AppStrings.t('settings.themeDark')),
+                  ],
+                  onPick: (v) => AppPrefs.instance.setThemeMode(v),
+                ),
+              ),
+              _NavRow(
+                label: AppStrings.t('settings.language'),
+                hint: _localeLabel(AppPrefs.instance.locale),
+                onTap: () => _pickOption(
+                  context,
+                  title: AppStrings.t('settings.language'),
+                  current: AppPrefs.instance.locale,
+                  options: [
+                    (value: 'system', label: AppStrings.t('settings.languageSystem')),
+                    (value: 'zh', label: AppStrings.t('settings.languageZh')),
+                    (value: 'en', label: AppStrings.t('settings.languageEn')),
+                  ],
+                  onPick: (v) => AppPrefs.instance.setLocale(v),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -169,18 +272,31 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 16),
           // 关于
           _SettingsSection(
-            title: '关于',
-            children: const [
-              _ValueRow(label: '版本', value: '1.2.3', mono: true),
-              _ValueRow(label: '源代码', value: 'github.com/shell-mgr', mono: true),
-              _ValueRow(label: '更新通道', value: '稳定版'),
+            title: AppStrings.t('settings.section.about'),
+            children: [
+              _ValueRow(
+                label: AppStrings.t('settings.version'),
+                value: '1.2.3',
+                mono: true,
+              ),
+              _NavRow(
+                label: AppStrings.t('settings.projectHome'),
+                hint: 'haothtrteen/IwphoneModules',
+                onTap: () => _openProjectPage(context),
+              ),
+              _ValueRow(label: AppStrings.t('settings.author'), value: 'haothtrteen'),
+              _ValueRow(
+                label: 'License',
+                value: AppStrings.t('about.license'),
+                mono: true,
+              ),
             ],
           ),
           const SizedBox(height: 16),
           // 页脚
-          const Text('Shell Manager v1.2.3', style: AppText.footer, textAlign: TextAlign.center),
+          Text('Shell Manager v1.2.3', style: AppText.footer, textAlign: TextAlign.center),
           const SizedBox(height: 16),
-          const Text('Powered by Flutter', style: AppText.footerSub, textAlign: TextAlign.center),
+          Text('Powered by Flutter', style: AppText.footerSub, textAlign: TextAlign.center),
         ],
       ),
     );
@@ -345,7 +461,7 @@ class _PermissionRow extends StatelessWidget {
             ),
             if (_editable) ...[
               const SizedBox(width: 4),
-              const Icon(
+              Icon(
                 Icons.chevron_right,
                 size: 18,
                 color: AppColors.textSecondary,
@@ -400,7 +516,7 @@ class _NavRow extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right,
+            Icon(Icons.chevron_right,
                 size: 20, color: AppColors.textSecondary),
           ],
         ),

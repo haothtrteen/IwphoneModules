@@ -153,7 +153,7 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
                   const Expanded(child: ScreenAppBar(title: '安装模块')),
                   IconButton(
                     onPressed: _loading || _installing ? null : _load,
-                    icon: const Icon(Icons.refresh,
+                    icon: Icon(Icons.refresh,
                         size: 20, color: AppColors.textSecondary),
                     tooltip: '刷新',
                   ),
@@ -193,7 +193,7 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
                             const SizedBox(height: 8),
                           ],
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           '· 支持两种格式：iwphone 原生包（main.sh + iwphone.prop）与\n'
                           '  Magisk / KernelSU / AxManager 式模块（module.prop + service.sh），\n'
                           '  安装时自动识别并适配。\n'
@@ -239,11 +239,11 @@ class _ImportCard extends StatelessWidget {
               color: AppColors.accent.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.file_upload_outlined,
+            child: Icon(Icons.file_upload_outlined,
                 size: 20, color: AppColors.accent),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

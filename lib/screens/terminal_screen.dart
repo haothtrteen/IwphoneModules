@@ -109,10 +109,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
               decoration: InputDecoration(
                 hintText: '/sdcard/Android/data/…',
                 hintStyle: AppText.desc12,
-                enabledBorder: const UnderlineInputBorder(
+                enabledBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: AppColors.divider),
                 ),
-                focusedBorder: const UnderlineInputBorder(
+                focusedBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: AppColors.accent),
                 ),
               ),
@@ -178,7 +178,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.warning_amber_rounded,
+                Icon(Icons.warning_amber_rounded,
                     size: 16, color: AppColors.iconOrange),
                 const SizedBox(width: 6),
                 Expanded(

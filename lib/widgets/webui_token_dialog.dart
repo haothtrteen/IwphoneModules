@@ -83,7 +83,7 @@ class _TokenDialogState extends State<_TokenDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               '框架的 WebUI 上挂着 shell 权限接口，而它监听在本机回环口 —— '
               '同设备上任何应用都能访问，所以必须用一把密钥挡住它们。\n\n'
               '密钥由你自己想（至少 8 位）。设好之后：\n'
