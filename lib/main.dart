@@ -137,8 +137,6 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
 
   /// 「开机自启」真实状态 —— 由原生侧持久化，这里只是镜像。
   bool _autoStart = false;
-  bool _hideApp = false;
-  bool _biometricLock = true;
 
   // 存储权限状态（读取 /sdcard/iwphone/ 状态镜像所需）
   StoragePermissionStatus _storageStatus = StoragePermissionStatus.denied;
@@ -225,12 +223,8 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
                   LogsScreen(reloadToken: _logsReloadToken),
                   SettingsScreen(
                     autoStart: _autoStart,
-                    hideApp: _hideApp,
-                    biometricLock: _biometricLock,
                     storageStatus: _storageStatus,
                     onAutoStartChanged: _setAutostart,
-                    onHideAppChanged: (v) => setState(() => _hideApp = v),
-                    onBiometricLockChanged: (v) => setState(() => _biometricLock = v),
                     onRequestStorage: _requestStorage,
                   ),
                 ],

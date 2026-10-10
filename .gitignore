@@ -29,6 +29,11 @@ android/captures/
 # 生成方式见 framework/README.md
 framework/webui/runtime/
 
+# ---- 本地备份（别提交，改动前的手工备份）----
+*.bak
+*.bak_*
+*.bak-*
+
 # ---- 其他 ----
 *.log
 .flutter_tool_state
