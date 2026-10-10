@@ -129,7 +129,7 @@ class SettingsScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const ScreenAppBar(title: '设置'),
+          ScreenAppBar(title: AppStrings.t('settings.title')),
           const SizedBox(height: 16),
           // 外观：主题 + 语言
           //
@@ -176,28 +176,28 @@ class SettingsScreen extends StatelessWidget {
             title: 'Shell',
             children: [
               _ToggleRow(
-                label: '开机自启',
+                label: AppStrings.t('settings.autostart'),
                 value: autoStart,
                 onChanged: (v) => _toggleAutostart(context, v, onAutoStartChanged),
               ),
               _NavRow(
-                label: '开机自启设置',
-                hint: '配对设备、固定端口、查看上次执行结果',
+                label: AppStrings.t('settings.autostartSettings'),
+                hint: AppStrings.t('settings.autostartHint'),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const AutostartScreen()),
                 ),
               ),
-              _ValueRow(label: '挂载命名空间', value: '全局'),
+              _ValueRow(label: AppStrings.t('settings.mountNs'), value: AppStrings.t('settings.mountNsValue')),
             ],
           ),
           const SizedBox(height: 16),
           // 框架
           _SettingsSection(
-            title: '框架',
+            title: AppStrings.t('settings.section.framework'),
             children: [
               _NavRow(
-                label: '框架配置',
-                hint: '轮询间隔 / 超时 / 沙箱 / 访问令牌',
+                label: AppStrings.t('settings.frameworkConfig'),
+                hint: AppStrings.t('settings.frameworkConfigHint'),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const ConfigScreen(reloadToken: 0),
@@ -205,22 +205,22 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               _NavRow(
-                label: '内置终端',
-                hint: '执行 shell 命令、反查文件归属',
+                label: AppStrings.t('settings.terminal'),
+                hint: AppStrings.t('settings.terminalHint'),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const TerminalScreen()),
                 ),
               ),
               _NavRow(
-                label: '资源占用',
-                hint: '各模块占用的系统资源与冲突记录',
+                label: AppStrings.t('settings.resources'),
+                hint: AppStrings.t('settings.resourcesHint'),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ResourcesScreen()),
                 ),
               ),
               _NavRow(
-                label: '访问密钥',
-                hint: '框架 shell 接口的密钥，可修改',
+                label: AppStrings.t('settings.webuiToken'),
+                hint: AppStrings.t('settings.webuiTokenHint'),
                 onTap: () async {
                   final cur = await WebuiTokenManager.instance.localToken();
                   if (!context.mounted) return;
@@ -234,15 +234,15 @@ class SettingsScreen extends StatelessWidget {
                 },
               ),
               _NavRow(
-                label: '历史快照',
-                hint: '各模块改动过的设置原值，可一键还原',
+                label: AppStrings.t('settings.snapshots'),
+                hint: AppStrings.t('settings.snapshotsHint'),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const SnapshotScreen()),
                 ),
               ),
               _NavRow(
-                label: '卸载框架',
-                hint: '删除全部模块、锁与日志（源文件保留）',
+                label: AppStrings.t('settings.uninstallFramework'),
+                hint: AppStrings.t('settings.uninstallFrameworkHint'),
                 danger: true,
                 onTap: () => confirmFrameworkUninstall(context),
               ),
@@ -251,10 +251,10 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 16),
           // 权限
           _SettingsSection(
-            title: '权限',
+            title: AppStrings.t('settings.section.permissions'),
             children: [
               _PermissionRow(
-                label: '所有文件访问',
+                label: AppStrings.t('settings.storageAllFiles'),
                 status: storageStatus,
                 onRequest: onRequestStorage,
               ),
@@ -263,10 +263,10 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 16),
           // 安全
           _SettingsSection(
-            title: '安全',
+            title: AppStrings.t('settings.section.security'),
             children: [
-              _ToggleRow(label: '隐藏应用', value: hideApp, onChanged: onHideAppChanged),
-              _ToggleRow(label: '生物识别锁', value: biometricLock, onChanged: onBiometricLockChanged),
+              _ToggleRow(label: AppStrings.t('settings.hideApp'), value: hideApp, onChanged: onHideAppChanged),
+              _ToggleRow(label: AppStrings.t('settings.biometric'), value: biometricLock, onChanged: onBiometricLockChanged),
             ],
           ),
           const SizedBox(height: 16),
@@ -532,7 +532,7 @@ class _NavRow extends StatelessWidget {
 Future<void> confirmFrameworkUninstall(BuildContext context) async {
   final ok = await showConfirmDialog(
     context,
-    title: '卸载 iwphone 框架',
+    title: AppStrings.t('settings.uninstallTitle'),
     message: '⚠️ 最高危操作，不可撤销。\n\n'
         '将删除：\n'
         '· 运行时目录（全部已装模块、锁、触发文件）\n'
