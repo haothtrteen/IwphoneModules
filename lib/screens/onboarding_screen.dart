@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../i18n/app_strings.dart';
 import '../services/app_prefs.dart';
+import '../services/autostart_service.dart';
+import '../services/storage_permission_service.dart';
+import '../services/webui_token.dart';
 import '../theme/app_theme.dart';
+import '../widgets/webui_token_dialog.dart';
 
-/// 首次启动引导。
+/// 首次启动引导 —— 三页：这是什么 → 风险告知 → **首次激活**。
 ///
-/// 三页：这是什么 → 怎么开始 → 风险告知。
-/// 讲完风险再让用户进主界面 —— 这个项目要拿 ADB 权限做系统级操作，
-/// 一上来就进主界面、事后在设置里藏一段免责声明，是不负责任的。
+/// 第三页不是「讲一遍步骤」，而是一张**活清单**：逐项显示当前状态并直接就地完成
+/// （申请权限 / 发起配对 / 部署框架 / 设置访问密钥）。
+/// 之前只把步骤写出来、点一下就直接进主界面，等于把用户丢进一个还不能用的 App。
 ///
-/// 只展示一次，完成状态存在原生 SharedPreferences（`AppPrefs.onboardingDone`）。
+/// 清单不强制做完 —— 但每项都标出状态，用户自己决定现在做还是稍后在「设置」里做。
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -51,7 +55,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // 顶部：跳过（最后一页不显示）
+            // 顶部：跳过（最后一页不显示，那时按钮本身就是「完成」）
             SizedBox(
               height: 44,
               child: last
@@ -74,12 +78,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 onPageChanged: (i) => setState(() => _page = i),
                 children: const [
                   _WelcomePage(),
-                  _StepsPage(),
                   _RiskPage(),
+                  _ActivatePage(),
                 ],
               ),
             ),
-            // 指示点
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -110,7 +113,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
                   child: Text(
-                    last ? AppStrings.t('onboarding.agree') : AppStrings.t('common.next'),
+                    last
+                        ? AppStrings.t('onboarding.enter')
+                        : AppStrings.t('common.next'),
                     style: AppText.rowLabel.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
@@ -185,58 +190,7 @@ class _Bullet extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              text,
-              style: AppText.body13.copyWith(height: 1.45),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 一页：步骤条目（编号 + 标题 + 说明）。
-class _Step extends StatelessWidget {
-  const _Step({
-    required this.index,
-    required this.title,
-    required this.desc,
-  });
-
-  final int index;
-  final String title;
-  final String desc;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: AppColors.divider),
-            ),
-            child: Text('$index',
-                style: AppText.desc12.copyWith(color: AppColors.accent)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: AppText.rowLabel),
-                const SizedBox(height: 4),
-                Text(desc, style: AppText.desc12.copyWith(height: 1.45)),
-              ],
-            ),
+            child: Text(text, style: AppText.body13.copyWith(height: 1.45)),
           ),
         ],
       ),
@@ -261,40 +215,6 @@ class _WelcomePage extends StatelessWidget {
         _Bullet(text: AppStrings.t('onboarding.welcomePoint1')),
         _Bullet(text: AppStrings.t('onboarding.welcomePoint2')),
         _Bullet(text: AppStrings.t('onboarding.welcomePoint3')),
-      ],
-    );
-  }
-}
-
-class _StepsPage extends StatelessWidget {
-  const _StepsPage();
-
-  @override
-  Widget build(BuildContext context) {
-    return _PageShell(
-      icon: Icons.rocket_launch_outlined,
-      title: AppStrings.t('onboarding.step2Title'),
-      children: [
-        Text(
-          AppStrings.t('onboarding.step2Desc'),
-          style: AppText.body13.copyWith(height: 1.5),
-        ),
-        const SizedBox(height: 18),
-        _Step(
-          index: 1,
-          title: AppStrings.t('onboarding.stepPair'),
-          desc: AppStrings.t('onboarding.stepPairDesc'),
-        ),
-        _Step(
-          index: 2,
-          title: AppStrings.t('onboarding.stepDeploy'),
-          desc: AppStrings.t('onboarding.stepDeployDesc'),
-        ),
-        _Step(
-          index: 3,
-          title: AppStrings.t('onboarding.stepToken'),
-          desc: AppStrings.t('onboarding.stepTokenDesc'),
-        ),
       ],
     );
   }
@@ -333,6 +253,294 @@ class _RiskPage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 首次激活清单页。
+///
+/// 每项都查真实状态（不是记住用户点过没有），所以从系统设置里授权完回来、
+/// 或者在别处部署过框架，这里刷新一下就会显示已完成。
+class _ActivatePage extends StatefulWidget {
+  const _ActivatePage();
+
+  @override
+  State<_ActivatePage> createState() => _ActivatePageState();
+}
+
+class _ActivatePageState extends State<_ActivatePage>
+    with WidgetsBindingObserver {
+  AutostartStatus? _status;
+  StoragePermissionStatus _storage = StoragePermissionStatus.denied;
+  bool _fwInstalled = false;
+  bool _tokenSet = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 去系统设置授权后回到 App 需要重新查一遍
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final st = await AutostartService.instance.status();
+    final storage = await StoragePermissionService.instance.status();
+    final fw = await AutostartService.instance.frameworkInstalled();
+    final token = await WebuiTokenManager.instance.isSetOnDevice();
+    if (!mounted) return;
+    setState(() {
+      _status = st;
+      _storage = storage;
+      _fwInstalled = fw;
+      _tokenSet = token;
+    });
+  }
+
+  void _toast(String text, {bool ok = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: ok ? null : AppColors.iconRed,
+      ),
+    );
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    await action();
+    await _refresh();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  /// 通知权限 —— 配对的前置条件。
+  Future<void> _askNotification() => _run(() async {
+        await AutostartService.instance.requestNotification();
+      });
+
+  Future<void> _askStorage() => _run(() async {
+        await StoragePermissionService.instance.request();
+      });
+
+  /// 配对：与「开机自启设置」页完全同一套流程（配对码在通知栏输入）。
+  Future<void> _pair() => _run(() async {
+        final st = _status;
+        if (st != null && !st.notifyGranted) {
+          await AutostartService.instance.requestNotification();
+          if (!mounted) return;
+          final again = await AutostartService.instance.status();
+          if (!mounted) return;
+          if (!again.notifyGranted) {
+            _toast(AppStrings.t('onboarding.notifyNeeded'), ok: false);
+            return;
+          }
+        }
+
+        var flow = await AutostartService.instance.startPairingFlow();
+        if (!mounted) return;
+        if (flow.needPermission) {
+          await AutostartService.instance.requestNotification();
+          flow = await AutostartService.instance.startPairingFlow();
+          if (!mounted) return;
+        }
+        if (!flow.ok) {
+          _toast(flow.msg, ok: false);
+          return;
+        }
+
+        final opened = await AutostartService.instance.openWirelessDebug();
+        if (!mounted) return;
+        _toast(opened
+            ? AppStrings.t('onboarding.pairSent')
+            : AppStrings.t('onboarding.pairSentManual'));
+      });
+
+  Future<void> _deploy() => _run(() async {
+        final r = await AutostartService.instance.deployFramework();
+        if (!mounted) return;
+        _toast(r.ok ? AppStrings.t('onboarding.deployOk') : '${AppStrings.t('onboarding.deployFail')}：${r.msg}',
+            ok: r.ok);
+      });
+
+  Future<void> _setToken() => _run(() async {
+        await showWebuiTokenDialog(context);
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    final notify = _status?.notifyGranted ?? false;
+    final paired = _status?.provisioned ?? false;
+    final storageOk = _storage == StoragePermissionStatus.granted ||
+        _storage == StoragePermissionStatus.notRequired;
+
+    return _PageShell(
+      icon: Icons.power_settings_new_rounded,
+      title: AppStrings.t('onboarding.activateTitle'),
+      children: [
+        Text(
+          AppStrings.t('onboarding.activateDesc'),
+          style: AppText.body13.copyWith(height: 1.5),
+        ),
+        const SizedBox(height: 16),
+        _CheckRow(
+          title: AppStrings.t('onboarding.permNotify'),
+          desc: AppStrings.t('onboarding.permNotifyDesc'),
+          done: notify,
+          busy: _busy,
+          onAction: _askNotification,
+        ),
+        _CheckRow(
+          title: AppStrings.t('onboarding.permStorage'),
+          desc: AppStrings.t('onboarding.permStorageDesc'),
+          done: storageOk,
+          busy: _busy,
+          optional: true,
+          onAction: _askStorage,
+        ),
+        _CheckRow(
+          title: AppStrings.t('onboarding.pair'),
+          desc: AppStrings.t('onboarding.pairDesc'),
+          done: paired,
+          busy: _busy,
+          onAction: _pair,
+        ),
+        _CheckRow(
+          title: AppStrings.t('onboarding.deploy'),
+          desc: AppStrings.t('onboarding.deployDesc'),
+          done: _fwInstalled,
+          busy: _busy,
+          onAction: _deploy,
+        ),
+        _CheckRow(
+          title: AppStrings.t('onboarding.token'),
+          desc: AppStrings.t('onboarding.tokenDesc'),
+          done: _tokenSet,
+          busy: _busy,
+          onAction: _setToken,
+        ),
+        const SizedBox(height: 4),
+        Center(
+          child: TextButton(
+            onPressed: _busy ? null : _refresh,
+            child: Text(
+              AppStrings.t('onboarding.refresh'),
+              style: AppText.desc12.copyWith(color: AppColors.textSecondary),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 清单一行：状态圆点 + 标题 + 说明 + 动作按钮。
+class _CheckRow extends StatelessWidget {
+  const _CheckRow({
+    required this.title,
+    required this.desc,
+    required this.done,
+    required this.busy,
+    required this.onAction,
+    this.optional = false,
+  });
+
+  final String title;
+  final String desc;
+  final bool done;
+  final bool busy;
+  final bool optional;
+  final Future<void> Function() onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: done ? AppColors.accent.withValues(alpha: 0.4) : AppColors.divider,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              done ? Icons.check_circle : Icons.radio_button_unchecked,
+              size: 17,
+              color: done ? AppColors.accent : AppColors.textInactive,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(child: Text(title, style: AppText.rowLabel)),
+                    if (optional) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '· ${AppStrings.t('onboarding.optional')}',
+                        style: AppText.desc12
+                            .copyWith(color: AppColors.textInactive),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(desc, style: AppText.desc12.copyWith(height: 1.4)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (done)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                AppStrings.t('onboarding.doneTag'),
+                style: AppText.desc12.copyWith(color: AppColors.accent),
+              ),
+            )
+          else
+            InkWell(
+              onTap: busy ? null : () => onAction(),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.accentDim,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  AppStrings.t('onboarding.action'),
+                  style: AppText.desc12.copyWith(
+                    color: busy ? AppColors.textInactive : AppColors.accent,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
