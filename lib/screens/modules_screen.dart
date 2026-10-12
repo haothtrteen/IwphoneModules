@@ -80,7 +80,9 @@ class IwphoneModuleItem {
   }
 }
 
-const List<Color> _iconPalette = [
+// ⚠ 不能是 const：调色板现在是运行时值（AppColors 是 getter，主题会切换），
+// const 会在编译期烘死深色值。顶层 final 是惰性初始化，够用。
+final List<Color> _iconPalette = [
   AppColors.iconPurple,
   AppColors.iconGreen,
   AppColors.iconOrange,
