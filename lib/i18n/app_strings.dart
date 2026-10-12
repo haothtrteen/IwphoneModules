@@ -87,6 +87,9 @@ abstract final class AppStrings {
       'onboarding.deploy': '部署框架',
       'onboarding.deployDesc': 'App 内置框架包，一键部署到设备',
       'onboarding.token': '设置访问密钥',
+      'onboarding.tokenOptionalDesc': '至少 8 位，用来挡住同设备其它应用（不设也能用，但回环口会开放）',
+      'onboarding.autostartDesc': '开机自动连上设备并拉起框架（可稍后在设置里开）',
+      'onboarding.pairFirst': '请先完成设备配对，再开启开机自启',
       'onboarding.tokenDesc': '至少 8 位，用来挡住同设备其它应用',
       'onboarding.action': '去完成',
       'onboarding.doneTag': '已完成',
@@ -180,8 +183,9 @@ abstract final class AppStrings {
       'home.deploy': '部署框架',
       'home.tokenCardTitle': '先设置访问密钥',
       'home.tokenCardDesc':
-          '框架的 shell 接口监听在本机回环口，需要一把密钥才能对外开放。'
-              '设好之前，模块列表 / 配置 / 日志都用不了。',
+          '框架的 shell 接口监听在本机回环口。设一把密钥可以挡住同设备其它应用；'
+              '不设也能正常用，只是接口处于开放状态。',
+      'home.tokenCardSkip': '暂不设置',
       'home.tokenCardAction': '去设置',
       'home.tokenSet': '访问密钥已生效，框架功能已解锁',
 
@@ -247,6 +251,9 @@ abstract final class AppStrings {
       'onboarding.deploy': 'Deploy framework',
       'onboarding.deployDesc': 'The framework ships in the app — one tap',
       'onboarding.token': 'Set access key',
+      'onboarding.tokenOptionalDesc': 'At least 8 chars to keep other apps out (optional — without it the loopback API stays open)',
+      'onboarding.autostartDesc': 'Auto-connect and start the framework on boot (can be enabled later in Settings)',
+      'onboarding.pairFirst': 'Please pair the device first, then enable autostart',
       'onboarding.tokenDesc': 'At least 8 chars, keeps other apps out',
       'onboarding.action': 'Do it',
       'onboarding.doneTag': 'Done',
@@ -341,8 +348,9 @@ abstract final class AppStrings {
       'home.deploy': 'Deploy',
       'home.tokenCardTitle': 'Set an access key first',
       'home.tokenCardDesc':
-          'The framework shell API listens on the loopback interface and needs a key '
-              'to stay closed to other apps. Until then, modules / config / logs are unavailable.',
+          'The framework shell API listens on the loopback interface. A key keeps other '
+              'apps out; without one it still works, just stays open.',
+      'home.tokenCardSkip': 'Skip',
       'home.tokenCardAction': 'Set now',
       'home.tokenSet': 'Access key active — framework unlocked',
 

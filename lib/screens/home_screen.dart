@@ -5,6 +5,7 @@ import '../services/iwphone_service.dart';
 import '../services/webui_token.dart';
 import '../services/system_info_service.dart';
 import '../theme/app_theme.dart';
+import '../services/app_prefs.dart';
 import '../i18n/app_strings.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/webui_token_dialog.dart';
@@ -124,9 +125,15 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const _HomeAppBar(),
-            if (_tokenSet == false) ...[
+            // 密钥是**可选**配置：没设也能正常用框架。
+            // 这里只做一次建议性提示，用户点「暂不设置」后不再打扰。
+            if (_tokenSet == false &&
+                !AppPrefs.instance.tokenPromptDismissed) ...[
               const SizedBox(height: 16),
-              _TokenSetupCard(onTap: _setToken),
+              _TokenSetupCard(
+                onSet: _setToken,
+                onSkip: () => AppPrefs.instance.dismissTokenPrompt(),
+              ),
             ],
             const SizedBox(height: 16),
             _FrameworkStatusCard(
@@ -617,9 +624,10 @@ class _SystemInfoCard extends StatelessWidget {
 /// 框架的 WebUI 上挂着 shell 权限接口且监听回环口，所以「没设密钥 = 全部拒绝」。
 /// 这张卡片就是那条唯一出路 —— 不做成隐晦的设置项，直接摆在主页。
 class _TokenSetupCard extends StatelessWidget {
-  const _TokenSetupCard({required this.onTap});
+  const _TokenSetupCard({required this.onSet, required this.onSkip});
 
-  final VoidCallback onTap;
+  final VoidCallback onSet;
+  final VoidCallback onSkip;
 
   @override
   Widget build(BuildContext context) {
@@ -651,8 +659,8 @@ class _TokenSetupCard extends StatelessWidget {
                 Text(AppStrings.t('home.tokenCardTitle'), style: AppText.rowLabel),
                 SizedBox(height: 3),
                 Text(
-                  '框架的 shell 接口监听在本机回环口，需要一把密钥才能对外开放。'
-                  '设好之前，模块列表 / 配置 / 日志都用不了。',
+                  AppStrings.t('home.tokenCardDesc'),
+
                   style: AppText.desc12,
                 ),
               ],
@@ -660,7 +668,18 @@ class _TokenSetupCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           InkWell(
-            onTap: onTap,
+            // 「暂不设置」：密钥是可选配置，不设框架照样跑
+            InkWell(
+              onTap: onSkip,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Text(AppStrings.t('home.tokenCardSkip'),
+                    style: AppText.desc12.copyWith(color: AppColors.textSecondary)),
+              ),
+            ),
+            const SizedBox(width: 4),
+            onTap: onSet,
             borderRadius: BorderRadius.circular(8),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

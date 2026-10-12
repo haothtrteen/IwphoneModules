@@ -76,6 +76,7 @@ WEBUI_TOKEN = CFG.get("WEBUI_TOKEN", "")
 # 服务端按 mtime 缓存 —— 改密钥不需要重启 WebUI，下个请求就生效。
 TOKEN_FILE = os.path.join(IWPHONE_ROOT, "state", "webui_token")
 _token_cache = {"mtime": None, "value": ""}
+_warned_no_token = set()   # 只警告一次，别把日志刷爆
 
 
 def current_token():
@@ -1798,10 +1799,18 @@ class Handler(BaseHTTPRequestHandler):
     def _auth(self):
         token = current_token()
         if not token:
-            # 还没设访问密钥 → 一律拒绝。
-            # 这里刻意不给"空即放行"的分支：WebUI 暴露着 /api/shell（shell 权限），
-            # 放行等于让同设备任何应用都能拿到 ADB 级权限。
-            return False
+            # 没设访问密钥 → 放行，但记一次警告。
+            #
+            # 这是产品决策（用户明确要求密钥可选）：没密钥时框架照样能用。
+            # 代价要说清楚 —— /api/shell 以 shell 权限执行命令且 WebUI 监听回环口，
+            # 此时**同设备任何有网络权限的应用都能调用它**。
+            # 用户后来在「设置 → 访问密钥」补上即可，不需要重新部署。
+            if not _warned_no_token:
+                _warned_no_token.add("warned")
+                self.log_message(
+                    "[WARN] 未设置访问密钥，WebUI 处于开放状态"
+                    "（同设备其它应用可调用 /api/shell）")
+            return True
         q = parse_qs(urlparse(self.path).query)
         if q.get("token", [""])[0] == token:
             return True

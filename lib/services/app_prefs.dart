@@ -21,6 +21,9 @@ class AppPrefs extends ChangeNotifier {
 
   bool onboardingDone = false;
 
+  /// 用户是否关掉了首页的「设置访问密钥」提示（密钥是可选配置）。
+  bool tokenPromptDismissed = false;
+
   /// 是否已从原生读过一次（未读完时不要渲染主界面，避免闪一下默认主题）。
   bool loaded = false;
 
@@ -29,6 +32,7 @@ class AppPrefs extends ChangeNotifier {
     themeMode = r.themeMode;
     locale = r.locale;
     onboardingDone = r.onboardingDone;
+    tokenPromptDismissed = r.tokenPromptDismissed;
     loaded = true;
     _applyLanguage();
     notifyListeners();
@@ -47,6 +51,14 @@ class AppPrefs extends ChangeNotifier {
     _applyLanguage();
     notifyListeners();
     await AutostartService.instance.saveUiPrefs(locale: value);
+  }
+
+  /// 关掉首页的密钥提示（用户明确表示暂不设置）。
+  Future<void> dismissTokenPrompt() async {
+    if (tokenPromptDismissed) return;
+    tokenPromptDismissed = true;
+    notifyListeners();
+    await AutostartService.instance.saveUiPrefs(tokenPromptDismissed: true);
   }
 
   Future<void> setOnboardingDone() async {

@@ -16,6 +16,7 @@ object UiPrefs {
     private const val KEY_THEME = "theme_mode"        // system | light | dark
     private const val KEY_LOCALE = "locale"           // system | zh | en
     private const val KEY_ONBOARDING = "onboarding_done"
+    private const val KEY_TOKEN_PROMPT = "token_prompt_dismissed"
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -37,9 +38,18 @@ object UiPrefs {
         sp(ctx).edit().putBoolean(KEY_ONBOARDING, value).apply()
     }
 
+    /** 用户是否点过「暂不设置」把首页的密钥提示关掉。 */
+    fun tokenPromptDismissed(ctx: Context): Boolean =
+        sp(ctx).getBoolean(KEY_TOKEN_PROMPT, false)
+
+    fun setTokenPromptDismissed(ctx: Context, value: Boolean) {
+        sp(ctx).edit().putBoolean(KEY_TOKEN_PROMPT, value).apply()
+    }
+
     fun snapshot(ctx: Context): Map<String, Any> = mapOf(
         "themeMode" to themeMode(ctx),
         "locale" to locale(ctx),
         "onboardingDone" to onboardingDone(ctx),
+        "tokenPromptDismissed" to tokenPromptDismissed(ctx),
     )
 }

@@ -125,6 +125,9 @@ class AutostartChannel(private val activity: FlutterActivity) {
                     call.argument<Boolean>("onboardingDone")?.let {
                         UiPrefs.setOnboardingDone(activity, it)
                     }
+                    call.argument<Boolean>("tokenPromptDismissed")?.let {
+                        UiPrefs.setTokenPromptDismissed(activity, it)
+                    }
                     result.success(UiPrefs.snapshot(activity))
                 }
 

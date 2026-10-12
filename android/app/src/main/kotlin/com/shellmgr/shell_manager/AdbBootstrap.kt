@@ -145,11 +145,42 @@ object AdbBootstrap {
      *
      * 幂等：已连接时 adb 返回 "already connected to …"，同样算成功。
      */
+    /**
+     * 确保与设备的连接**真的可用**。
+     *
+     * 曾经的坑：只看 `adb connect` 的返回文本判断成功，
+     * 而 adb 对「条目还在但实际已断」的 transport 会说 "already connected"，
+     * 于是判定成功，紧接着 push 就报
+     * `error: failed to get feature set: closed`。
+     *
+     * 现在先 `get-state` 探活：不是 device 就 disconnect + connect 重来，
+     * 连上后再确认一次。代价是多一条命令（几十毫秒），换来不会在半死的连接上操作。
+     */
     private fun ensureConnected(ctx: Context): Boolean {
-        val c = run(ctx, listOf("connect", TARGET), timeoutMs = 15_000)
-        val ok = c.message.contains("connected to", ignoreCase = true)
-        android.util.Log.d("AdbBootstrap", "ensureConnected: [${c.message.take(120)}] -> $ok")
-        return ok
+        // 1) 探活
+        if (transportAlive(ctx)) return true
+
+        // 2) 清掉 adb server 里的死条目再重连
+        run(ctx, listOf("disconnect", TARGET), timeoutMs = 10_000)
+        val c = run(ctx, listOf("connect", TARGET), timeoutMs = 20_000)
+        if (!c.message.contains("connected to", ignoreCase = true)) {
+            android.util.Log.d(
+                "AdbBootstrap",
+                "ensureConnected: connect 失败 [${c.message.take(140)}]",
+            )
+            return false
+        }
+
+        // 3) 连上后再确认一次，避免"连上了但没认证"
+        if (transportAlive(ctx)) return true
+        android.util.Log.d("AdbBootstrap", "ensureConnected: 连上但 get-state 仍异常")
+        return false
+    }
+
+    /** `adb -s <target> get-state` 是否返回 device。 */
+    private fun transportAlive(ctx: Context): Boolean {
+        val r = run(ctx, listOf("-s", TARGET, "get-state"), timeoutMs = 10_000)
+        return r.ok && r.message.trim().equals("device", ignoreCase = true)
     }
 
     fun isFrameworkInstalled(ctx: Context): Boolean {
@@ -225,8 +256,14 @@ object AdbBootstrap {
             return Result(false, "尚未配对：请先完成设备配对")
         }
         if (!ensureConnected(ctx)) {
-            return Result(false, "未连接到 127.0.0.1:$CONNECT_PORT")
+            return Result(false, "未连接到 127.0.0.1:$CONNECT_PORT（请在「开机自启设置」里重新配对）")
         }
+        // 刚部署完时 state/ 可能还没被框架建出来，push 到不存在的目录会失败
+        run(
+            ctx,
+            listOf("-s", TARGET, "shell", "mkdir -p ${'$'}IWPHONE_ROOT/state"),
+            timeoutMs = 10_000,
+        )
         val pushed = run(
             ctx,
             listOf("push", cachePath, WEBUI_TOKEN_FILE),
@@ -370,6 +407,7 @@ object AdbBootstrap {
         //   busybox 段用 `;` 收尾而非 `&&` —— 它只是兼容层的增强，失败不该让整个部署失败。
         val extractCmd = "mkdir -p $FW_ROOT_PARENT && " +
             "tar xzf $FW_TAR_ON_DEVICE -C $FW_ROOT_PARENT && " +
+            "mkdir -p $IWPHONE_ROOT/state $IWPHONE_ROOT/modsnap && " +
             "chmod -R 777 $FRAME_DIR && " +
             "if [ -x $FRAME_DIR/bin/busybox ]; then " +
             "cd $FRAME_DIR/bin && for a in \$(./busybox --list); do ln -sf busybox \"\$a\"; done; fi; " +

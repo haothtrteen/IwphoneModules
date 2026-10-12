@@ -8,10 +8,29 @@ import 'screens/onboarding_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/app_prefs.dart';
 import 'services/autostart_service.dart';
+import 'services/iwphone_service.dart';
 import 'services/storage_permission_service.dart';
 import 'services/webui_token.dart';
 import 'theme/app_theme.dart';
 import 'widgets/bottom_nav_bar.dart';
+
+/// 框架是否已在设备上运行（决定要不要走首次引导）。
+///
+/// 判定用两级：先看框架目录是否已部署（快，一条 adb），
+/// 已部署再看守护进程是否真活着（WebUI /api/status；
+/// WebUI 没起来时连接会被立刻拒绝，不会拖慢启动）。
+/// 任何一步拿不到结果都按「未激活」处理 —— 宁可多走一次引导，
+/// 也不要因为探测失败把用户卡在门外面。
+Future<bool> _probeFramework() async {
+  try {
+    final installed = await AutostartService.instance.frameworkInstalled();
+    if (!installed) return false;
+    final st = await IwphoneService.instance.getStatus();
+    return st.daemonRunning;
+  } catch (_) {
+    return false;
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +39,9 @@ void main() async {
   await WebuiTokenManager.instance.init();
   // 主题 / 语言 / 首次引导状态也要在首帧前就位，否则会先闪一下默认主题再跳变。
   await AppPrefs.instance.load();
+  // 探测框架是否已经活着：活着就别再打扰用户走引导
+  // （重装 App / 换设备但框架已部署过的场景）。
+  _frameworkActive = await _probeFramework();
   // 使用系统自带的状态栏与导航栏，不再自绘 StatusBar（避免与系统 UI 重复）。
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   runApp(const ShellManagerApp());
@@ -30,6 +52,9 @@ void main() async {
 /// 主题色与文案是全局状态（`AppColors` / `AppStrings`），
 /// 它们变了必须让所有页面重新 build —— 所以这里监听 [AppPrefs] 并 setState，
 /// 由框架重建整棵树，而不是在每个页面里各自订阅。
+/// 框架是否已在运行（[main] 里探测一次，之后不再变）。
+bool _frameworkActive = false;
+
 class ShellManagerApp extends StatefulWidget {
   const ShellManagerApp({super.key});
 
@@ -116,7 +141,10 @@ class _ShellManagerAppState extends State<ShellManagerApp>
           brightness: brightness,
         ).copyWith(surface: AppColors.surface),
       ),
-      home: AppPrefs.instance.onboardingDone
+      // 门禁：没走过引导 **且** 框架没在跑 → 才进引导页。
+      // 框架已在运行（比如重装 App、框架早先部署过）就直接进首页，
+      // 免得每次都逼用户重走一遍配对/部署。
+      home: (AppPrefs.instance.onboardingDone || _frameworkActive)
           ? const ShellManagerHomePage()
           : const OnboardingScreen(),
     );

@@ -6,7 +6,9 @@ import '../services/autostart_service.dart';
 import '../services/storage_permission_service.dart';
 import '../services/webui_token.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_switch.dart';
 import '../widgets/webui_token_dialog.dart';
+import 'autostart_screen.dart';
 
 /// 首次启动引导 —— 三页：这是什么 → 风险告知 → **首次激活**。
 ///
@@ -380,6 +382,26 @@ class _ActivatePageState extends State<_ActivatePage>
         await showWebuiTokenDialog(context);
       });
 
+  /// 开关「开机自启」。沿用设置页的同一套前置：没配对时先提示去配对。
+  Future<void> _setAutostart(bool value) async {
+    if (_busy) return;
+    if (value && !(_status?.provisioned ?? false)) {
+      _toast(AppStrings.t('onboarding.pairFirst'), ok: false);
+      return;
+    }
+    setState(() => _busy = true);
+    await AutostartService.instance.setEnabled(value);
+    await _refresh();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  /// 去「开机自启设置」页看详情（上次执行结果等）。
+  void _openAutostartSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AutostartScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final notify = _status?.notifyGranted ?? false;
@@ -418,6 +440,36 @@ class _ActivatePageState extends State<_ActivatePage>
           busy: _busy,
           onAction: _pair,
         ),
+        // 开机自启：原来只在设置页，合并到这里 —— 激活流程本来就要配它
+        _CheckRow(
+          title: AppStrings.t('settings.autostart'),
+          desc: AppStrings.t('onboarding.autostartDesc'),
+          done: _status?.enabled ?? false,
+          busy: _busy,
+          onAction: () async {},
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppSwitch(
+                value: _status?.enabled ?? false,
+                onChanged: (v) => _setAutostart(v),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: _busy ? null : _openAutostartSettings,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  child: Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: _busy ? AppColors.textInactive : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         _CheckRow(
           title: AppStrings.t('onboarding.deploy'),
           desc: AppStrings.t('onboarding.deployDesc'),
@@ -427,9 +479,10 @@ class _ActivatePageState extends State<_ActivatePage>
         ),
         _CheckRow(
           title: AppStrings.t('onboarding.token'),
-          desc: AppStrings.t('onboarding.tokenDesc'),
+          desc: AppStrings.t('onboarding.tokenOptionalDesc'),
           done: _tokenSet,
           busy: _busy,
+          optional: true,
           onAction: _setToken,
         ),
         const SizedBox(height: 4),
@@ -456,6 +509,7 @@ class _CheckRow extends StatelessWidget {
     required this.busy,
     required this.onAction,
     this.optional = false,
+    this.trailing,
   });
 
   final String title;
@@ -464,6 +518,10 @@ class _CheckRow extends StatelessWidget {
   final bool busy;
   final bool optional;
   final Future<void> Function() onAction;
+
+  /// 传了就替换右侧的动作按钮/已完成文字（用于「开机自启」这种
+  /// 既要看状态又要直接操作的项）。
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -512,7 +570,9 @@ class _CheckRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          if (done)
+          if (trailing != null)
+            trailing!
+          else if (done)
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
