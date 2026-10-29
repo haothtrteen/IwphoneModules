@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../services/webui_token.dart';
 import '../theme/app_theme.dart';
 
@@ -76,7 +77,10 @@ class _TokenDialogState extends State<_TokenDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: AppColors.surface,
-      title: Text(_isFirstTime ? '设置访问密钥' : '修改访问密钥',
+      title: Text(
+          _isFirstTime
+              ? AppStrings.t('webuiToken.titleSet')
+              : AppStrings.t('webuiToken.titleChange'),
           style: AppText.cardTitle),
       content: SingleChildScrollView(
         child: Column(
@@ -84,12 +88,7 @@ class _TokenDialogState extends State<_TokenDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '框架的 WebUI 上挂着 shell 权限接口，而它监听在本机回环口 —— '
-              '同设备上任何应用都能访问，所以必须用一把密钥挡住它们。\n\n'
-              '密钥由你自己想（至少 8 位）。设好之后：\n'
-              '· App 会自动带着它访问框架\n'
-              '· 想在浏览器里看 WebUI，用它拼地址即可\n\n'
-              '密钥只存在你自己的手机里（框架侧文件权限 600）。',
+              AppStrings.t('webuiToken.desc'),
               style: AppText.desc12,
             ),
             const SizedBox(height: 14),
@@ -100,7 +99,7 @@ class _TokenDialogState extends State<_TokenDialog> {
               autofocus: _isFirstTime,
               style: AppText.value14,
               decoration: InputDecoration(
-                labelText: '访问密钥',
+                labelText: AppStrings.t('webuiToken.label'),
                 labelStyle: AppText.desc12,
                 errorText: _error,
                 suffixIcon: IconButton(
@@ -120,14 +119,16 @@ class _TokenDialogState extends State<_TokenDialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.of(context).pop(false),
-          child: Text('取消',
+          child: Text(AppStrings.t('common.cancel'),
               style: AppText.rowLabel
                   .copyWith(color: AppColors.textSecondary)),
         ),
         TextButton(
           onPressed: _busy ? null : _submit,
           child: Text(
-            _busy ? '设置中…' : '确定',
+            _busy
+                ? AppStrings.t('webuiToken.setting')
+                : AppStrings.t('common.confirm'),
             style: AppText.rowLabel.copyWith(
               color: _busy ? AppColors.textInactive : AppColors.accent,
             ),

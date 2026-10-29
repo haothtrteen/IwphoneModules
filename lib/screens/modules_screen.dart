@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
@@ -58,10 +59,10 @@ class IwphoneModuleItem {
   }
 
   String get stateLabel => running
-      ? '运行中 (PID ${module.pid ?? '?'})'
+      ? '${AppStrings.t('modules.running')} (PID ${module.pid ?? '?'})'
       : hasMain
-          ? '已安装'
-          : '资源模块';
+          ? AppStrings.t('modules.installed')
+          : AppStrings.t('modules.resourceModule');
 
   /// 是否存在资源冲突（与其他模块声明了同一资源）。
   bool get hasConflict => module.hasConflict;
@@ -75,8 +76,9 @@ class IwphoneModuleItem {
   /// 冲突提示文本。
   String get conflictLabel {
     if (!hasConflict) return '';
-    final who = blockedBy.join('、');
-    return '资源冲突：与 $who 重复';
+    final who = blockedBy.join(AppStrings.t('modules.conflictSeparator'));
+    return '${AppStrings.t('modules.conflictPrefix')}$who'
+        '${AppStrings.t('modules.conflictSuffix')}';
   }
 }
 
@@ -209,8 +211,8 @@ class _ModulesScreenState extends State<ModulesScreen> {
         SnackBar(
           content: Text(
             wantRun
-                ? '启动失败：WebUI 未运行或网络受限'
-                : '停止失败：WebUI 未运行或网络受限',
+                ? AppStrings.t('modules.startFailed')
+                : AppStrings.t('modules.stopFailed'),
           ),
         ),
       );
@@ -238,13 +240,17 @@ class _ModulesScreenState extends State<ModulesScreen> {
   }) async {
     final ok = await showConfirmDialog(
       context,
-      title: isReinstall ? '重装模块' : '安装模块',
+      title: isReinstall
+          ? AppStrings.t('modules.reinstallTitle')
+          : AppStrings.t('modules.installTitle'),
       message: isReinstall
-          ? '将用模块包覆盖已安装的「${pkg.name}」。\n\n'
-              '模块目录会被重新解压覆盖，若你手动改过其中文件，改动将丢失。\n\n确定要重装吗？'
-          : '将把「${pkg.name}」安装到框架。\n\n'
-              '安装后可在本页启动它。\n\n确定要安装吗？',
-      confirmText: isReinstall ? '重装' : '安装',
+          ? '${AppStrings.t('modules.reinstallConfirmPrefix')}${pkg.name}'
+              '${AppStrings.t('modules.reinstallConfirmSuffix')}'
+          : '${AppStrings.t('modules.installConfirmPrefix')}${pkg.name}'
+              '${AppStrings.t('modules.installConfirmSuffix')}',
+      confirmText: isReinstall
+          ? AppStrings.t('modules.reinstall')
+          : AppStrings.t('modules.install'),
       danger: isReinstall,
     );
     if (!ok || !mounted) return;
@@ -261,8 +267,12 @@ class _ModulesScreenState extends State<ModulesScreen> {
       SnackBar(
         content: Text(
           success
-              ? (isReinstall ? '已重装：${pkg.name}' : '已安装：${pkg.name}')
-              : '操作失败：WebUI 不可达，或模块包不完整',
+              ? (isReinstall
+                  ? '${AppStrings.t('modules.reinstalledToastPrefix')}'
+                      '${pkg.name}'
+                  : '${AppStrings.t('modules.installedToastPrefix')}'
+                      '${pkg.name}')
+              : AppStrings.t('modules.installFailed'),
         ),
       ),
     );
@@ -300,13 +310,15 @@ class _ModulesScreenState extends State<ModulesScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${item.name} · 动作输出',
+            Text('${item.name}${AppStrings.t('modules.actionOutputSuffix')}',
                 style: AppText.cardTitle),
             const SizedBox(height: 12),
             Flexible(
               child: SingleChildScrollView(
                 child: Text(
-                  res.msg.isEmpty ? '(无输出)' : res.msg,
+                  res.msg.isEmpty
+                      ? AppStrings.t('modules.noOutput')
+                      : res.msg,
                   style: AppText.monoValue14.copyWith(fontSize: 12),
                 ),
               ),
@@ -360,7 +372,12 @@ class _ModulesScreenState extends State<ModulesScreen> {
     IwphoneService.instance.invalidate();
     await _load();
     if (!mounted) return;
-    _toast(res.ok ? res.msg : '还原失败：${res.msg}', ok: res.ok);
+    _toast(
+      res.ok
+          ? res.msg
+          : '${AppStrings.t('modules.restoreFailedPrefix')}${res.msg}',
+      ok: res.ok,
+    );
   }
 
   Future<void> _showModuleActions(IwphoneModuleItem item) async {
@@ -399,21 +416,19 @@ class _ModulesScreenState extends State<ModulesScreen> {
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setLocal) => AlertDialog(
             backgroundColor: AppColors.surface,
-            title: Text('卸载模块', style: AppText.cardTitle),
+            title: Text(AppStrings.t('modules.uninstallTitle'),
+                style: AppText.cardTitle),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '将卸载「${item.name}」。\n\n'
-                    '该操作会：\n'
-                    '· 停止此模块（若正在运行）\n'
-                    '· 删除模块目录 ${item.id}/\n'
-                    '· 清理它的锁、触发文件与日志\n\n'
-                    '这个模块改过系统设置（有写前快照）。建议同时还原，'
-                    '否则改动会留在系统里；快照会保留，之后也能在'
-                    '「设置 → 历史快照」里补还原。',
+                    '${AppStrings.t('modules.uninstallIntroPrefix')}'
+                    '${item.name}'
+                    '${AppStrings.t('modules.uninstallIntroSuffix')}'
+                    '${item.id}/'
+                    '${AppStrings.t('modules.uninstallRestoreSuffix')}',
                     style: AppText.body13,
                   ),
                   CheckboxListTile(
@@ -422,9 +437,12 @@ class _ModulesScreenState extends State<ModulesScreen> {
                     contentPadding: EdgeInsets.zero,
                     controlAffinity: ListTileControlAffinity.leading,
                     dense: true,
-                    title: Text('同时还原系统设置', style: AppText.rowLabel),
-                    subtitle:
-                        Text('先停模块再还原，然后卸载', style: AppText.desc12),
+                    title: Text(AppStrings.t('modules.restoreSettingsToo'),
+                        style: AppText.rowLabel),
+                    subtitle: Text(
+                      AppStrings.t('modules.restoreSettingsTooHint'),
+                      style: AppText.desc12,
+                    ),
                   ),
                 ],
               ),
@@ -432,13 +450,13 @@ class _ModulesScreenState extends State<ModulesScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text('取消',
+                child: Text(AppStrings.t('common.cancel'),
                     style: AppText.rowLabel
                         .copyWith(color: AppColors.textSecondary)),
               ),
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text('卸载',
+                child: Text(AppStrings.t('modules.uninstall'),
                     style:
                         AppText.rowLabel.copyWith(color: AppColors.iconRed)),
               ),
@@ -450,14 +468,13 @@ class _ModulesScreenState extends State<ModulesScreen> {
     } else {
       final ok = await showConfirmDialog(
         context,
-        title: '卸载模块',
-        message: '将卸载「${item.name}」。\n\n'
-            '该操作会：\n'
-            '· 停止此模块（若正在运行）\n'
-            '· 删除模块目录 ${item.id}/\n'
-            '· 清理它的锁、触发文件与日志\n\n'
-            '卸载后需重新安装才能恢复。确定要卸载吗？',
-        confirmText: '卸载',
+        title: AppStrings.t('modules.uninstallTitle'),
+        message: '${AppStrings.t('modules.uninstallIntroPrefix')}'
+            '${item.name}'
+            '${AppStrings.t('modules.uninstallIntroSuffix')}'
+            '${item.id}/'
+            '${AppStrings.t('modules.uninstallConfirmSuffix')}',
+        confirmText: AppStrings.t('modules.uninstall'),
       );
       if (ok != true || !mounted) return;
     }
@@ -470,8 +487,9 @@ class _ModulesScreenState extends State<ModulesScreen> {
     if (alsoRestore) {
       final r = await IwphoneService.instance.restoreModuleSnapshot(item.id);
       restored = r.ok
-          ? '已还原系统设置。'
-          : '还原未成功（${r.msg}）—— 快照已保留，可在「设置 → 历史快照」重试。';
+          ? AppStrings.t('modules.restoredSettings')
+          : '${AppStrings.t('modules.snapshotRestoreFailedPrefix')}${r.msg}'
+              '${AppStrings.t('modules.snapshotRestoreFailedSuffix')}';
     }
 
     final success = await IwphoneService.instance.moduleUninstall(item.id);
@@ -483,8 +501,9 @@ class _ModulesScreenState extends State<ModulesScreen> {
 
     _toast(
       success
-          ? '已卸载：${item.name}${restored.isEmpty ? '' : ' · ' + restored}'
-          : '卸载失败：WebUI 不可达，或模块已不存在',
+          ? '${AppStrings.t('modules.uninstalledToastPrefix')}${item.name}'
+              '${restored.isEmpty ? '' : ' · ' + restored}'
+          : AppStrings.t('modules.uninstallFailed'),
       ok: success,
     );
   }
@@ -513,7 +532,13 @@ class _ModulesScreenState extends State<ModulesScreen> {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(res.ok ? res.message : '操作失败：${res.message}')),
+      SnackBar(
+        content: Text(
+          res.ok
+              ? res.message
+              : '${AppStrings.t('modules.actionFailedPrefix')}${res.message}',
+        ),
+      ),
     );
   }
 
@@ -522,18 +547,22 @@ class _ModulesScreenState extends State<ModulesScreen> {
     final targets = _items.where((e) => e.hasMain && !e.running).toList();
     if (targets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有已停止、可启动的模块')),
+        SnackBar(
+          content: Text(AppStrings.t('modules.noStartableModules')),
+        ),
       );
       return;
     }
 
     final ok = await showConfirmDialog(
       context,
-      title: '启动全部模块',
-      message: '将启动 ${targets.length} 个已停止的模块：\n\n'
+      title: AppStrings.t('modules.startAllTitle'),
+      message:
+          '${AppStrings.t('modules.startAllConfirmPrefix')}${targets.length}'
+          '${AppStrings.t('modules.startAllConfirmMiddle')}'
           '${targets.map((e) => '· ${e.name}').join('\n')}\n\n'
-          '确定要启动吗？',
-      confirmText: '全部启动',
+          '${AppStrings.t('modules.startAllConfirmSuffix')}',
+      confirmText: AppStrings.t('modules.startAll'),
       danger: false,
     );
     if (!ok || !mounted) return;
@@ -550,7 +579,12 @@ class _ModulesScreenState extends State<ModulesScreen> {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已启动 $done / ${targets.length} 个模块')),
+      SnackBar(
+        content: Text(
+          '${AppStrings.t('modules.startedCountPrefix')}$done / '
+          '${targets.length}${AppStrings.t('modules.startedCountSuffix')}',
+        ),
+      ),
     );
   }
 
@@ -567,7 +601,7 @@ class _ModulesScreenState extends State<ModulesScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ScreenAppBar(
-              title: '模块',
+              title: AppStrings.t('modules.title'),
               actions: [
                 AppBarActionIcon(
                   icon: Icons.add_circle_outline,
@@ -583,19 +617,19 @@ class _ModulesScreenState extends State<ModulesScreen> {
             Row(
               children: [
                 _FilterTab(
-                  label: '全部',
+                  label: AppStrings.t('modules.filterAll'),
                   selected: _filter == 0,
                   onTap: () => setState(() => _filter = 0),
                 ),
                 const SizedBox(width: 8),
                 _FilterTab(
-                  label: '运行中',
+                  label: AppStrings.t('modules.running'),
                   selected: _filter == 1,
                   onTap: () => setState(() => _filter = 1),
                 ),
                 const SizedBox(width: 8),
                 _FilterTab(
-                  label: '已停止',
+                  label: AppStrings.t('modules.filterStopped'),
                   selected: _filter == 2,
                   onTap: () => setState(() => _filter = 2),
                 ),
@@ -613,47 +647,37 @@ class _ModulesScreenState extends State<ModulesScreen> {
                 busy: _loading,
                 onStartAll: _startAll,
                 onStopAll: () => _bulkAction(
-                  title: '停止全部模块',
-                  message: '将按框架锁逐个正常停止所有运行中的模块。\n\n'
-                      '⚠️ 若某模块已脱离锁管理（例如把主循环丢到后台自我 daemon 化），'
-                      '它的锁记录与真实进程对不上，这种方式停不掉 —— '
-                      '那种情况请改用「强制停止」。\n\n确定要停止吗？',
-                  confirmText: '全部停止',
+                  title: AppStrings.t('modules.stopAllTitle'),
+                  message: AppStrings.t('modules.stopAllConfirm'),
+                  confirmText: AppStrings.t('modules.stopAll'),
                   action: () => IwphoneService.instance.stopAllModules(),
                 ),
                 onForceStop: () => _bulkAction(
-                  title: '强制停止全部模块',
-                  message: '⚠️ 绕过框架锁，直接终止所有模块的进程树。\n\n'
-                      '与普通停止的区别：\n'
-                      '· 不依赖锁记录，按进程的实际工作目录识别\n'
-                      '· 连同子进程、孙进程一并终止\n'
-                      '· 模块来不及执行清理动作（例如退出 doze 状态）\n\n'
-                      '适用于模块卡死、锁丢失、进程脱离管理的场景。确定要强制停止吗？',
-                  confirmText: '强制停止',
+                  title: AppStrings.t('modules.forceStopAllTitle'),
+                  message: AppStrings.t('modules.forceStopConfirm'),
+                  confirmText: AppStrings.t('modules.forceStop'),
                   action: () => IwphoneService.instance.forceStopAllModules(),
                 ),
                 onRestartAll: () => _bulkAction(
-                  title: '重启全部模块',
-                  message: '将先强制停止所有模块进程，再重新拉起「原先在运行」的那些。\n\n'
-                      '未运行的模块不会被顺带启动。\n\n确定要重启吗？',
-                  confirmText: '全部重启',
+                  title: AppStrings.t('modules.restartAllTitle'),
+                  message: AppStrings.t('modules.restartAllConfirm'),
+                  confirmText: AppStrings.t('modules.restartAll'),
                   action: () => IwphoneService.instance.restartAllModules(),
                 ),
               ),
             ],
             const SizedBox(height: 16),
             if (_loading)
-              const _MessageCard(text: '正在拉取模块列表…')
+              _MessageCard(text: AppStrings.t('modules.loadingModules'))
             else if (!_available)
-              const _MessageCard(
-                text:
-                    '未连接到 iwphone WebUI（http://127.0.0.1:8537）。\n'
-                    '请先在终端执行：adb shell sh /data/local/tmp/iwphone/Main.sh &',
+              _MessageCard(
+                text: '${AppStrings.t('modules.notConnectedPrefix')}'
+                    'adb shell sh /data/local/tmp/iwphone/Main.sh &',
               )
             else if (_error != null)
               _MessageCard(text: _error!)
             else if (_visibleIndices.isEmpty)
-              const _MessageCard(text: '没有符合条件的模块')
+              _MessageCard(text: AppStrings.t('modules.noMatchingModules'))
             else
               for (final i in _visibleIndices) ...[
                 _ModuleCard(
@@ -773,25 +797,25 @@ class _BulkBar extends StatelessWidget {
         children: [
           _BulkBtn(
             icon: Icons.play_arrow_rounded,
-            label: '全部启动',
+            label: AppStrings.t('modules.startAll'),
             color: AppColors.accent,
             onTap: busy ? null : onStartAll,
           ),
           _BulkBtn(
             icon: Icons.stop_rounded,
-            label: '全部停止',
+            label: AppStrings.t('modules.stopAll'),
             color: AppColors.iconOrange,
             onTap: busy ? null : onStopAll,
           ),
           _BulkBtn(
             icon: Icons.dangerous_outlined,
-            label: '强制停止',
+            label: AppStrings.t('modules.forceStop'),
             color: AppColors.iconRed,
             onTap: busy ? null : onForceStop,
           ),
           _BulkBtn(
             icon: Icons.restart_alt_rounded,
-            label: '全部重启',
+            label: AppStrings.t('modules.restartAll'),
             color: AppColors.iconBlue,
             onTap: busy ? null : onRestartAll,
           ),
@@ -999,33 +1023,33 @@ class _ModuleCardState extends State<_ModuleCard> {
                 if (widget.item.hasConfig)
                   _ActionChip(
                     icon: Icons.tune_rounded,
-                    label: '配置',
+                    label: AppStrings.t('modules.config'),
                     color: AppColors.accent,
                     onTap: widget.onOpenConfig,
                   ),
                 if (widget.item.hasAction)
                   _ActionChip(
                     icon: Icons.play_circle_outline,
-                    label: '动作',
+                    label: AppStrings.t('modules.action'),
                     color: AppColors.iconBlue,
                     onTap: widget.onRunAction,
                   ),
                 if (widget.item.hasSnapshot)
                   _ActionChip(
                     icon: Icons.settings_backup_restore,
-                    label: '还原',
+                    label: AppStrings.t('modules.restore'),
                     color: AppColors.iconOrange,
                     onTap: widget.onRestore,
                   ),
                 _ActionChip(
                   icon: Icons.refresh_rounded,
-                  label: '重装',
+                  label: AppStrings.t('modules.reinstall'),
                   color: AppColors.iconOrange,
                   onTap: widget.onManage,
                 ),
                 _ActionChip(
                   icon: Icons.delete_outline,
-                  label: '卸载',
+                  label: AppStrings.t('modules.uninstall'),
                   color: AppColors.iconRed,
                   onTap: widget.onManage,
                 ),
@@ -1185,17 +1209,18 @@ Future<void> _showConflictDetail(
                 Icon(Icons.warning_amber_rounded,
                     size: 18, color: AppColors.iconRed),
                 const SizedBox(width: 8),
-                Text('资源冲突', style: AppText.cardTitle),
+                Text(AppStrings.t('modules.conflictTitle'),
+                    style: AppText.cardTitle),
               ],
             ),
             const SizedBox(height: 12),
             Text(
-              '该模块与下列模块声明了同一系统资源。'
-              '同时运行时，后启动的一方会被框架拒绝，避免配置互相覆盖。',
+              AppStrings.t('modules.conflictDesc'),
               style: AppText.desc12,
             ),
             const SizedBox(height: 14),
-            Text('冲突模块', style: AppText.rowLabel),
+            Text(AppStrings.t('modules.conflictModules'),
+                style: AppText.rowLabel),
             const SizedBox(height: 6),
             for (final w in item.blockedBy)
               Padding(
@@ -1215,7 +1240,8 @@ Future<void> _showConflictDetail(
               ),
             if (item.resources.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Text('涉及资源', style: AppText.rowLabel),
+              Text(AppStrings.t('modules.conflictResources'),
+                  style: AppText.rowLabel),
               const SizedBox(height: 6),
               for (final r in item.resources)
                 Padding(
@@ -1229,7 +1255,7 @@ Future<void> _showConflictDetail(
             ],
             const SizedBox(height: 16),
             Text(
-              '如需运行本模块，请先停止上述模块。',
+              AppStrings.t('modules.conflictAdvice'),
               style: AppText.desc12,
             ),
             const SizedBox(height: 8),
@@ -1251,9 +1277,15 @@ class _CompatBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final v = item.compatVerdict;
     final (label, color) = switch (v) {
-      'ok' => ('预计兼容', AppColors.accent),
-      'blocked' => ('需要 Root 环境，无法工作', AppColors.iconRed),
-      'unknown' => ('无法自动判断，请自行确认', AppColors.iconOrange),
+      'ok' => (AppStrings.t('modules.compatOk'), AppColors.accent),
+      'blocked' => (
+        AppStrings.t('modules.compatBlocked'),
+        AppColors.iconRed
+      ),
+      'unknown' => (
+        AppStrings.t('modules.compatUnknown'),
+        AppColors.iconOrange
+      ),
       _ => ('', AppColors.textSecondary),
     };
     if (label.isEmpty) return const SizedBox.shrink();
@@ -1289,14 +1321,20 @@ class _CompatBadge extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('兼容性预检 · ${item.name}', style: AppText.cardTitle),
-              const SizedBox(height: 12),
-              Text(item.compatReasons.isEmpty ? '（无说明）' : item.compatReasons,
-                  style: AppText.body13),
+              Text(
+                '${AppStrings.t('modules.compatDetailTitle')} · ${item.name}',
+                style: AppText.cardTitle,
+              ),
               const SizedBox(height: 12),
               Text(
-                '预检基于静态扫描，注释里的关键词也会命中（偏保守）。'
-                '实际行为以模块运行结果为准。',
+                item.compatReasons.isEmpty
+                    ? AppStrings.t('modules.noReasons')
+                    : item.compatReasons,
+                style: AppText.body13,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                AppStrings.t('modules.compatDesc'),
                 style: AppText.desc12,
               ),
             ],
@@ -1332,9 +1370,10 @@ class _ModuleActionSheet extends StatelessWidget {
                 Icons.refresh_rounded,
                 color: AppColors.iconOrange,
               ),
-              title: Text('重装模块', style: AppText.rowLabel),
+              title: Text(AppStrings.t('modules.reinstallTitle'),
+                  style: AppText.rowLabel),
               subtitle: Text(
-                '用模块包覆盖当前版本，手动改动将丢失',
+                AppStrings.t('modules.reinstallHint'),
                 style: AppText.desc12,
               ),
               onTap: () => Navigator.of(context).pop('reinstall'),
@@ -1345,9 +1384,10 @@ class _ModuleActionSheet extends StatelessWidget {
                 Icons.delete_outline,
                 color: AppColors.iconRed,
               ),
-              title: Text('卸载模块', style: AppText.rowLabel),
+              title: Text(AppStrings.t('modules.uninstallTitle'),
+                  style: AppText.rowLabel),
               subtitle: Text(
-                '删除模块目录与日志，不可恢复',
+                AppStrings.t('modules.uninstallHint'),
                 style: AppText.desc12,
               ),
               onTap: () => Navigator.of(context).pop('uninstall'),

@@ -1,3 +1,4 @@
+import '../i18n/app_strings.dart';
 import 'shell_executor.dart';
 
 /// 设备与系统环境基础信息。
@@ -47,7 +48,7 @@ class SystemInfoService {
 
   static final SystemInfoService instance = SystemInfoService._();
 
-  static const String _unknown = '未知';
+  String get _unknown => AppStrings.t('systemInfo.unknown');
 
   final ShellExecutor _shell = ShellExecutor.instance;
 
@@ -79,13 +80,13 @@ class SystemInfoService {
     final mode = await _shell.text('getenforce');
     if (mode != null) {
       final m = mode.toLowerCase();
-      if (m.contains('enforcing')) return '强制';
-      if (m.contains('permissive')) return '宽容';
-      if (m.contains('disabled')) return '已关闭';
+      if (m.contains('enforcing')) return AppStrings.t('systemInfo.enforcing');
+      if (m.contains('permissive')) return AppStrings.t('systemInfo.permissive');
+      if (m.contains('disabled')) return AppStrings.t('systemInfo.disabled');
     }
     final enforce = await _shell.text('cat /sys/fs/selinux/enforce 2>/dev/null');
-    if (enforce == '1') return '强制';
-    if (enforce == '0') return '宽容';
+    if (enforce == '1') return AppStrings.t('systemInfo.enforcing');
+    if (enforce == '0') return AppStrings.t('systemInfo.permissive');
     return _unknown;
   }
 }

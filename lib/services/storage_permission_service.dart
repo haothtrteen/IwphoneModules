@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../i18n/app_strings.dart';
+
 /// 存储权限状态。
 enum StoragePermissionStatus {
   /// 已获得（Android 11+ 表示「所有文件访问」已开启）
@@ -77,7 +79,7 @@ class StoragePermissionService {
         msg: (raw?['msg'] as String?) ?? '',
       );
     } catch (_) {
-      return (ok: false, path: '', name: '', msg: '调用失败');
+      return (ok: false, path: '', name: '', msg: AppStrings.t('service.callFailed'));
     }
   }
 

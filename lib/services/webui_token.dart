@@ -1,3 +1,4 @@
+import '../i18n/app_strings.dart';
 import 'autostart_service.dart';
 import 'iwphone_service.dart';
 
@@ -49,9 +50,14 @@ class WebuiTokenManager {
   /// 校验用户输入。返回 null 表示合法，否则返回错误说明。
   static String? validate(String input) {
     final t = input.trim();
-    if (t.isEmpty) return '请输入访问密钥';
-    if (t.length < minLength) return '至少 $minLength 位';
-    if (RegExp(r'\s').hasMatch(t)) return '不能包含空格或换行';
+    if (t.isEmpty) return AppStrings.t('webuiToken.empty');
+    if (t.length < minLength) {
+      return '${AppStrings.t('webuiToken.tooShortPrefix')}$minLength'
+          '${AppStrings.t('webuiToken.tooShortSuffix')}';
+    }
+    if (RegExp(r'\s').hasMatch(t)) {
+      return AppStrings.t('webuiToken.hasWhitespace');
+    }
     return null;
   }
 
@@ -66,6 +72,6 @@ class WebuiTokenManager {
 
     IwphoneService.instance.configure(token: t);
     IwphoneService.instance.invalidate();
-    return (ok: true, msg: '访问密钥已生效');
+    return (ok: true, msg: AppStrings.t('webuiToken.applied'));
   }
 }

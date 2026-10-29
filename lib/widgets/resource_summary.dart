@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../theme/app_theme.dart';
 
@@ -41,7 +42,10 @@ class ResourceSummaryCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  healthy ? '无资源冲突' : '检测到 $bad 项资源冲突',
+                  healthy
+                      ? AppStrings.t('resourceSummary.noConflict')
+                      : '${AppStrings.t('resourceSummary.detectedPrefix')}$bad'
+                          '${AppStrings.t('resourceSummary.conflictCountSuffix')}',
                   style: AppText.cardTitle,
                 ),
               ),
@@ -50,12 +54,17 @@ class ResourceSummaryCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              _StatChip(label: '冲突资源', value: '$bad', danger: bad > 0),
-              const SizedBox(width: 8),
-              _StatChip(label: '占用资源', value: '$total'),
+              _StatChip(
+                  label: AppStrings.t('resourceSummary.conflictResources'),
+                  value: '$bad',
+                  danger: bad > 0),
               const SizedBox(width: 8),
               _StatChip(
-                label: '冲突记录',
+                  label: AppStrings.t('resourceSummary.usedResources'),
+                  value: '$total'),
+              const SizedBox(width: 8),
+              _StatChip(
+                label: AppStrings.t('resourceSummary.conflictLog'),
                 value: '${report.entries.length}',
                 danger: report.entries.isNotEmpty,
               ),
@@ -64,8 +73,7 @@ class ResourceSummaryCard extends StatelessWidget {
           if (!healthy) ...[
             const SizedBox(height: 12),
             Text(
-              '同一资源被多个模块写入时，先启动的模块会赢，后写入的值可能被覆盖。'
-              '如需长期稳定运行，建议只保留一个模块操作该资源。',
+              AppStrings.t('resourceSummary.conflictHint'),
               style: AppText.desc12,
             ),
           ],
@@ -104,24 +112,28 @@ class ResourceSummaryBar extends StatelessWidget {
 
     final String title;
     if (loading) {
-      title = '正在检查资源占用…';
+      title = AppStrings.t('resourceSummary.checking');
     } else if (bad > 0) {
-      title = '$bad 项资源冲突';
+      title = '$bad${AppStrings.t('resourceSummary.conflictCountSuffix')}';
     } else if (total > 0) {
-      title = '资源占用正常';
+      title = AppStrings.t('resourceSummary.healthy');
     } else {
-      title = '暂无资源占用';
+      title = AppStrings.t('resourceSummary.empty');
     }
 
     final String detail;
     if (loading) {
-      detail = '读取模块的资源声明与运行记录';
+      detail = AppStrings.t('resourceSummary.detailLoading');
     } else if (bad > 0) {
-      detail = '共占用 $total 项资源，点击查看冲突详情';
+      detail =
+          '${AppStrings.t('resourceSummary.occupiedPrefix')}$total'
+          '${AppStrings.t('resourceSummary.tapDetailsSuffix')}';
     } else if (total > 0) {
-      detail = '共占用 $total 项资源，无重复声明';
+      detail =
+          '${AppStrings.t('resourceSummary.occupiedPrefix')}$total'
+          '${AppStrings.t('resourceSummary.noDuplicateSuffix')}';
     } else {
-      detail = '模块写入系统配置后，这里会显示归属';
+      detail = AppStrings.t('resourceSummary.emptyDetail');
     }
 
     return InkWell(
@@ -169,7 +181,7 @@ class ResourceSummaryBar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '冲突',
+                  AppStrings.t('resourceSummary.conflictBadge'),
                   style: AppText.badge.copyWith(color: AppColors.iconRed),
                 ),
               ),

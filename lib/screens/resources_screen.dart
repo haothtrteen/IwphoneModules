@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
@@ -89,14 +90,15 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
                 children: [
                   const BackIconButton(),
                   const SizedBox(width: 4),
-                  const Expanded(
-                    child: ScreenAppBar(title: '资源占用'),
+                  Expanded(
+                    child: ScreenAppBar(
+                        title: AppStrings.t('resources.title')),
                   ),
                   IconButton(
                     onPressed: _loading ? null : _load,
                     icon: Icon(Icons.refresh,
                         size: 20, color: AppColors.textSecondary),
-                    tooltip: '刷新',
+                    tooltip: AppStrings.t('common.refresh'),
                   ),
                 ],
               ),
@@ -133,8 +135,9 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
         ResourceSummaryCard(report: _report),        const SizedBox(height: 12),
         if (_report.entries.isNotEmpty) ...[
           _SectionTitle(
-            title: '冲突记录',
-            trailing: '${_report.entries.length} 条',
+            title: AppStrings.t('resources.conflictLog'),
+            trailing:
+                '${_report.entries.length} ${AppStrings.t('resources.entriesUnit')}',
           ),
           const SizedBox(height: 8),
           for (final e in _report.entries) ...[
@@ -144,13 +147,14 @@ class _ResourcesScreenState extends State<ResourcesScreen> {
           const SizedBox(height: 8),
         ],
         _SectionTitle(
-          title: '资源占用',
-          trailing: '${_report.resources.length} 项',
+          title: AppStrings.t('resources.title'),
+          trailing:
+              '${_report.resources.length} ${AppStrings.t('resources.itemsUnit')}',
         ),
         const SizedBox(height: 8),
         if (_report.resources.isEmpty)
-          const _EmptyHint(
-            text: '暂无资源占用记录。\n模块通过沙箱写入系统设置后，会在这里留下归属。',
+          _EmptyHint(
+            text: AppStrings.t('resources.empty'),
           )
         else ...[
           _DomainFilterBar(
@@ -210,7 +214,8 @@ class _DomainFilterBar extends StatelessWidget {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _chip('全部', total, selected == null, () => onSelect(null)),
+          _chip(AppStrings.t('resources.all'), total, selected == null,
+              () => onSelect(null)),
           for (final k in keys)
             _chip(
               k,
@@ -296,7 +301,7 @@ class _ResourceCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    '${usage.modules.length} 个模块',
+                    '${usage.modules.length} ${AppStrings.t('resources.modulesUnit')}',
                     style: AppText.badge.copyWith(color: AppColors.iconRed),
                   ),
                 ),

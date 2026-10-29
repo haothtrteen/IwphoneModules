@@ -226,9 +226,10 @@ An honest list of current boundaries:
 - **The compatibility pre-check is a static scan**: it can flag "may need root" but cannot guarantee it;
   keywords inside comments also match (deliberately conservative)
 - **No support for systemless mounts / Zygisk / kernel-level modules**: physically impossible without root
-- **i18n coverage**: English covers navigation / home / settings / onboarding / about; deep pages such as
-  terminal, resources, and module configuration are still Chinese and can be filled in incrementally from the
-  same string table
+- **i18n covers all UI text**: navigation, home, modules, install, logs, terminal, resource usage,
+  snapshots, framework config, module config, autostart and settings all ship Chinese and English
+  strings; runtime messages returned by the framework/WebUI (e.g. module stdout, raw backend
+  errors) are shown as-is
 - **Verification coverage**: the core flow was verified on Xiaomi 22011211C (MIUI + Android 14); other ROMs /
   Android versions (especially foreground-service and wireless-debugging behavior on 15/16) are untested
 - **No online module repository**: modules must be imported from phone storage; there is no online distribution
@@ -258,7 +259,7 @@ device**; please confirm before relying on them, and feel free to open issues.
 - [ ] Online module repository and update checking
 - [ ] Snapshot improvements: turn `svc` / `pm` into real state snapshots
 - [ ] Multi-device / multi-ROM compatibility matrix
-- [ ] Full UI English localization
+- [x] Full UI English localization (all pages, see `lib/i18n/app_strings.dart`)
 
 ---
 

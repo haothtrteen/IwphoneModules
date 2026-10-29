@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../theme/app_theme.dart';
 
 /// 危险操作的二次确认对话框。
@@ -23,8 +24,8 @@ Future<bool> showConfirmDialog(
   BuildContext context, {
   required String title,
   required String message,
-  String confirmText = '确认',
-  String cancelText = '取消',
+  String? confirmText,
+  String? cancelText,
   bool danger = true,
 }) async {
   final result = await showDialog<bool>(
@@ -35,8 +36,8 @@ Future<bool> showConfirmDialog(
     builder: (_) => _ConfirmDialog(
       title: title,
       message: message,
-      confirmText: confirmText,
-      cancelText: cancelText,
+      confirmText: confirmText ?? AppStrings.t('common.confirm'),
+      cancelText: cancelText ?? AppStrings.t('common.cancel'),
       danger: danger,
     ),
   );

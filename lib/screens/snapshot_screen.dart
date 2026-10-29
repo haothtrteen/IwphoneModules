@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/back_icon_button.dart';
@@ -71,7 +72,7 @@ class _SnapshotScreenState extends State<SnapshotScreen> {
       builder: (_) => SnapshotSheet(
         title: info.name,
         items: snap.items,
-        note: info.orphan ? '该模块已卸载，这里只还原它留下的系统设置改动。' : null,
+        note: info.orphan ? AppStrings.t('snapshot.orphanNote') : null,
       ),
     );
     if (ok != true || !mounted) return;
@@ -83,18 +84,23 @@ class _SnapshotScreenState extends State<SnapshotScreen> {
     IwphoneService.instance.invalidate();
     await _load();
     if (!mounted) return;
-    _toast(res.ok ? res.msg : '还原失败：${res.msg}', ok: res.ok);
+    _toast(
+        res.ok
+            ? res.msg
+            : '${AppStrings.t('snapshot.restoreFailedPrefix')}${res.msg}',
+        ok: res.ok);
   }
 
   Future<void> _delete(SnapshotInfo info) async {
     final ok = await showConfirmDialog(
       context,
-      title: '删除快照',
-      message: '删除「${info.name}」的快照后，它改过的 ${info.restorable} 项系统设置'
-          '**将无法再一键还原**。\n\n'
-          '如果你已经不需要回退（或打算一直保留当前状态），才建议删除。',
+      title: AppStrings.t('snapshot.deleteTitle'),
+      message:
+          '${AppStrings.t('snapshot.deleteMessagePrefix')}${info.name}'
+          '${AppStrings.t('snapshot.deleteMessageMiddle')}${info.restorable}'
+          '${AppStrings.t('snapshot.deleteMessageSuffix')}',
       danger: true,
-      confirmText: '删除',
+      confirmText: AppStrings.t('common.delete'),
     );
     if (ok != true || !mounted) return;
 
@@ -120,12 +126,15 @@ class _SnapshotScreenState extends State<SnapshotScreen> {
                 children: [
                   const BackIconButton(),
                   const SizedBox(width: 4),
-                  const Expanded(child: ScreenAppBar(title: '历史快照')),
+                  Expanded(
+                    child: ScreenAppBar(
+                        title: AppStrings.t('settings.snapshots')),
+                  ),
                   IconButton(
                     onPressed: _loading ? null : _load,
                     icon: Icon(Icons.refresh,
                         size: 20, color: AppColors.textSecondary),
-                    tooltip: '刷新',
+                    tooltip: AppStrings.t('common.refresh'),
                   ),
                 ],
               ),
@@ -156,10 +165,7 @@ class _SnapshotScreenState extends State<SnapshotScreen> {
                           ],
                         const SizedBox(height: 12),
                         Text(
-                          '· 快照在模块**首次写入**某系统资源时自动生成，记录写入前的原值。\n'
-                          '· 模块卸载后快照会保留 —— 它改过的设置仍然可以还原。\n'
-                          '· 还原会先停止该模块（避免守卫循环把值改回去），'
-                          '成功后快照归档，模块重新启动会生成新快照。',
+                          AppStrings.t('snapshot.notes'),
                           style: AppText.desc12,
                         ),
                       ],
@@ -209,7 +215,7 @@ class _SnapshotCard extends StatelessWidget {
                     color: AppColors.iconOrange.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Text('模块已卸载',
+                  child: Text(AppStrings.t('snapshot.uninstalledBadge'),
                       style: AppText.desc12
                           .copyWith(color: AppColors.iconOrange)),
                 ),
@@ -217,8 +223,8 @@ class _SnapshotCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '${info.restorable} 项可还原'
-            '${info.skipped > 0 ? ' · ${info.skipped} 项需手动处理' : ''}',
+            '${info.restorable} ${AppStrings.t('snapshot.restorableUnit')}'
+            '${info.skipped > 0 ? ' · ${info.skipped} ${AppStrings.t('snapshot.manualUnit')}' : ''}',
             style: AppText.desc12,
           ),
           const SizedBox(height: 12),
@@ -227,14 +233,14 @@ class _SnapshotCard extends StatelessWidget {
             children: [
               _MiniButton(
                 icon: Icons.delete_outline,
-                label: '删除',
+                label: AppStrings.t('common.delete'),
                 color: AppColors.iconRed,
                 onTap: enabled ? onDelete : null,
               ),
               const SizedBox(width: 8),
               _MiniButton(
                 icon: Icons.settings_backup_restore,
-                label: '还原',
+                label: AppStrings.t('snapshot.restore'),
                 color: AppColors.iconOrange,
                 onTap: enabled && info.restorable > 0 ? onRestore : null,
               ),
@@ -304,9 +310,7 @@ class _EmptyCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        '还没有任何快照。\n\n'
-        '快照会在模块**首次修改系统设置**时自动生成 —— '
-        '启动一个会改设置的模块（比如动画调速）之后回来就能看到。',
+        AppStrings.t('snapshot.empty'),
         style: AppText.desc12,
         textAlign: TextAlign.center,
       ),

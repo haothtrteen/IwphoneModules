@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 
 /// iwphone modrunner v3 客户端：WebUI HTTP API 优先，sdcard 状态镜像兜底。
@@ -144,7 +145,7 @@ class IwphoneService {
       buf.write('&kind=${kind.queryValue}');
     }
     final body = await _request('POST', buf.toString());
-    if (body == null) return (ok: false, msg: 'WebUI 不可达，无法清空日志');
+    if (body == null) return (ok: false, msg: AppStrings.t('iwphone.clearUnavailable'));
     return _parseOkMsg(body);
   }
 
@@ -166,7 +167,7 @@ class IwphoneService {
     }
     final body = await _request('POST', buf.toString());
     if (body == null) {
-      return (ok: false, msg: 'WebUI 不可达，无法导出日志', path: '');
+      return (ok: false, msg: AppStrings.t('iwphone.exportUnavailable'), path: '');
     }
     try {
       final json = jsonDecode(body) as Map<String, dynamic>;
@@ -176,7 +177,7 @@ class IwphoneService {
         path: (json['path'] as String?) ?? '',
       );
     } catch (_) {
-      return (ok: false, msg: '响应解析失败', path: '');
+      return (ok: false, msg: AppStrings.t('iwphone.badResponse'), path: '');
     }
   }
 
@@ -235,17 +236,17 @@ class IwphoneService {
         '/api/module/${Uri.encodeComponent(name)}/config$q',
         timeout: const Duration(seconds: 15),
       );
-      if (body == null) return (ok: false, msg: 'WebUI 不可达');
+      if (body == null) return (ok: false, msg: AppStrings.t('iwphone.webuiUnreachable'));
       final decoded = jsonDecode(body);
       if (decoded is Map && decoded['ok'] == true) {
-        return (ok: true, msg: (decoded['msg'] as String?) ?? '已保存');
+        return (ok: true, msg: (decoded['msg'] as String?) ?? AppStrings.t('iwphone.saved'));
       }
       return (
         ok: false,
-        msg: (decoded is Map ? decoded['msg'] as String? : null) ?? '保存失败',
+        msg: (decoded is Map ? decoded['msg'] as String? : null) ?? AppStrings.t('iwphone.saveFailed'),
       );
     } catch (_) {
-      return (ok: false, msg: '保存失败');
+      return (ok: false, msg: AppStrings.t('iwphone.saveFailed'));
     }
   }
 
@@ -269,17 +270,17 @@ class IwphoneService {
         '/api/module/${Uri.encodeComponent(name)}/action',
         timeout: const Duration(seconds: 70),
       );
-      if (body == null) return (ok: false, msg: 'WebUI 不可达');
+      if (body == null) return (ok: false, msg: AppStrings.t('iwphone.webuiUnreachable'));
       final decoded = jsonDecode(body);
       if (decoded is Map && decoded['ok'] == true) {
-        return (ok: true, msg: (decoded['msg'] as String?) ?? '已执行');
+        return (ok: true, msg: (decoded['msg'] as String?) ?? AppStrings.t('iwphone.executed'));
       }
       return (
         ok: false,
-        msg: (decoded is Map ? decoded['msg'] as String? : null) ?? '执行失败',
+        msg: (decoded is Map ? decoded['msg'] as String? : null) ?? AppStrings.t('iwphone.execFailed'),
       );
     } catch (_) {
-      return (ok: false, msg: '执行失败');
+      return (ok: false, msg: AppStrings.t('iwphone.execFailed'));
     }
   }
 
@@ -296,12 +297,12 @@ class IwphoneService {
         '/api/module/${Uri.encodeComponent(name)}/snapshot',
         timeout: const Duration(seconds: 30),
       );
-      if (body == null) return (ok: false, msg: 'WebUI 不可达', items: <SnapshotItem>[]);
+      if (body == null) return (ok: false, msg: AppStrings.t('iwphone.webuiUnreachable'), items: <SnapshotItem>[]);
       final decoded = jsonDecode(body);
       if (decoded is! Map || decoded['ok'] != true) {
         return (
           ok: false,
-          msg: (decoded is Map ? decoded['msg'] as String? : null) ?? '读取失败',
+          msg: (decoded is Map ? decoded['msg'] as String? : null) ?? AppStrings.t('iwphone.readFailed'),
           items: <SnapshotItem>[],
         );
       }
@@ -311,7 +312,7 @@ class IwphoneService {
           .toList();
       return (ok: true, msg: '', items: list);
     } catch (_) {
-      return (ok: false, msg: '读取快照失败', items: <SnapshotItem>[]);
+      return (ok: false, msg: AppStrings.t('iwphone.readSnapshotFailed'), items: <SnapshotItem>[]);
     }
   }
 
@@ -324,11 +325,11 @@ class IwphoneService {
       final body = await _request('GET', '/api/snapshots',
           timeout: const Duration(seconds: 20));
       if (body == null) {
-        return (ok: false, msg: 'WebUI 不可达', items: <SnapshotInfo>[]);
+        return (ok: false, msg: AppStrings.t('iwphone.webuiUnreachable'), items: <SnapshotInfo>[]);
       }
       final decoded = jsonDecode(body);
       if (decoded is! Map || decoded['ok'] != true) {
-        return (ok: false, msg: '读取失败', items: <SnapshotInfo>[]);
+        return (ok: false, msg: AppStrings.t('iwphone.readFailed'), items: <SnapshotInfo>[]);
       }
       final list = (decoded['items'] as List? ?? [])
           .whereType<Map>()
@@ -336,7 +337,7 @@ class IwphoneService {
           .toList();
       return (ok: true, msg: '', items: list);
     } catch (_) {
-      return (ok: false, msg: '读取快照列表失败', items: <SnapshotInfo>[]);
+      return (ok: false, msg: AppStrings.t('iwphone.readSnapshotListFailed'), items: <SnapshotInfo>[]);
     }
   }
 
@@ -348,17 +349,17 @@ class IwphoneService {
         '/api/snapshot/${Uri.encodeComponent(name)}/delete',
         timeout: const Duration(seconds: 20),
       );
-      if (body == null) return (ok: false, msg: 'WebUI 不可达');
+      if (body == null) return (ok: false, msg: AppStrings.t('iwphone.webuiUnreachable'));
       final decoded = jsonDecode(body);
       if (decoded is Map && decoded['ok'] == true) {
-        return (ok: true, msg: (decoded['msg'] as String?) ?? '已删除');
+        return (ok: true, msg: (decoded['msg'] as String?) ?? AppStrings.t('iwphone.deleted'));
       }
       return (
         ok: false,
-        msg: (decoded is Map ? decoded['msg'] as String? : null) ?? '删除失败',
+        msg: (decoded is Map ? decoded['msg'] as String? : null) ?? AppStrings.t('iwphone.deleteFailed'),
       );
     } catch (_) {
-      return (ok: false, msg: '删除失败');
+      return (ok: false, msg: AppStrings.t('iwphone.deleteFailed'));
     }
   }
 
@@ -373,17 +374,17 @@ class IwphoneService {
         '/api/module/${Uri.encodeComponent(name)}/restore',
         timeout: const Duration(seconds: 130),
       );
-      if (body == null) return (ok: false, msg: 'WebUI 不可达');
+      if (body == null) return (ok: false, msg: AppStrings.t('iwphone.webuiUnreachable'));
       final decoded = jsonDecode(body);
       if (decoded is Map && decoded['ok'] == true) {
-        return (ok: true, msg: (decoded['msg'] as String?) ?? '已还原');
+        return (ok: true, msg: (decoded['msg'] as String?) ?? AppStrings.t('iwphone.restored'));
       }
       return (
         ok: false,
-        msg: (decoded is Map ? decoded['msg'] as String? : null) ?? '还原失败',
+        msg: (decoded is Map ? decoded['msg'] as String? : null) ?? AppStrings.t('iwphone.restoreFailed'),
       );
     } catch (_) {
-      return (ok: false, msg: '还原失败');
+      return (ok: false, msg: AppStrings.t('iwphone.restoreFailed'));
     }
   }
 
@@ -436,7 +437,7 @@ class IwphoneService {
       '/api/config?key=${Uri.encodeComponent(key)}'
       '&value=${Uri.encodeComponent(value)}',
     );
-    if (body == null) return (ok: false, msg: 'WebUI 不可达');
+    if (body == null) return (ok: false, msg: AppStrings.t('iwphone.webuiUnreachable'));
     return _parseOkMsg(body);
   }
 
@@ -457,15 +458,15 @@ class IwphoneService {
 
     final body = await _request('POST', qs.toString());
     if (body == null) {
-      return const ShellResult(
+      return ShellResult(
         ok: false,
-        message: 'WebUI 不可达（服务未启动，或框架已被卸载）',
+        message: AppStrings.t('iwphone.shellUnavailable'),
       );
     }
     try {
       return ShellResult.fromJson(jsonDecode(body) as Map<String, dynamic>);
     } catch (_) {
-      return const ShellResult(ok: false, message: '响应解析失败');
+      return ShellResult(ok: false, message: AppStrings.t('iwphone.badResponse'));
     }
   }
 
@@ -529,7 +530,7 @@ class IwphoneService {
   /// **不可撤销**；后端延迟 3 秒执行，之后 App 会与 WebUI 断开。
   Future<({bool ok, String msg})> uninstallFramework() async {
     final body = await _request('POST', '/api/uninstall');
-    if (body == null) return (ok: false, msg: 'WebUI 不可达');
+    if (body == null) return (ok: false, msg: AppStrings.t('iwphone.webuiUnreachable'));
     return _parseOkMsg(body);
   }
 
@@ -541,7 +542,7 @@ class IwphoneService {
       final json = jsonDecode(body) as Map<String, dynamic>;
       return (ok: json['ok'] == true, msg: (json['msg'] as String?) ?? '');
     } catch (_) {
-      return (ok: false, msg: '响应解析失败');
+      return (ok: false, msg: AppStrings.t('iwphone.badResponse'));
     }
   }
 
@@ -550,12 +551,12 @@ class IwphoneService {
     final body = await _request('POST', path,
         timeout: const Duration(seconds: 60));
     if (body == null) {
-      return const BulkResult(ok: false, message: 'WebUI 不可达');
+      return BulkResult(ok: false, message: AppStrings.t('iwphone.webuiUnreachable'));
     }
     try {
       return BulkResult.fromJson(jsonDecode(body) as Map<String, dynamic>);
     } catch (_) {
-      return const BulkResult(ok: false, message: '响应解析失败');
+      return BulkResult(ok: false, message: AppStrings.t('iwphone.badResponse'));
     }
   }
 
@@ -759,13 +760,15 @@ class SnapshotItem {
     // settings put <ns> <k> 'V'  → V
     final put = RegExp(r"settings put \S+ \S+ '([^']*)'").firstMatch(cmd);
     if (put != null) return put.group(1) ?? '';
-    if (cmd.contains('settings delete')) return '（删除该项）';
+    if (cmd.contains('settings delete')) {
+      return AppStrings.t('snapshotItem.deleteItem');
+    }
     if (cmd.startsWith('setprop')) {
       final sp = RegExp(r"setprop \S+ '([^']*)'").firstMatch(cmd);
       if (sp != null) return sp.group(1) ?? '';
     }
-    if (cmd.startsWith('#')) return '需手动处理';
-    return '按指令还原';
+    if (cmd.startsWith('#')) return AppStrings.t('snapshotItem.manual');
+    return AppStrings.t('snapshotItem.command');
   }
 }
 

@@ -70,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('访问密钥已生效，框架功能已解锁')),
+        SnackBar(content: Text(AppStrings.t('home.tokenSet'))),
       );
     }
     await _load();
@@ -106,7 +106,9 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          success ? successText : '$title失败：WebUI 不可达或框架未响应',
+          success
+              ? successText
+              : '$title${AppStrings.t('home.actionFailedSuffix')}',
         ),
       ),
     );
@@ -140,29 +142,24 @@ class _HomeScreenState extends State<HomeScreen> {
               status: _status,
               loading: _statusLoading,
               onStop: () => _frameworkAction(
-                title: '停止框架',
-                message: '将停止 iwphone 守护进程。\n\n'
-                    '停止后框架不再轮询触发目录；已在运行的模块不会被停止，'
-                    '但无法再通过 App 或触发文件启动新模块。\n\n确定要停止吗？',
-                confirmText: '停止',
-                successText: '框架已停止',
+                title: AppStrings.t('home.stop'),
+                message: AppStrings.t('home.stopMessage'),
+                confirmText: AppStrings.t('home.stopAction'),
+                successText: AppStrings.t('home.stopDone'),
                 action: () => IwphoneService.instance.runnerStop(),
               ),
               onRestart: () => _frameworkAction(
-                title: '重启框架',
-                message: '将先停止、再启动 iwphone 守护进程。\n\n'
-                    '重启会打断当前轮询周期，期间无法响应模块启动请求；'
-                    '已在运行的模块不受影响。\n\n确定要重启吗？',
-                confirmText: '重启',
-                successText: '框架已重启',
+                title: AppStrings.t('home.restart'),
+                message: AppStrings.t('home.restartMessage'),
+                confirmText: AppStrings.t('home.restartAction'),
+                successText: AppStrings.t('home.restartDone'),
                 action: () => IwphoneService.instance.runnerRestart(),
               ),
               onSync: () => _frameworkAction(
-                title: '同步状态',
-                message: '将把执行区状态镜像同步到 /sdcard/iwphone/state/。\n\n'
-                    '同步需遍历模块目录，模块较多时可能短暂变慢。\n\n确定要同步吗？',
-                confirmText: '同步',
-                successText: '同步完成',
+                title: AppStrings.t('home.sync'),
+                message: AppStrings.t('home.syncMessage'),
+                confirmText: AppStrings.t('home.syncAction'),
+                successText: AppStrings.t('home.syncDone'),
                 action: () => IwphoneService.instance.triggerSync(),
               ),
             ),
@@ -234,10 +231,10 @@ class _FrameworkStatusCard extends StatelessWidget {
         ? '—'
         : (running ? 'http://127.0.0.1:8537' : AppStrings.t('home.notConnected'));
     final desc = loading
-        ? '正在探测 iwphone 框架…'
+        ? AppStrings.t('home.probing')
         : running
-            ? 'iwphone modrunner v3 守护进程已启动'
-            : '请先在终端执行：\nadb shell sh /data/local/tmp/iwphone/Main.sh &';
+            ? AppStrings.t('home.daemonRunning')
+            : AppStrings.t('home.daemonMissing');
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -268,13 +265,16 @@ class _FrameworkStatusCard extends StatelessWidget {
           const SizedBox(height: 16),
           Container(height: 1, color: AppColors.divider),
           const SizedBox(height: 16),
-          _InfoRow(label: 'WebUI 地址', value: endpoint, mono: true),
+          _InfoRow(
+              label: AppStrings.t('home.webuiAddress'),
+              value: endpoint,
+              mono: true),
           const SizedBox(height: 16),
           _InfoRow(label: 'PID', value: _dash(status.daemonPid?.toString())),
           const SizedBox(height: 16),
           // 框架以什么身份运行 —— 免 root 方案最关键的验证点
           _InfoRow(
-            label: '运行身份',
+            label: AppStrings.t('home.runAs'),
             value: _dash(status.daemonUser),
             mono: true,
           ),
@@ -479,7 +479,7 @@ class _StatsGrid extends StatelessWidget {
           children: [
             Expanded(
               child: _StatCard(
-                label: '运行身份',
+                label: AppStrings.t('home.runAs'),
                 value: loading ? '—' : _dash(who),
                 valueColor: loading ? AppColors.textPrimary : whoColor,
               ),
@@ -590,14 +590,20 @@ class _SystemInfoCard extends StatelessWidget {
           Text(AppStrings.t('home.systemInfo'), style: AppText.infoTitle),
           const SizedBox(height: 16),
           _InfoRow(
-            label: 'Android 版本',
+            label: AppStrings.t('home.androidVersion'),
             value: data == null ? '—' : data.androidDisplay,
             mono: true,
           ),
           const SizedBox(height: 16),
-          _InfoRow(label: '内核版本', value: _dash(data?.kernelVersion), mono: true),
+          _InfoRow(
+              label: AppStrings.t('home.kernel'),
+              value: _dash(data?.kernelVersion),
+              mono: true),
           const SizedBox(height: 16),
-          _InfoRow(label: '架构', value: _dash(abi), mono: true),
+          _InfoRow(
+              label: AppStrings.t('home.arch'),
+              value: _dash(abi),
+              mono: true),
           const SizedBox(height: 16),
           // SELinux 从统计卡片挪到这里，保留信息但不占一个显眼位置
           _InfoRow(
@@ -609,7 +615,7 @@ class _SystemInfoCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _InfoRow(
-            label: '设备型号',
+            label: AppStrings.t('home.device'),
             value: data == null ? '—' : data.deviceDisplay,
             mono: true,
           ),

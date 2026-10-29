@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../services/autostart_service.dart';
 import '../services/iwphone_service.dart';
@@ -90,29 +91,43 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
     setState(() => _installing = false);
 
     if (!imp.ok) {
-      _toast('导入失败：${imp.msg}', ok: false);
+      _toast('${AppStrings.t('install.importFailedPrefix')}${imp.msg}',
+          ok: false);
       return;
     }
 
     _importedNames.add(pick.name);
     await _load();
     if (!mounted) return;
-    _toast('已导入 ${pick.name}，列表里点击即可安装');
+    _toast(
+      '${AppStrings.t('install.importedPrefix')}${pick.name}'
+      '${AppStrings.t('install.importedSuffix')}',
+    );
   }
 
   // ---------------- 安装 / 重装 ----------------
 
   Future<void> _install(IwphonePackage pkg) async {
     if (_installing) return;
+    final actionText = pkg.installed
+        ? AppStrings.t('install.confirmReinstallPrefix')
+        : AppStrings.t('install.confirmInstallPrefix');
+    final note = pkg.installed
+        ? AppStrings.t('install.confirmReinstallNote')
+        : '';
+    final message = '$actionText${pkg.name}'
+        '${AppStrings.t('install.confirmNameSuffix')}'
+        '$note${AppStrings.t('install.confirmBody')}';
     final ok = await showConfirmDialog(
       context,
-      title: pkg.installed ? '重装模块' : '安装模块',
-      message: '将${pkg.installed ? '覆盖重装' : '安装'}「${pkg.name}」。\n\n'
-          '${pkg.installed ? "模块目录会被包内文件覆盖，手动改动会丢失。" : ""}'
-          '安装时会自动识别模块格式（iwphone / Magisk·KernelSU·AxManager 兼容）。\n'
-          '耗时可达数十秒，请耐心等待。',
+      title: pkg.installed
+          ? AppStrings.t('install.reinstallTitle')
+          : AppStrings.t('install.installTitle'),
+      message: message,
       danger: pkg.installed,
-      confirmText: pkg.installed ? '重装' : '安装',
+      confirmText: pkg.installed
+          ? AppStrings.t('install.reinstall')
+          : AppStrings.t('install.install'),
     );
     if (ok != true || !mounted) return;
 
@@ -131,9 +146,16 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
       IwphoneService.instance.invalidate();
       await _load();
       if (!mounted) return;
-      _toast('「${pkg.name}」安装完成');
+      _toast(
+        '${AppStrings.t('install.installedPrefix')}${pkg.name}'
+        '${AppStrings.t('install.installedSuffix')}',
+      );
     } else {
-      _toast('「${pkg.name}」安装失败（详情见框架日志）', ok: false);
+      _toast(
+        '${AppStrings.t('install.installedPrefix')}${pkg.name}'
+        '${AppStrings.t('install.installFailedSuffix')}',
+        ok: false,
+      );
     }
   }
 
@@ -150,12 +172,16 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
                 children: [
                   const BackIconButton(),
                   const SizedBox(width: 4),
-                  const Expanded(child: ScreenAppBar(title: '安装模块')),
+                  Expanded(
+                    child: ScreenAppBar(
+                      title: AppStrings.t('install.installTitle'),
+                    ),
+                  ),
                   IconButton(
                     onPressed: _loading || _installing ? null : _load,
                     icon: Icon(Icons.refresh,
                         size: 20, color: AppColors.textSecondary),
-                    tooltip: '刷新',
+                    tooltip: AppStrings.t('common.refresh'),
                   ),
                 ],
               ),
@@ -177,11 +203,13 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
                           onImport: _import,
                         ),
                         const SizedBox(height: 16),
-                        _sectionTitle('框架包（module/ 目录）'),
+                        _sectionTitle(
+                            AppStrings.t('install.sectionFramework')),
                         const SizedBox(height: 8),
                         if (_packages.isEmpty)
-                          const _EmptyCard(text: '框架 module/ 目录里没有可安装的包。\n'
-                              '可以先用上方「本地导入」把 .iwp 或 Magisk 式模块 zip 推进来。')
+                          _EmptyCard(
+                            text: AppStrings.t('install.emptyPackages'),
+                          )
                         else
                           for (final p in _packages) ...[
                             _PackageCard(
@@ -194,11 +222,7 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
                           ],
                         const SizedBox(height: 16),
                         Text(
-                          '· 支持两种格式：iwphone 原生包（main.sh + iwphone.prop）与\n'
-                          '  Magisk / KernelSU / AxManager 式模块（module.prop + service.sh），\n'
-                          '  安装时自动识别并适配。\n'
-                          '· 安装 = 解压覆盖到 work/<模块名>/，装完即可在模块页启动。\n'
-                          '· 预装系统文件替换类的 Magisk 模块在免 root 环境无法工作。',
+                          AppStrings.t('install.footnote'),
                           style: AppText.desc12,
                         ),
                       ],
@@ -247,9 +271,10 @@ class _ImportCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('从手机存储导入', style: AppText.rowLabel),
+                Text(AppStrings.t('install.importTitle'),
+                    style: AppText.rowLabel),
                 SizedBox(height: 3),
-                Text('选择 .iwp 或 Magisk 式模块 zip，自动推到设备并进入列表',
+                Text(AppStrings.t('install.importHint'),
                     style: AppText.desc12),
               ],
             ),
@@ -265,7 +290,9 @@ class _ImportCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                importing ? '导入中…' : '选择文件',
+                importing
+                    ? AppStrings.t('install.importing')
+                    : AppStrings.t('install.chooseFile'),
                 style: AppText.desc12.copyWith(
                   color: importing ? AppColors.textInactive : AppColors.accent,
                 ),
@@ -295,8 +322,10 @@ class _PackageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = busy
-        ? '安装中…'
-        : (pkg.installed ? '已安装 · 点击覆盖重装' : '未安装 · 点击安装');
+        ? AppStrings.t('install.installing')
+        : (pkg.installed
+            ? AppStrings.t('install.installedHint')
+            : AppStrings.t('install.notInstalledHint'));
     final color = busy
         ? AppColors.textSecondary
         : (pkg.installed ? AppColors.iconOrange : AppColors.accent);

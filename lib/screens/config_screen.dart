@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
@@ -84,7 +85,13 @@ class _ConfigScreenState extends State<ConfigScreen> {
       setState(() => _dirty.add(item.key));
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(res.ok ? res.msg : '修改失败：${res.msg}')),
+      SnackBar(
+        content: Text(
+          res.ok
+              ? res.msg
+              : '${AppStrings.t('config.updateFailPrefix')}${res.msg}',
+        ),
+      ),
     );
     if (res.ok) await _load();
   }
@@ -114,9 +121,13 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   : null,
               style: AppText.rowLabel,
               decoration: InputDecoration(
-                hintText: isNum ? '${item.min} ~ ${item.max}' : '输入新值',
+                hintText: isNum
+                    ? '${item.min} ~ ${item.max}'
+                    : AppStrings.t('config.newValueHint'),
                 hintStyle: AppText.desc12,
-                helperText: isNum ? '取值范围 ${item.min} ~ ${item.max}' : null,
+                helperText: isNum
+                    ? '${AppStrings.t('config.rangeLabel')}${item.min} ~ ${item.max}'
+                    : null,
                 helperStyle: AppText.desc12,
                 enabledBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: AppColors.divider),
@@ -131,13 +142,13 @@ class _ConfigScreenState extends State<ConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('取消',
+            child: Text(AppStrings.t('common.cancel'),
                 style: AppText.rowLabel
                     .copyWith(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: Text('保存',
+            child: Text(AppStrings.t('common.save'),
                 style: AppText.rowLabel.copyWith(color: AppColors.accent)),
           ),
         ],
@@ -148,10 +159,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
   Future<void> _restartFramework() async {
     final ok = await showConfirmDialog(
       context,
-      title: '重启框架',
-      message: '配置改动需要重启守护进程才会生效。\n\n'
-          '重启会打断当前轮询周期，已在运行的模块不受影响。\n\n确定要重启吗？',
-      confirmText: '重启',
+      title: AppStrings.t('home.restart'),
+      message: AppStrings.t('config.restartMessage'),
+      confirmText: AppStrings.t('config.restartConfirm'),
     );
     if (!ok || !mounted) return;
 
@@ -159,7 +169,13 @@ class _ConfigScreenState extends State<ConfigScreen> {
     if (!mounted) return;
     if (done) setState(() => _dirty.clear());
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(done ? '框架已重启，配置已生效' : '重启失败：WebUI 不可达')),
+      SnackBar(
+        content: Text(
+          done
+              ? AppStrings.t('config.restartOk')
+              : AppStrings.t('config.restartFail'),
+        ),
+      ),
     );
     await _load();
   }
@@ -188,7 +204,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
                     const BackIconButton(),
                     Expanded(
                       child: ScreenAppBar(
-                        title: '框架配置',
+                        title: AppStrings.t('settings.frameworkConfig'),
                         actions: [
                           AppBarActionIcon(icon: Icons.refresh, onTap: _load),
                         ],
@@ -198,12 +214,11 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 ),
                 const SizedBox(height: 12),
                 if (_loading)
-                  const _Hint('正在读取框架配置…')
+                  _Hint(AppStrings.t('config.loading'))
                 else if (!_available)
-                  const _Hint('未连接到 iwphone WebUI（127.0.0.1:8537）。\n'
-                      '请先确认框架与 WebUI 正在运行。')
+                  _Hint(AppStrings.t('config.unavailable'))
                 else if (_items.isEmpty)
-                  const _Hint('框架未返回任何可配置项')
+                  _Hint(AppStrings.t('config.empty'))
                 else ...[
                   for (final entry in grouped.entries) ...[
                     _GroupCard(
@@ -221,7 +236,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
                     ),
                 ],
                 const SizedBox(height: 16),
-                Text('配置写入框架的 env.sh（修改前会自动备份）',
+                Text(AppStrings.t('config.footer'),
                     style: AppText.footer, textAlign: TextAlign.center),
                 const SizedBox(height: 16),
               ],
@@ -331,7 +346,7 @@ class _ConfigRow extends StatelessWidget {
                             color: AppColors.accentDim,
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text('待生效',
+                          child: Text(AppStrings.t('config.pendingBadge'),
                               style: AppText.badge
                                   .copyWith(color: AppColors.accent)),
                         ),
@@ -381,13 +396,15 @@ class _RestartHint extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text('有 $count 项改动需要重启框架才会生效',
+            child: Text(
+                '${AppStrings.t('config.restartNeededPre')}$count'
+                '${AppStrings.t('config.restartNeededPost')}',
                 style: AppText.body13.copyWith(color: AppColors.accent)),
           ),
           const SizedBox(width: 8),
           TextButton(
             onPressed: onRestart,
-            child: Text('重启框架',
+            child: Text(AppStrings.t('home.restart'),
                 style: AppText.rowLabel.copyWith(color: AppColors.accent)),
           ),
         ],

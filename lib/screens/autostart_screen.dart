@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../services/autostart_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/back_icon_button.dart';
@@ -73,24 +74,21 @@ class _AutostartScreenState extends State<AutostartScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('还没连接上框架', style: AppText.cardTitle),
+        title: Text(AppStrings.t('autostart.notConnectedTitle'),
+            style: AppText.cardTitle),
         content: Text(
-          '现在开始配对吗？\n\n'
-          '流程：点「开始配对」→ 通知栏会出现输入框 → '
-          '到 开发者选项 → 无线调试 打开「使用配对码配对设备」→ '
-          '把配对码填进通知 → 完成。\n\n'
-          '配对端口会自动发现，全程不用碰电脑。',
+          AppStrings.t('autostart.pairGuideBody'),
           style: AppText.body13,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('稍后再说',
+            child: Text(AppStrings.t('autostart.notNow'),
                 style: AppText.rowLabel.copyWith(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('开始配对',
+            child: Text(AppStrings.t('autostart.startPairing'),
                 style: AppText.rowLabel.copyWith(color: AppColors.accent)),
           ),
         ],
@@ -108,7 +106,8 @@ class _AutostartScreenState extends State<AutostartScreen> {
     setState(() => _busy = false);
     await _load();
     if (!mounted) return;
-    _toast(res.ok ? res.msg : '失败：${res.msg}', ok: res.ok);
+    _toast(res.ok ? res.msg : '${AppStrings.t('autostart.failedPrefix')}${res.msg}',
+        ok: res.ok);
   }
 
   void _toast(String text, {bool ok = true}) {
@@ -125,11 +124,12 @@ class _AutostartScreenState extends State<AutostartScreen> {
     if (_deploying) return;
     final ok = await showConfirmDialog(
       context,
-      title: _frameworkInstalled == true ? '修复框架' : '部署框架',
-      message: '把 App 内置的框架包推送到设备并解压到\n'
+      title: _frameworkInstalled == true
+          ? AppStrings.t('autostart.repairFramework')
+          : AppStrings.t('onboarding.deploy'),
+      message: '${AppStrings.t('autostart.deployMsgHead')}\n'
           '${_status.frameDir}\n\n'
-          '已有文件会被覆盖（脚本被改坏、被误删都能一键还原），\n'
-          '耗时约 1～2 分钟，期间请保持屏幕亮着。',
+          '${AppStrings.t('autostart.deployMsgTail')}',
       danger: _frameworkInstalled == true,
     );
     if (ok != true || !mounted) return;
@@ -140,7 +140,8 @@ class _AutostartScreenState extends State<AutostartScreen> {
     setState(() => _deploying = false);
     await _load();
     if (!mounted) return;
-    _toast(res.ok ? res.msg : '失败：${res.msg}', ok: res.ok);
+    _toast(res.ok ? res.msg : '${AppStrings.t('autostart.failedPrefix')}${res.msg}',
+        ok: res.ok);
   }
 
   // ---------------- 三个步骤 ----------------
@@ -151,7 +152,7 @@ class _AutostartScreenState extends State<AutostartScreen> {
     await _load();
     if (!mounted) return;
     if (!granted) {
-      _toast('未获得通知权限，自启结果将无法通知你', ok: false);
+      _toast(AppStrings.t('autostart.notifyDenied'), ok: false);
     }
   }
 
@@ -170,7 +171,7 @@ class _AutostartScreenState extends State<AutostartScreen> {
       await _load();
       if (!mounted) return;
       if (!_status.notifyGranted) {
-        _toast('需要通知权限才能在通知栏输入配对码', ok: false);
+        _toast(AppStrings.t('onboarding.notifyNeeded'), ok: false);
         return;
       }
     }
@@ -183,11 +184,11 @@ class _AutostartScreenState extends State<AutostartScreen> {
       final retry = await AutostartService.instance.startPairingFlow();
       if (!mounted) return;
       if (!retry.ok) {
-        _toast('通知权限未授予，无法发起配对', ok: false);
+        _toast(AppStrings.t('autostart.pairPermissionDenied'), ok: false);
         return;
       }
     } else if (!flow.ok) {
-      _toast('发起配对失败：${flow.msg}', ok: false);
+      _toast('${AppStrings.t('autostart.pairStartFailed')}${flow.msg}', ok: false);
       return;
     }
 
@@ -198,10 +199,9 @@ class _AutostartScreenState extends State<AutostartScreen> {
     final opened = await AutostartService.instance.openWirelessDebug();
     if (!mounted) return;
     if (opened) {
-      _toast('通知已发出：打开「无线调试 → 使用配对码配对设备」，'
-          '把配对码填进通知即可');
+      _toast(AppStrings.t('onboarding.pairSent'));
     } else {
-      _toast('通知已发出。请手动到 开发者选项 → 无线调试 打开配对界面');
+      _toast(AppStrings.t('onboarding.pairSentManual'));
     }
   }
 
@@ -214,35 +214,38 @@ class _AutostartScreenState extends State<AutostartScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('配对设备', style: AppText.cardTitle),
+        title: Text(AppStrings.t('onboarding.pair'), style: AppText.cardTitle),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '手机上操作：设置 → 开发者选项 → 无线调试 → '
-                '「使用配对码配对设备」。\n\n'
-                '把弹窗里的两个数字填到下面（**保持那个配对弹窗打开**，'
-                '一旦关掉端口就变了）。',
+                AppStrings.t('autostart.manualPairBody'),
                 style: AppText.body13,
               ),
               const SizedBox(height: 16),
-              _Field(controller: ctrlPort, label: '配对端口', hint: '如 37193'),
+              _Field(
+                  controller: ctrlPort,
+                  label: AppStrings.t('autostart.pairPortLabel'),
+                  hint: AppStrings.t('autostart.pairPortHint')),
               const SizedBox(height: 12),
-              _Field(controller: ctrlCode, label: '配对码', hint: '如 123456'),
+              _Field(
+                  controller: ctrlCode,
+                  label: AppStrings.t('autostart.pairCodeLabel'),
+                  hint: AppStrings.t('autostart.pairCodeHint')),
             ],
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('取消',
+            child: Text(AppStrings.t('common.cancel'),
                 style: AppText.rowLabel.copyWith(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('配对',
+            child: Text(AppStrings.t('autostart.pair'),
                 style: AppText.rowLabel.copyWith(color: AppColors.accent)),
           ),
         ],
@@ -255,7 +258,7 @@ class _AutostartScreenState extends State<AutostartScreen> {
     final code = ctrlCode.text.trim();
     if (port.isEmpty || code.isEmpty) {
       if (!mounted) return;
-      _toast('配对端口与配对码都要填', ok: false);
+      _toast(AppStrings.t('autostart.bothRequired'), ok: false);
       return;
     }
 
@@ -267,8 +270,8 @@ class _AutostartScreenState extends State<AutostartScreen> {
       final fixed = await AutostartService.instance.ensurePort();
       if (!mounted) return;
       res = fixed.ok
-          ? (ok: true, msg: '配对成功，并已固定端口 ${_status.port}')
-          : (ok: false, msg: '配对成功，但固定端口失败：${fixed.msg}');
+          ? (ok: true, msg: '${AppStrings.t('autostart.pairedPortFixed')}${_status.port}')
+          : (ok: false, msg: '${AppStrings.t('autostart.pairedPortFixFailed')}${fixed.msg}');
     }
 
     await _load();
@@ -286,9 +289,13 @@ class _AutostartScreenState extends State<AutostartScreen> {
     if (!mounted) return;
 
     if (r.skipped) {
-      _toast('框架已经在运行，无需重复启动');
+      _toast(AppStrings.t('autostart.alreadyRunning'));
     } else {
-      _toast(r.ok ? '成功：${r.msg}' : '失败：${r.msg}', ok: r.ok);
+      _toast(
+          r.ok
+              ? '${AppStrings.t('autostart.successPrefix')}${r.msg}'
+              : '${AppStrings.t('autostart.failedPrefix')}${r.msg}',
+          ok: r.ok);
     }
   }
 
@@ -307,12 +314,13 @@ class _AutostartScreenState extends State<AutostartScreen> {
                 children: [
                   const BackIconButton(),
                   const SizedBox(width: 4),
-                  const Expanded(child: ScreenAppBar(title: '开机自启')),
+                  Expanded(
+                      child: ScreenAppBar(title: AppStrings.t('settings.autostart'))),
                   IconButton(
                     onPressed: _loading || _busy ? null : _load,
                     icon: Icon(Icons.refresh,
                         size: 20, color: AppColors.textSecondary),
-                    tooltip: '刷新',
+                    tooltip: AppStrings.t('common.refresh'),
                   ),
                 ],
               ),
@@ -331,7 +339,7 @@ class _AutostartScreenState extends State<AutostartScreen> {
                       children: [
                         _StatusCard(status: _status),
                         const SizedBox(height: 16),
-                        _sectionTitle('框架'),
+                        _sectionTitle(AppStrings.t('settings.section.framework')),
                         const SizedBox(height: 8),
                         _FrameworkCard(
                           installed: _frameworkInstalled,
@@ -340,63 +348,63 @@ class _AutostartScreenState extends State<AutostartScreen> {
                           onDeploy: _deploy,
                         ),
                         const SizedBox(height: 16),
-                        _sectionTitle('配置步骤'),
+                        _sectionTitle(AppStrings.t('autostart.sectionSteps')),
                         const SizedBox(height: 8),
                         _StepCard(
                           index: 1,
-                          title: '通知权限',
-                          desc: '自启是后台静默完成的，没有通知你就无法确认它到底有没有生效。',
+                          title: AppStrings.t('onboarding.permNotify'),
+                          desc: AppStrings.t('autostart.stepNotifyDesc'),
                           done: _status.notifyGranted,
-                          doneText: '已授权',
-                          actionText: '去授权',
+                          doneText: AppStrings.t('autostart.granted'),
+                          actionText: AppStrings.t('autostart.grantAction'),
                           enabled: !_busy,
                           onTap: _grantNotify,
                         ),
                         const SizedBox(height: 8),
                         _StepCard(
                           index: 2,
-                          title: '设备配对',
-                          desc: '点「去配对」后在通知栏输入配对码即可 —— '
-                              '配对端口会自动发现，不用手抄。只需做一次，'
-                              '密钥跨重启保持，之后每次开机都是静默重认证。',
+                          title: AppStrings.t('autostart.stepPairTitle'),
+                          desc: AppStrings.t('autostart.stepPairDesc'),
                           done: _status.provisioned,
-                          doneText: '已配对',
-                          actionText: '去配对',
+                          doneText: AppStrings.t('autostart.paired'),
+                          actionText: AppStrings.t('autostart.pairAction'),
                           enabled: !_busy && !_deploying,
                           onTap: _pair,
-                          secondaryText: '手动填入',
+                          secondaryText: AppStrings.t('autostart.manualEntry'),
                           onSecondary: _pairManually,
                         ),
                         const SizedBox(height: 8),
                         _StepCard(
                           index: 3,
-                          title: '固定 ADB 端口',
-                          desc: '把端口固定为 ${_status.port}，这项设置跨重启保持，'
-                              '开机后系统会自动监听它 —— 这是全自动的前提。',
+                          title: AppStrings.t('autostart.stepPortTitle'),
+                          desc:
+                              '${AppStrings.t('autostart.stepPortDescHead')} ${_status.port}'
+                              '${AppStrings.t('autostart.stepPortDescTail')}',
                           done: _status.portFixed,
-                          doneText: '已固定',
-                          actionText: '执行',
+                          doneText: AppStrings.t('autostart.portFixedLabel'),
+                          actionText: AppStrings.t('autostart.runAction'),
                           enabled: !_busy,
                           onTap: () =>
                               _run(AutostartService.instance.ensurePort),
                         ),
                         const SizedBox(height: 16),
-                        _sectionTitle('验证'),
+                        _sectionTitle(AppStrings.t('autostart.sectionVerify')),
                         const SizedBox(height: 8),
                         _PrimaryButton(
-                          label: _busy ? '执行中…' : '立即执行一次',
+                          label: _busy
+                              ? AppStrings.t('autostart.running')
+                              : AppStrings.t('autostart.runOnce'),
                           icon: Icons.play_arrow_rounded,
                           enabled: !_busy,
                           onTap: _runNow,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '不必等到下次开机 —— 这里会完整走一遍'
-                          '「重认证 → 取 shell → 拉起框架」并给出真实结果。',
+                          AppStrings.t('autostart.verifyHint'),
                           style: AppText.desc12,
                         ),
                         const SizedBox(height: 16),
-                        _sectionTitle('重要提示'),
+                        _sectionTitle(AppStrings.t('autostart.sectionNotice')),
                         const SizedBox(height: 8),
                         _NoticeCard(
                           onOpenSettings: () async {
@@ -404,7 +412,10 @@ class _AutostartScreenState extends State<AutostartScreen> {
                                 .instance
                                 .openAutostartSettings();
                             if (!mounted) return;
-                            if (!ok) _toast('未找到自启动管理页，请手动到系统设置里放行', ok: false);
+                            if (!ok)
+                              _toast(
+                                  AppStrings.t('autostart.autostartSettingsMissing'),
+                                  ok: false);
                           },
                         ),
                       ],
@@ -442,11 +453,11 @@ class _FrameworkCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = deploying
-        ? '部署中…'
+        ? AppStrings.t('autostart.deploying')
         : switch (installed) {
-            true => '已部署',
-            false => '未部署',
-            null => '检测中…',
+            true => AppStrings.t('autostart.deployed'),
+            false => AppStrings.t('autostart.notDeployed'),
+            null => AppStrings.t('autostart.detecting'),
           };
     final stateColor = switch ((deploying, installed)) {
       (false, true) => AppColors.accent,
@@ -466,7 +477,8 @@ class _FrameworkCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text('框架包', style: AppText.rowLabel),
+                child: Text(AppStrings.t('autostart.frameworkPackage'),
+                    style: AppText.rowLabel),
               ),
               Text(state, style: AppText.desc12.copyWith(color: stateColor)),
               const SizedBox(width: 10),
@@ -483,7 +495,11 @@ class _FrameworkCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    deploying ? '部署中…' : (installed == true ? '修复' : '部署'),
+                    deploying
+                        ? AppStrings.t('autostart.deploying')
+                        : (installed == true
+                            ? AppStrings.t('autostart.repair')
+                            : AppStrings.t('autostart.deployBtn')),
                     style: AppText.desc12.copyWith(
                       color: deploying ? AppColors.textInactive : AppColors.accent,
                     ),
@@ -494,10 +510,9 @@ class _FrameworkCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'App 内置了整套框架（含 Python 运行时，约 12MB）。\n'
-            '部署位置：$frameDir\n\n'
-            '重复点「修复」即可把框架还原成出厂状态 —— 脚本改坏了、删了都不怕。\n'
-            '启动框架时若发现未部署，也会自动补上。',
+            '${AppStrings.t('autostart.frameworkDescHead')}\n'
+            '$frameDir\n\n'
+            '${AppStrings.t('autostart.frameworkDescTail')}',
             style: AppText.desc12,
           ),
         ],
@@ -516,8 +531,9 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final last = status.lastRunAt;
     final lastText = last == null
-        ? '尚未执行'
-        : '${_fmt(last)}  ${status.lastOk ? "成功" : "失败"}';
+        ? AppStrings.t('autostart.neverRun')
+        : '${_fmt(last)}  '
+            '${status.lastOk ? AppStrings.t('autostart.success') : AppStrings.t('autostart.failure')}';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -536,16 +552,23 @@ class _StatusCard extends StatelessWidget {
                 color: status.enabled ? AppColors.accent : AppColors.textInactive,
               ),
               const SizedBox(width: 8),
-              Text(status.enabled ? '开机自启已开启' : '开机自启已关闭',
+              Text(
+                  status.enabled
+                      ? AppStrings.t('autostart.statusEnabled')
+                      : AppStrings.t('autostart.statusDisabled'),
                   style: AppText.cardTitle),
             ],
           ),
           const SizedBox(height: 14),
-          _kv('密钥', status.provisioned ? '已生成（未授权则需配对）' : '未生成'),
+          _kv(
+              AppStrings.t('autostart.keyLabel'),
+              status.provisioned
+                  ? AppStrings.t('autostart.keyGenerated')
+                  : AppStrings.t('autostart.keyNotGenerated')),
           const SizedBox(height: 10),
-          _kv('固定端口', '${status.port}'),
+          _kv(AppStrings.t('autostart.portLabel'), '${status.port}'),
           const SizedBox(height: 10),
-          _kv('上次自启', lastText),
+          _kv(AppStrings.t('autostart.lastRun'), lastText),
           if (!status.neverRun && status.lastMsg.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(status.lastMsg, style: AppText.desc12),
@@ -557,7 +580,11 @@ class _StatusCard extends StatelessWidget {
 
   static String _fmt(DateTime t) {
     String two(int v) => v.toString().padLeft(2, '0');
-    return '${t.month}月${t.day}日 ${two(t.hour)}:${two(t.minute)}';
+    final time = '${two(t.hour)}:${two(t.minute)}';
+    if (AppStrings.isEnglish) {
+      return '${t.year}-${two(t.month)}-${two(t.day)} $time';
+    }
+    return '${t.month}月${t.day}日 $time';
   }
 
   Widget _kv(String k, String v) => Row(
@@ -749,12 +776,7 @@ class _NoticeCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '· 小米 / Redmi 机型默认拦截开机广播，需要在系统的「自启动管理」里'
-            '放行本应用，否则自启不会生效，而且**不会有任何报错**。\n\n'
-            '· 自启依赖固定端口，因此该端口会常驻监听。它需要 ADB 密钥才能连接，'
-            '但同网络下的设备仍可尝试 —— 请勿在不可信网络下长期开启。\n\n'
-            '· 请勿在框架运行期间切换 USB / 无线调试或执行 adb 模式切换命令：'
-            '那会重启 ADB 服务，连带终止框架进程。',
+            AppStrings.t('autostart.noticeBody'),
             style: AppText.desc12,
           ),
           const SizedBox(height: 14),
@@ -774,7 +796,7 @@ class _NoticeCard extends StatelessWidget {
                   Icon(Icons.settings_applications_outlined,
                       size: 16, color: AppColors.textSecondary),
                   const SizedBox(width: 6),
-                  Text('打开系统自启动管理',
+                  Text(AppStrings.t('autostart.openAutostartSettings'),
                       style: AppText.rowLabel
                           .copyWith(color: AppColors.textSecondary)),
                 ],
