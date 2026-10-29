@@ -1,5 +1,7 @@
 # Shell Manager
 
+**简体中文** | [English](README_EN.md)
+
 **免 root 的 Android 模块管理器** —— 不刷机、不解锁 Bootloader，通过系统自带的「无线调试」取得 shell 权限，
 再用一套自带运行时 + 沙箱 + 写前快照的框架，来跑各种**免 root 模块**。
 
