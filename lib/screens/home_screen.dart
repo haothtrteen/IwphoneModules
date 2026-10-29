@@ -667,30 +667,38 @@ class _TokenSetupCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          InkWell(
-            // 「暂不设置」：密钥是可选配置，不设框架照样跑
-            InkWell(
-              onTap: onSkip,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Text(AppStrings.t('home.tokenCardSkip'),
-                    style: AppText.desc12.copyWith(color: AppColors.textSecondary)),
-              ),
-            ),
-            const SizedBox(width: 4),
-            onTap: onSet,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.iconOrange.withValues(alpha: 0.15),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 「暂不设置」：密钥是可选配置，不设框架照样跑
+              InkWell(
+                onTap: onSkip,
                 borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text(AppStrings.t('home.tokenCardSkip'),
+                      style: AppText.desc12
+                          .copyWith(color: AppColors.textSecondary)),
+                ),
               ),
-              child: Text(AppStrings.t('home.tokenCardAction'),
-                  style:
-                      AppText.desc12.copyWith(color: AppColors.iconOrange)),
-            ),
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: onSet,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.iconOrange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(AppStrings.t('home.tokenCardAction'),
+                      style:
+                          AppText.desc12.copyWith(color: AppColors.iconOrange)),
+                ),
+              ),
+            ],
           ),
         ],
       ),

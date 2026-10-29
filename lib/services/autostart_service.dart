@@ -308,7 +308,12 @@ class AutostartService {
         tokenPromptDismissed: raw['tokenPromptDismissed'] == true,
       );
     } catch (_) {
-      return (themeMode: 'system', locale: 'system', onboardingDone: false);
+      return (
+        themeMode: 'system',
+        locale: 'system',
+        onboardingDone: false,
+        tokenPromptDismissed: false,
+      );
     }
   }
 
