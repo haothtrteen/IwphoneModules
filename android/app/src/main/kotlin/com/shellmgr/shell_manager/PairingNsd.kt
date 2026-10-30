@@ -31,7 +31,10 @@ import android.os.Looper
 object PairingNsd {
 
     /** ADB 无线配对服务的 mDNS 类型（系统约定）。 */
-    private const val SERVICE_TYPE = "_adb-tls-pairing._tcp"
+    private const val PAIRING_SERVICE_TYPE = "_adb-tls-pairing._tcp"
+
+    /** ADB 无线调试「连接」服务的 mDNS 类型（动态端口，用于首次建立 transport）。 */
+    private const val CONNECT_SERVICE_TYPE = "_adb-tls-connect._tcp"
 
     /**
      * 发现配对端口。
@@ -42,6 +45,25 @@ object PairingNsd {
     fun findPairingPort(
         context: Context,
         timeoutMs: Long = 12_000,
+        onResult: (Int?) -> Unit,
+    ) = findPort(context, PAIRING_SERVICE_TYPE, timeoutMs, onResult)
+
+    /**
+     * 发现无线调试的**连接端口**（`_adb-tls-connect._tcp`）。
+     *
+     * 配对只代表「adbd 记住了本机公钥」，并不会建立 transport；
+     * 首次使用必须连上这个动态端口，才能执行 `adb tcpip 5555` 把端口固定下来。
+     */
+    fun findConnectPort(
+        context: Context,
+        timeoutMs: Long = 12_000,
+        onResult: (Int?) -> Unit,
+    ) = findPort(context, CONNECT_SERVICE_TYPE, timeoutMs, onResult)
+
+    private fun findPort(
+        context: Context,
+        serviceType: String,
+        timeoutMs: Long,
         onResult: (Int?) -> Unit,
     ) {
         val nsd = context.getSystemService(NsdManager::class.java)
@@ -97,7 +119,7 @@ object PairingNsd {
         listenerRef = listener
 
         try {
-            nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
+            nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
         } catch (_: Exception) {
             finish(null)
             return
