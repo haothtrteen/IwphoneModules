@@ -55,6 +55,13 @@ class AutostartChannel(private val activity: FlutterActivity) {
                     mapOf("ok" to r.ok, "msg" to r.message)
                 }
 
+                // 完全卸载（adb 直连备用通道）：WebUI 不可用时由这里执行 uninstall.sh。
+                // 脚本会先停守护与模块再删目录，耗时可达数十秒，必须走后台线程。
+                "uninstallFramework" -> runAsync(result) {
+                    val r = AdbBootstrap.uninstallFramework(activity)
+                    mapOf("ok" to r.ok, "msg" to r.message)
+                }
+
                 "setEnabled" -> {
                     val v = call.argument<Boolean>("value") ?: false
                     AutostartPrefs.setEnabled(activity, v)

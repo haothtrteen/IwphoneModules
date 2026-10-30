@@ -590,6 +590,10 @@ abstract final class AppStrings {
               '卸载后 App 将无法连接框架。\n\n确定要继续吗？',
       'settings.uninstallQueued': '卸载已启动',
       'settings.uninstallFailedTitle': '卸载失败',
+      'settings.uninstallDoneAdb': '框架已卸载',
+      'settings.uninstallDoneAdbHint':
+          '已通过 ADB 通道删除运行时目录、日志与状态镜像（框架源文件保留）。',
+      'settings.uninstallAdbFailedPrefix': 'ADB 通道也失败：',
 
       // ---- 访问密钥对话框 ----
       'webuiToken.titleSet': '设置访问密钥',
@@ -1259,6 +1263,10 @@ abstract final class AppStrings {
               'After uninstalling, the app cannot connect to the framework.\n\nContinue?',
       'settings.uninstallQueued': 'Uninstall started',
       'settings.uninstallFailedTitle': 'Uninstall failed',
+      'settings.uninstallDoneAdb': 'Framework uninstalled',
+      'settings.uninstallDoneAdbHint':
+          'The runtime directory, logs and state mirror were removed over the ADB channel (framework source files kept).',
+      'settings.uninstallAdbFailedPrefix': 'ADB channel also failed: ',
 
       // ---- access key dialog ----
       'webuiToken.titleSet': 'Set access key',

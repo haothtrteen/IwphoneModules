@@ -66,6 +66,9 @@ object AdbBootstrap {
     /** 框架守护入口。 */
     const val MAIN_SH = "$FRAME_DIR/Main.sh"
 
+    /** 框架自带的卸载脚本。 */
+    const val UNINSTALL_SH = "$FRAME_DIR/uninstall.sh"
+
     /** WebUI 启动脚本。 */
     const val WEBUI_START = "$FRAME_DIR/webui/webui_start.sh"
 
@@ -181,6 +184,43 @@ object AdbBootstrap {
     private fun transportAlive(ctx: Context): Boolean {
         val r = run(ctx, listOf("-s", TARGET, "get-state"), timeoutMs = 10_000)
         return r.ok && r.message.trim().equals("device", ignoreCase = true)
+    }
+
+    /**
+     * 完全卸载框架 —— 不经 WebUI 的备用通道。
+     *
+     * WebUI 未运行（守护进程已停）时 HTTP 通道不可用，但卸载不应该被卡住：
+     * 这里直接以 shell 身份执行框架自带的 uninstall.sh —— 它先停 WebUI / 守护进程 /
+     * 全部模块，再删运行时目录、日志与状态镜像，与 WebUI 那条路径行为一致。
+     *
+     * 脚本缺失（框架源文件被误删）时兜底直接删运行时目录；那种情况下已运行的模块
+     * 无法优雅停止，属于尽力而为。
+     */
+    fun uninstallFramework(ctx: Context): Result {
+        if (!ensureConnected(ctx)) {
+            return Result(false, "adb 未连接：请先完成设备配对并固定端口")
+        }
+        val r = run(
+            ctx,
+            listOf("-s", TARGET, "shell", "test -f $UNINSTALL_SH && sh $UNINSTALL_SH y"),
+            timeoutMs = 60_000,
+        )
+        if (r.ok) return Result(true, "卸载完成")
+
+        // 兜底：脚本不在时至少把运行时、日志与状态镜像删掉
+        val fallback = run(
+            ctx,
+            listOf(
+                "-s", TARGET, "shell",
+                "rm -rf $IWPHONE_ROOT /sdcard/iwphone/logs /sdcard/iwphone/state",
+            ),
+            timeoutMs = 20_000,
+        )
+        return if (fallback.ok) {
+            Result(true, "卸载完成（脚本缺失，已直接删除运行时目录）")
+        } else {
+            Result(false, fallback.message)
+        }
     }
 
     fun isFrameworkInstalled(ctx: Context): Boolean {

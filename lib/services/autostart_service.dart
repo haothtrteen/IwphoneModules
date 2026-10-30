@@ -224,6 +224,21 @@ class AutostartService {
     }
   }
 
+  /// 完全卸载框架（ADB 直连通道）。
+  ///
+  /// WebUI 不可达时（守护进程已停、框架接口没起来）HTTP 通道用不了，
+  /// 这里直接以 shell 身份执行框架自带的 uninstall.sh，行为与 WebUI 通道一致：
+  /// 先停 WebUI / 守护进程 / 全部模块，再删运行时目录、日志与状态镜像。
+  Future<({bool ok, String msg})> uninstallFrameworkAdb() async {
+    try {
+      final raw = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('uninstallFramework');
+      return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
+    } catch (_) {
+      return (ok: false, msg: AppStrings.t('service.callFailed'));
+    }
+  }
+
   /// 发起「通知栏输入配对码」流程。
   ///
   /// 返回 `needPermission=true` 表示通知权限还没给（Android 13+），
