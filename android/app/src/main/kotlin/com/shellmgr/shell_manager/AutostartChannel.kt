@@ -77,6 +77,8 @@ class AutostartChannel(private val activity: FlutterActivity) {
                     val code = call.argument<String>("code") ?: ""
                     runAsync(result) {
                         val r = AdbBootstrap.pair(activity, port, code)
+                        // 手动填写配对成功后，通知栏里的「等待配对码」也要一并撤掉
+                        if (r.ok) PairingNotify.cancelWaiting(activity)
                         mapOf("ok" to r.ok, "msg" to r.message)
                     }
                 }
