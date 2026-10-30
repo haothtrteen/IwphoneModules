@@ -164,6 +164,7 @@ abstract final class AppStrings {
       'home.running': '运行中',
       'home.stopped': '已停止',
       'home.notInstalled': '未安装',
+      'home.notInstalledDesc': '框架尚未部署。点下方「部署框架」即可一键安装（App 内置框架包）。',
       'home.checking': '检查中…',
       'home.detecting': '检测中',
       'home.notRunning': '未运行',
@@ -188,6 +189,13 @@ abstract final class AppStrings {
       'home.tokenCardSkip': '暂不设置',
       'home.tokenCardAction': '去设置',
       'home.tokenSet': '访问密钥已生效，框架功能已解锁',
+      'home.deployFramework': '部署框架',
+      'home.repairFramework': '修复框架',
+      'home.completeUninstall': '完全卸载',
+      'home.deployMessage':
+          '把 App 内置的框架包部署到设备并解压覆盖。\n\n'
+              '已有文件会被覆盖（脚本被改坏、被误删都能一键还原），\n'
+              '耗时约 1～2 分钟，期间请保持屏幕亮着。',
 
       // ---- 模块页 ----
       'modules.running': '运行中',
@@ -780,6 +788,8 @@ abstract final class AppStrings {
       'home.running': 'Running',
       'home.stopped': 'Stopped',
       'home.notInstalled': 'Not installed',
+      'home.notInstalledDesc':
+          'The framework is not deployed yet. Tap "Deploy framework" below to install it in one tap (the bundle ships in the app).',
       'home.checking': 'Checking…',
       'home.detecting': 'Detecting',
       'home.notRunning': 'Not running',
@@ -804,6 +814,13 @@ abstract final class AppStrings {
       'home.tokenCardSkip': 'Skip',
       'home.tokenCardAction': 'Set now',
       'home.tokenSet': 'Access key active — framework unlocked',
+      'home.deployFramework': 'Deploy framework',
+      'home.repairFramework': 'Repair framework',
+      'home.completeUninstall': 'Complete uninstall',
+      'home.deployMessage':
+          'Deploys the framework bundle included in the app and extracts it over the existing files.\n\n'
+              'Existing files are overwritten (a damaged or deleted script can be restored in one tap).\n'
+              'This takes about 1–2 minutes — keep the screen on.',
 
       // ---- modules ----
       'modules.running': 'Running',

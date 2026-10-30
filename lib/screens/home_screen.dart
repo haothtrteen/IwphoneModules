@@ -6,8 +6,10 @@ import '../services/webui_token.dart';
 import '../services/system_info_service.dart';
 import '../theme/app_theme.dart';
 import '../services/app_prefs.dart';
+import '../services/autostart_service.dart';
 import '../i18n/app_strings.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/framework_uninstall.dart';
 import '../widgets/webui_token_dialog.dart';
 
 /// 主页 —— 聚焦 iwphone modrunner v3 框架状态。
@@ -36,6 +38,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 设备上是否已设访问密钥。null = 还没查到（不显示引导，避免闪一下）。
   bool? _tokenSet;
 
+  /// 框架源文件是否已部署到设备。null = 还没查到。
+  bool? _frameworkInstalled;
+
   @override
   void initState() {
     super.initState();
@@ -54,12 +59,14 @@ class _HomeScreenState extends State<HomeScreen> {
       IwphoneService.instance.getStatus(),
       SystemInfoService.instance.load(),
       WebuiTokenManager.instance.isSetOnDevice(),
+      AutostartService.instance.frameworkInstalled(),
     ]);
     if (!mounted) return;
     setState(() {
       _status = results[0] as IwphoneStatus;
       _info = results[1] as SystemInfo;
       _tokenSet = results[2] as bool;
+      _frameworkInstalled = results[3] as bool;
       _statusLoading = false;
     });
   }
@@ -114,6 +121,50 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 部署 / 修复框架：与开机自启页同一套动作，首页提供快捷入口。
+  ///
+  /// 「修复」= 用 App 内置包覆盖设备上的框架源文件，脚本改坏/误删都能还原；
+  /// 已有文件会被覆盖，所以走危险确认（红色按钮）。
+  Future<void> _deployFramework() async {
+    final installed = _frameworkInstalled == true;
+    final ok = await showConfirmDialog(
+      context,
+      title: installed
+          ? AppStrings.t('home.repairFramework')
+          : AppStrings.t('home.deployFramework'),
+      message: AppStrings.t('home.deployMessage'),
+      confirmText: installed
+          ? AppStrings.t('home.repairFramework')
+          : AppStrings.t('home.deployFramework'),
+      danger: installed,
+    );
+    if (!ok || !mounted) return;
+
+    setState(() => _statusLoading = true);
+    final res = await AutostartService.instance.deployFramework();
+    if (!mounted) return;
+    setState(() => _statusLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res.ok
+            ? AppStrings.t('onboarding.deployOk')
+            : '${AppStrings.t('onboarding.deployFail')}'
+                '${res.msg.isEmpty ? '' : ' · ${res.msg}'}'),
+      ),
+    );
+    await _load();
+  }
+
+  /// 完全卸载：走共享确认入口，完成后刷新首页的部署状态。
+  ///
+  /// 后端是延迟 3 秒执行的，立刻刷新会读不到变化，所以等一拍再重新探测。
+  Future<void> _uninstallFramework() async {
+    await confirmFrameworkUninstall(context);
+    if (!mounted) return;
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (mounted) await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -141,6 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _FrameworkStatusCard(
               status: _status,
               loading: _statusLoading,
+              installed: _frameworkInstalled,
               onStop: () => _frameworkAction(
                 title: AppStrings.t('home.stop'),
                 message: AppStrings.t('home.stopMessage'),
@@ -162,6 +214,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 successText: AppStrings.t('home.syncDone'),
                 action: () => IwphoneService.instance.triggerSync(),
               ),
+              onDeploy: _deployFramework,
+              onUninstall: _uninstallFramework,
             ),
             const SizedBox(height: 16),
             _StatsGrid(status: _status, info: _info, loading: _statusLoading),
@@ -207,34 +261,50 @@ class _FrameworkStatusCard extends StatelessWidget {
   const _FrameworkStatusCard({
     required this.status,
     required this.loading,
+    required this.installed,
     required this.onStop,
     required this.onRestart,
     required this.onSync,
+    required this.onDeploy,
+    required this.onUninstall,
   });
 
   final IwphoneStatus status;
   final bool loading;
+
+  /// 框架源文件是否已部署。null = 尚未查到。
+  final bool? installed;
 
   /// 框架控制回调。三个操作都会先弹二次确认，由宿主层负责。
   final VoidCallback onStop;
   final VoidCallback onRestart;
   final VoidCallback onSync;
 
+  /// 部署 / 修复框架、完全卸载。两者都需要二次确认。
+  final VoidCallback onDeploy;
+  final VoidCallback onUninstall;
+
   @override
   Widget build(BuildContext context) {
     final running = !loading && status.daemonRunning;
     final badgeText = loading
         ? AppStrings.t('home.detecting')
-        : (running ? AppStrings.t('home.running') : AppStrings.t('home.notRunning'));
+        : (installed == false
+            ? AppStrings.t('home.notInstalled')
+            : (running
+                ? AppStrings.t('home.running')
+                : AppStrings.t('home.notRunning')));
     final badgeColor = running ? AppColors.accent : AppColors.textInactive;
     final endpoint = loading
         ? '—'
         : (running ? 'http://127.0.0.1:8537' : AppStrings.t('home.notConnected'));
     final desc = loading
         ? AppStrings.t('home.probing')
-        : running
-            ? AppStrings.t('home.daemonRunning')
-            : AppStrings.t('home.daemonMissing');
+        : (installed == false
+            ? AppStrings.t('home.notInstalledDesc')
+            : (running
+                ? AppStrings.t('home.daemonRunning')
+                : AppStrings.t('home.daemonMissing')));
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -289,6 +359,33 @@ class _FrameworkStatusCard extends StatelessWidget {
             onStop: onStop,
             onRestart: onRestart,
             onSync: onSync,
+          ),
+          const SizedBox(height: 8),
+          // 安装 / 完全卸载入口：与 Magisk 首页一致，摆在一级页面。
+          Row(
+            children: [
+              Expanded(
+                child: _ActionButton(
+                  icon: installed == true
+                      ? Icons.build_circle_outlined
+                      : Icons.system_update_alt_rounded,
+                  label: installed == true
+                      ? AppStrings.t('home.repairFramework')
+                      : AppStrings.t('home.deployFramework'),
+                  color: AppColors.accent,
+                  onTap: loading ? null : onDeploy,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ActionButton(
+                  icon: Icons.delete_forever_outlined,
+                  label: AppStrings.t('home.completeUninstall'),
+                  color: AppColors.iconRed,
+                  onTap: (loading || installed != true) ? null : onUninstall,
+                ),
+              ),
+            ],
           ),
         ],
       ),
