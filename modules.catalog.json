@@ -1,5 +1,5 @@
 {
-    "schemaVersion":  1,
+    "schemaVersion":  2,
     "repository":  "haothtrteen/IwphoneModules",
     "updatedAt":  "2026-10-31",
     "modules":  [
@@ -12,7 +12,8 @@
                         "exclusive":  "global.window_animation_scale,global.transition_animation_scale,global.animator_duration_scale",
                         "runtime":  "0",
                         "packagePath":  "framework/module/AnimTuner.iwp",
-                        "sizeBytes":  2019
+                        "sizeBytes":  2019,
+                        "sha256":  "b13436404ca343acfc3a0d0aa3ac9117b4f4ebd53f2a34f186f0afa0e403e351"
                     },
                     {
                         "id":  "BlurOff",
@@ -23,7 +24,8 @@
                         "exclusive":  "global.disable_window_blurs,global.accessibility_reduce_transparency",
                         "runtime":  "0",
                         "packagePath":  "framework/module/BlurOff.iwp",
-                        "sizeBytes":  2066
+                        "sizeBytes":  2066,
+                        "sha256":  "8fedf536484fadc4cafc47c4f3c4c827b2249ca9b9c3b401ebca624f5d57e5c4"
                     },
                     {
                         "id":  "IWPhone息屏深度doze",
@@ -34,7 +36,8 @@
                         "exclusive":  null,
                         "runtime":  "0",
                         "packagePath":  "framework/module/IWPhone息屏深度doze.iwp",
-                        "sizeBytes":  2234
+                        "sizeBytes":  2234,
+                        "sha256":  "b6660d4f910663890627db2627bdbcce8a2e44ecc621a1fb0e69cc77bf920a8d"
                     },
                     {
                         "id":  "NightNetOff",
@@ -45,7 +48,8 @@
                         "exclusive":  "svc.data.disable,svc.data.enable,svc.wifi.disable,svc.wifi.enable",
                         "runtime":  "0",
                         "packagePath":  "framework/module/NightNetOff.iwp",
-                        "sizeBytes":  2117
+                        "sizeBytes":  2117,
+                        "sha256":  "1bbc5be3553acd7886be1ef91848ea233672da9291c72f7b9b45e3b33e28577c"
                     },
                     {
                         "id":  "PrivateDNS",
@@ -56,7 +60,8 @@
                         "exclusive":  "global.private_dns_mode,global.private_dns_specifier",
                         "runtime":  "0",
                         "packagePath":  "framework/module/PrivateDNS.iwp",
-                        "sizeBytes":  2098
+                        "sizeBytes":  2098,
+                        "sha256":  "0af4f75f3259475c17e6546368502e6a6e2af0dc9739a39f2a73845452d63863"
                     },
                     {
                         "id":  "SampleMagiskMod",
@@ -67,7 +72,8 @@
                         "exclusive":  null,
                         "runtime":  null,
                         "packagePath":  "framework/module/SampleMagiskMod.iwp",
-                        "sizeBytes":  1133
+                        "sizeBytes":  1133,
+                        "sha256":  "ae06a167f9575779b124a5a88e7dcdc7ce91dfb1244a1b98a9b1c6866c2f7c04"
                     },
                     {
                         "id":  "应用管理aapt",
@@ -78,7 +84,8 @@
                         "exclusive":  null,
                         "runtime":  "60",
                         "packagePath":  "framework/module/应用管理aapt.iwp",
-                        "sizeBytes":  446310
+                        "sizeBytes":  446310,
+                        "sha256":  "c15dad409ac817efd7d6f27c346e0e62503cf2cbbea9372b4599e74acc8b8389"
                     }
                 ]
 }
