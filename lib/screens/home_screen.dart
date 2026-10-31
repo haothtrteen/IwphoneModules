@@ -6,8 +6,10 @@ import '../services/webui_token.dart';
 import '../services/system_info_service.dart';
 import '../theme/app_theme.dart';
 import '../services/app_prefs.dart';
+import '../services/autostart_service.dart';
 import '../i18n/app_strings.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/framework_uninstall.dart';
 import '../widgets/webui_token_dialog.dart';
 
 /// 主页 —— 聚焦 iwphone modrunner v3 框架状态。
@@ -36,6 +38,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 设备上是否已设访问密钥。null = 还没查到（不显示引导，避免闪一下）。
   bool? _tokenSet;
 
+  /// 框架源文件是否已部署到设备。null = 还没查到。
+  bool? _frameworkInstalled;
+
   @override
   void initState() {
     super.initState();
@@ -54,12 +59,14 @@ class _HomeScreenState extends State<HomeScreen> {
       IwphoneService.instance.getStatus(),
       SystemInfoService.instance.load(),
       WebuiTokenManager.instance.isSetOnDevice(),
+      AutostartService.instance.frameworkInstalled(),
     ]);
     if (!mounted) return;
     setState(() {
       _status = results[0] as IwphoneStatus;
       _info = results[1] as SystemInfo;
       _tokenSet = results[2] as bool;
+      _frameworkInstalled = results[3] as bool;
       _statusLoading = false;
     });
   }
@@ -70,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('访问密钥已生效，框架功能已解锁')),
+        SnackBar(content: Text(AppStrings.t('home.tokenSet'))),
       );
     }
     await _load();
@@ -106,10 +113,56 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          success ? successText : '$title失败：WebUI 不可达或框架未响应',
+          success
+              ? successText
+              : '$title${AppStrings.t('home.actionFailedSuffix')}',
         ),
       ),
     );
+  }
+
+  /// 部署 / 修复框架：与开机自启页同一套动作，首页提供快捷入口。
+  ///
+  /// 「修复」= 用 App 内置包覆盖设备上的框架源文件，脚本改坏/误删都能还原；
+  /// 已有文件会被覆盖，所以走危险确认（红色按钮）。
+  Future<void> _deployFramework() async {
+    final installed = _frameworkInstalled == true;
+    final ok = await showConfirmDialog(
+      context,
+      title: installed
+          ? AppStrings.t('home.repairFramework')
+          : AppStrings.t('home.deployFramework'),
+      message: AppStrings.t('home.deployMessage'),
+      confirmText: installed
+          ? AppStrings.t('home.repairFramework')
+          : AppStrings.t('home.deployFramework'),
+      danger: installed,
+    );
+    if (!ok || !mounted) return;
+
+    setState(() => _statusLoading = true);
+    final res = await AutostartService.instance.deployFramework();
+    if (!mounted) return;
+    setState(() => _statusLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res.ok
+            ? AppStrings.t('onboarding.deployOk')
+            : '${AppStrings.t('onboarding.deployFail')}'
+                '${res.msg.isEmpty ? '' : ' · ${res.msg}'}'),
+      ),
+    );
+    await _load();
+  }
+
+  /// 完全卸载：走共享确认入口，完成后刷新首页的部署状态。
+  ///
+  /// 后端是延迟 3 秒执行的，立刻刷新会读不到变化，所以等一拍再重新探测。
+  Future<void> _uninstallFramework() async {
+    await confirmFrameworkUninstall(context);
+    if (!mounted) return;
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (mounted) await _load();
   }
 
   @override
@@ -139,32 +192,30 @@ class _HomeScreenState extends State<HomeScreen> {
             _FrameworkStatusCard(
               status: _status,
               loading: _statusLoading,
+              installed: _frameworkInstalled,
               onStop: () => _frameworkAction(
-                title: '停止框架',
-                message: '将停止 iwphone 守护进程。\n\n'
-                    '停止后框架不再轮询触发目录；已在运行的模块不会被停止，'
-                    '但无法再通过 App 或触发文件启动新模块。\n\n确定要停止吗？',
-                confirmText: '停止',
-                successText: '框架已停止',
+                title: AppStrings.t('home.stop'),
+                message: AppStrings.t('home.stopMessage'),
+                confirmText: AppStrings.t('home.stopAction'),
+                successText: AppStrings.t('home.stopDone'),
                 action: () => IwphoneService.instance.runnerStop(),
               ),
               onRestart: () => _frameworkAction(
-                title: '重启框架',
-                message: '将先停止、再启动 iwphone 守护进程。\n\n'
-                    '重启会打断当前轮询周期，期间无法响应模块启动请求；'
-                    '已在运行的模块不受影响。\n\n确定要重启吗？',
-                confirmText: '重启',
-                successText: '框架已重启',
+                title: AppStrings.t('home.restart'),
+                message: AppStrings.t('home.restartMessage'),
+                confirmText: AppStrings.t('home.restartAction'),
+                successText: AppStrings.t('home.restartDone'),
                 action: () => IwphoneService.instance.runnerRestart(),
               ),
               onSync: () => _frameworkAction(
-                title: '同步状态',
-                message: '将把执行区状态镜像同步到 /sdcard/iwphone/state/。\n\n'
-                    '同步需遍历模块目录，模块较多时可能短暂变慢。\n\n确定要同步吗？',
-                confirmText: '同步',
-                successText: '同步完成',
+                title: AppStrings.t('home.sync'),
+                message: AppStrings.t('home.syncMessage'),
+                confirmText: AppStrings.t('home.syncAction'),
+                successText: AppStrings.t('home.syncDone'),
                 action: () => IwphoneService.instance.triggerSync(),
               ),
+              onDeploy: _deployFramework,
+              onUninstall: _uninstallFramework,
             ),
             const SizedBox(height: 16),
             _StatsGrid(status: _status, info: _info, loading: _statusLoading),
@@ -210,34 +261,50 @@ class _FrameworkStatusCard extends StatelessWidget {
   const _FrameworkStatusCard({
     required this.status,
     required this.loading,
+    required this.installed,
     required this.onStop,
     required this.onRestart,
     required this.onSync,
+    required this.onDeploy,
+    required this.onUninstall,
   });
 
   final IwphoneStatus status;
   final bool loading;
+
+  /// 框架源文件是否已部署。null = 尚未查到。
+  final bool? installed;
 
   /// 框架控制回调。三个操作都会先弹二次确认，由宿主层负责。
   final VoidCallback onStop;
   final VoidCallback onRestart;
   final VoidCallback onSync;
 
+  /// 部署 / 修复框架、完全卸载。两者都需要二次确认。
+  final VoidCallback onDeploy;
+  final VoidCallback onUninstall;
+
   @override
   Widget build(BuildContext context) {
     final running = !loading && status.daemonRunning;
     final badgeText = loading
         ? AppStrings.t('home.detecting')
-        : (running ? AppStrings.t('home.running') : AppStrings.t('home.notRunning'));
+        : (installed == false
+            ? AppStrings.t('home.notInstalled')
+            : (running
+                ? AppStrings.t('home.running')
+                : AppStrings.t('home.notRunning')));
     final badgeColor = running ? AppColors.accent : AppColors.textInactive;
     final endpoint = loading
         ? '—'
         : (running ? 'http://127.0.0.1:8537' : AppStrings.t('home.notConnected'));
     final desc = loading
-        ? '正在探测 iwphone 框架…'
-        : running
-            ? 'iwphone modrunner v3 守护进程已启动'
-            : '请先在终端执行：\nadb shell sh /data/local/tmp/iwphone/Main.sh &';
+        ? AppStrings.t('home.probing')
+        : (installed == false
+            ? AppStrings.t('home.notInstalledDesc')
+            : (running
+                ? AppStrings.t('home.daemonRunning')
+                : AppStrings.t('home.daemonMissing')));
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -268,13 +335,16 @@ class _FrameworkStatusCard extends StatelessWidget {
           const SizedBox(height: 16),
           Container(height: 1, color: AppColors.divider),
           const SizedBox(height: 16),
-          _InfoRow(label: 'WebUI 地址', value: endpoint, mono: true),
+          _InfoRow(
+              label: AppStrings.t('home.webuiAddress'),
+              value: endpoint,
+              mono: true),
           const SizedBox(height: 16),
           _InfoRow(label: 'PID', value: _dash(status.daemonPid?.toString())),
           const SizedBox(height: 16),
           // 框架以什么身份运行 —— 免 root 方案最关键的验证点
           _InfoRow(
-            label: '运行身份',
+            label: AppStrings.t('home.runAs'),
             value: _dash(status.daemonUser),
             mono: true,
           ),
@@ -289,6 +359,33 @@ class _FrameworkStatusCard extends StatelessWidget {
             onStop: onStop,
             onRestart: onRestart,
             onSync: onSync,
+          ),
+          const SizedBox(height: 8),
+          // 安装 / 完全卸载入口：与 Magisk 首页一致，摆在一级页面。
+          Row(
+            children: [
+              Expanded(
+                child: _ActionButton(
+                  icon: installed == true
+                      ? Icons.build_circle_outlined
+                      : Icons.system_update_alt_rounded,
+                  label: installed == true
+                      ? AppStrings.t('home.repairFramework')
+                      : AppStrings.t('home.deployFramework'),
+                  color: AppColors.accent,
+                  onTap: loading ? null : onDeploy,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ActionButton(
+                  icon: Icons.delete_forever_outlined,
+                  label: AppStrings.t('home.completeUninstall'),
+                  color: AppColors.iconRed,
+                  onTap: (loading || installed != true) ? null : onUninstall,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -479,7 +576,7 @@ class _StatsGrid extends StatelessWidget {
           children: [
             Expanded(
               child: _StatCard(
-                label: '运行身份',
+                label: AppStrings.t('home.runAs'),
                 value: loading ? '—' : _dash(who),
                 valueColor: loading ? AppColors.textPrimary : whoColor,
               ),
@@ -590,14 +687,20 @@ class _SystemInfoCard extends StatelessWidget {
           Text(AppStrings.t('home.systemInfo'), style: AppText.infoTitle),
           const SizedBox(height: 16),
           _InfoRow(
-            label: 'Android 版本',
+            label: AppStrings.t('home.androidVersion'),
             value: data == null ? '—' : data.androidDisplay,
             mono: true,
           ),
           const SizedBox(height: 16),
-          _InfoRow(label: '内核版本', value: _dash(data?.kernelVersion), mono: true),
+          _InfoRow(
+              label: AppStrings.t('home.kernel'),
+              value: _dash(data?.kernelVersion),
+              mono: true),
           const SizedBox(height: 16),
-          _InfoRow(label: '架构', value: _dash(abi), mono: true),
+          _InfoRow(
+              label: AppStrings.t('home.arch'),
+              value: _dash(abi),
+              mono: true),
           const SizedBox(height: 16),
           // SELinux 从统计卡片挪到这里，保留信息但不占一个显眼位置
           _InfoRow(
@@ -609,7 +712,7 @@ class _SystemInfoCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _InfoRow(
-            label: '设备型号',
+            label: AppStrings.t('home.device'),
             value: data == null ? '—' : data.deviceDisplay,
             mono: true,
           ),
@@ -667,30 +770,38 @@ class _TokenSetupCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          InkWell(
-            // 「暂不设置」：密钥是可选配置，不设框架照样跑
-            InkWell(
-              onTap: onSkip,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Text(AppStrings.t('home.tokenCardSkip'),
-                    style: AppText.desc12.copyWith(color: AppColors.textSecondary)),
-              ),
-            ),
-            const SizedBox(width: 4),
-            onTap: onSet,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.iconOrange.withValues(alpha: 0.15),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 「暂不设置」：密钥是可选配置，不设框架照样跑
+              InkWell(
+                onTap: onSkip,
                 borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text(AppStrings.t('home.tokenCardSkip'),
+                      style: AppText.desc12
+                          .copyWith(color: AppColors.textSecondary)),
+                ),
               ),
-              child: Text(AppStrings.t('home.tokenCardAction'),
-                  style:
-                      AppText.desc12.copyWith(color: AppColors.iconOrange)),
-            ),
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: onSet,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.iconOrange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(AppStrings.t('home.tokenCardAction'),
+                      style:
+                          AppText.desc12.copyWith(color: AppColors.iconOrange)),
+                ),
+              ),
+            ],
           ),
         ],
       ),

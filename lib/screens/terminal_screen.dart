@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
@@ -94,12 +95,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('查询文件所属应用', style: AppText.cardTitle),
+        title: Text(AppStrings.t('terminal.ownerDialogTitle'),
+            style: AppText.cardTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('输入文件或目录路径，框架会反查它的所有者属于哪个应用。',
+            Text(AppStrings.t('terminal.ownerDialogDesc'),
                 style: AppText.desc12),
             const SizedBox(height: 14),
             TextField(
@@ -122,13 +124,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('取消',
+            child: Text(AppStrings.t('common.cancel'),
                 style: AppText.rowLabel
                     .copyWith(color: AppColors.textSecondary)),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            child: Text('查询',
+            child: Text(AppStrings.t('terminal.ownerDialogQuery'),
                 style: AppText.rowLabel.copyWith(color: AppColors.accent)),
           ),
         ],
@@ -154,7 +156,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                   const BackIconButton(),
                   Expanded(
                     child: ScreenAppBar(
-                      title: '终端',
+                      title: AppStrings.t('terminal.title'),
                       actions: [
                         AppBarActionIcon(
                           icon: Icons.delete_outline,
@@ -183,7 +185,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '命令直接在设备上执行（框架黑名单与超时保护）',
+                    AppStrings.t('terminal.warning'),
                     style: AppText.desc12,
                   ),
                 ),
@@ -198,23 +200,23 @@ class _TerminalScreenState extends State<TerminalScreen> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
-              _Chip(label: '查询文件归属', onTap: _askPath),
+              _Chip(label: AppStrings.t('terminal.chipFileOwner'), onTap: _askPath),
               _Chip(
-                label: '列出模块',
+                label: AppStrings.t('terminal.chipListModules'),
                 onTap: () => _run('ls -la /data/local/tmp/iwphone/work'),
               ),
               _Chip(
-                label: '框架日志尾部',
+                label: AppStrings.t('terminal.chipLogTail'),
                 onTap: () => _run(
                     'tail -n 40 \$(ls -t /sdcard/iwphone/logs/modrunner_*.log 2>/dev/null | head -1)'),
               ),
               _Chip(
-                label: '投递脚本',
+                label: AppStrings.t('terminal.chipDeliverScript'),
                 onTap: () => _run(
                     'mkdir -p /sdcard/iwphone/adbsh && echo "#!/system/bin/sh\\necho hello from adbsh" > /sdcard/iwphone/adbsh/main.sh && touch /sdcard/iwphone/readbsh && echo 已投递，等待守护消费'),
               ),
               _Chip(
-                label: '查看框架配置',
+                label: AppStrings.t('terminal.chipFrameworkConfig'),
                 onTap: () => _run('cat $_frame/env.sh | grep -v "^#"'),
               ),
             ],
@@ -232,7 +234,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
             child: _entries.isEmpty
                 ? Center(
                     child: Text(
-                      '输入命令开始，或点上方快捷按钮',
+                      AppStrings.t('terminal.emptyHint'),
                       style: AppText.desc12,
                     ),
                   )
@@ -255,7 +257,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                       .copyWith(color: AppColors.textPrimary),
                   onSubmitted: _run,
                   decoration: InputDecoration(
-                    hintText: '输入命令…',
+                    hintText: AppStrings.t('terminal.inputHint'),
                     hintStyle: AppText.desc12,
                     prefixText: '\$ ',
                     prefixStyle: AppText.monoValue14
@@ -352,16 +354,16 @@ class _EntryView extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           if (r == null)
-            Text('执行中…', style: AppText.desc12)
+            Text(AppStrings.t('terminal.running'), style: AppText.desc12)
           else if (!r.ok)
             SelectableText(
-              r.message.isEmpty ? '执行失败' : r.message,
+              r.message.isEmpty ? AppStrings.t('terminal.failed') : r.message,
               style: AppText.monoValue14
                   .copyWith(color: AppColors.iconRed, height: 1.45),
             )
           else ...[
             if (r.combined.trim().isEmpty)
-              Text('（无输出）', style: AppText.desc12)
+              Text(AppStrings.t('terminal.noOutput'), style: AppText.desc12)
             else
               SelectableText(
                 r.combined.trimRight(),

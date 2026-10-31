@@ -2,6 +2,7 @@ package com.shellmgr.shell_manager
 
 import android.content.Context
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
@@ -65,6 +66,9 @@ object AdbBootstrap {
 
     /** 框架守护入口。 */
     const val MAIN_SH = "$FRAME_DIR/Main.sh"
+
+    /** 框架自带的卸载脚本。 */
+    const val UNINSTALL_SH = "$FRAME_DIR/uninstall.sh"
 
     /** WebUI 启动脚本。 */
     const val WEBUI_START = "$FRAME_DIR/webui/webui_start.sh"
@@ -181,6 +185,129 @@ object AdbBootstrap {
     private fun transportAlive(ctx: Context): Boolean {
         val r = run(ctx, listOf("-s", TARGET, "get-state"), timeoutMs = 10_000)
         return r.ok && r.message.trim().equals("device", ignoreCase = true)
+    }
+
+    /**
+     * 建立一条可用的 transport，并确保最终连在 127.0.0.1:5555 上。
+     *
+     * **首次使用的引导闭环**：
+     * ```
+     * 配对（adbd 记住公钥，但不会建立 transport）
+     *   → 发现无线调试的动态连接端口（_adb-tls-connect._tcp）
+     *   → adb connect 该端口，验证 shell 身份
+     *   → adb tcpip 5555（写 persist.adb.tcp.port，前提是已有 transport）
+     *   → 重新 connect 127.0.0.1:5555 并验证
+     * ```
+     *
+     * 早期版本缺了「发现/连接动态端口」这一步：配对完直接 push / tcpip，
+     * 设备列表是空的，于是报 adb: error: failed to get feature set:
+     * no devices/emulators found —— 这不是 ROM 的问题，任何设备首次配置都会这样。
+     */
+    fun ensureTransport(ctx: Context): Result {
+        if (transportAlive(ctx)) return Result(true, "已连接 $TARGET")
+
+        // 1) 先试固定端口（可能之前已经固定过）
+        val fixed = connectAndVerify(ctx, TARGET)
+        if (fixed.ok) return fixed
+
+        // 2) 发现无线调试的动态连接端口
+        val port = discoverConnectPort(ctx)
+        if (port == null) {
+            return Result(
+                false,
+                "没有发现无线调试的连接端口：请确认「无线调试」开关保持打开、"
+                    + "屏幕保持亮着，然后重试",
+            )
+        }
+        val dynamic = connectAndVerify(ctx, "127.0.0.1:$port")
+        if (!dynamic.ok) return dynamic
+
+        // 3) 已经有 transport，才能把端口固定到 5555（写 persist 属性）
+        val tcpip = run(ctx, listOf("tcpip", CONNECT_PORT.toString()), timeoutMs = 30_000)
+        if (!tcpip.ok) {
+            return Result(false, "固定端口失败：${tcpip.message}")
+        }
+
+        // 4) tcpip 会重启 adbd，等它重新在 5555 监听并连接
+        val deadline = System.currentTimeMillis() + 20_000
+        var last = ""
+        while (System.currentTimeMillis() < deadline) {
+            Thread.sleep(1_000)
+            val r = connectAndVerify(ctx, TARGET)
+            if (r.ok) return Result(true, "已连接 $TARGET（端口已固定为 $CONNECT_PORT）")
+            last = r.message
+        }
+        return Result(false, "端口已切到 TCP 模式，但未能连接到 $TARGET：$last")
+    }
+
+    /** 用 mDNS 发现无线调试的动态连接端口（阻塞等待结果）。 */
+    private fun discoverConnectPort(ctx: Context, timeoutMs: Long = 12_000): Int? {
+        var result: Int? = null
+        val latch = CountDownLatch(1)
+        PairingNsd.findConnectPort(ctx, timeoutMs) { port ->
+            result = port
+            latch.countDown()
+        }
+        latch.await(timeoutMs + 2_000, TimeUnit.MILLISECONDS)
+        return result
+    }
+
+    /** 连接指定 serial 并验证真的拿到了 shell 身份。 */
+    private fun connectAndVerify(ctx: Context, serial: String): Result {
+        val c = run(ctx, listOf("connect", serial), timeoutMs = 20_000)
+        val text = c.message.trim()
+        val connected = c.ok && (
+            text.contains("connected to", ignoreCase = true) ||
+                text.contains("already connected", ignoreCase = true)
+            )
+        if (!connected) return Result(false, "连接 $serial 失败：$text")
+
+        // 连接成功 ≠ 认证通过：必须实际取一次身份
+        val id = run(ctx, listOf("-s", serial, "shell", "id"), timeoutMs = 15_000)
+        if (!id.ok) return Result(false, "已连接但无法执行 shell：${id.message}")
+        val out = id.message
+        if (!out.contains("uid=2000") && !out.contains("shell")) {
+            return Result(false, "未取得 shell 身份：$out")
+        }
+        return Result(true, "已取得 shell 身份（$serial）")
+    }
+
+    /**
+     * 完全卸载框架 —— 不经 WebUI 的备用通道。
+     *
+     * WebUI 未运行（守护进程已停）时 HTTP 通道不可用，但卸载不应该被卡住：
+     * 这里直接以 shell 身份执行框架自带的 uninstall.sh —— 它先停 WebUI / 守护进程 /
+     * 全部模块，再删运行时目录、日志与状态镜像，与 WebUI 那条路径行为一致。
+     *
+     * 脚本缺失（框架源文件被误删）时兜底直接删运行时目录；那种情况下已运行的模块
+     * 无法优雅停止，属于尽力而为。
+     */
+    fun uninstallFramework(ctx: Context): Result {
+        val t = ensureTransport(ctx)
+        if (!t.ok) {
+            return Result(false, "adb 未连接：${t.message}")
+        }
+        val r = run(
+            ctx,
+            listOf("-s", TARGET, "shell", "test -f $UNINSTALL_SH && sh $UNINSTALL_SH y"),
+            timeoutMs = 60_000,
+        )
+        if (r.ok) return Result(true, "卸载完成")
+
+        // 兜底：脚本不在时至少把运行时、日志与状态镜像删掉
+        val fallback = run(
+            ctx,
+            listOf(
+                "-s", TARGET, "shell",
+                "rm -rf $IWPHONE_ROOT /sdcard/iwphone/logs /sdcard/iwphone/state",
+            ),
+            timeoutMs = 20_000,
+        )
+        return if (fallback.ok) {
+            Result(true, "卸载完成（脚本缺失，已直接删除运行时目录）")
+        } else {
+            Result(false, fallback.message)
+        }
     }
 
     fun isFrameworkInstalled(ctx: Context): Boolean {
@@ -371,6 +498,13 @@ object AdbBootstrap {
             return Result(false, "尚未配对：请先完成设备配对，拿到 shell 才能部署")
         }
 
+        // 配对 ≠ 已连接：首次部署前必须先建 transport（发现动态端口 → 固定 5555），
+        // 否则 push / shell 都会报 no devices/emulators found。
+        val transport = ensureTransport(ctx)
+        if (!transport.ok) {
+            return Result(false, "未连接到设备：${transport.message}")
+        }
+
         // 1) asset → 缓存文件（12MB，一次性读出写盘即可）
         val staged = File(ctx.cacheDir, "framework.tar.gz")
         try {
@@ -542,7 +676,25 @@ object AdbBootstrap {
      * 只有 adb 协议指令或 root 能写 —— 这正是必须由 adb 下发而非 shell 直接 setprop 的原因。
      */
     fun ensureFixedPort(ctx: Context): Result {
-        val r = run(ctx, listOf("tcpip", CONNECT_PORT.toString()))
+        // 先确保有可用 transport（首次配置时 5555 还没起来，必须走动态端口）
+        val t = ensureTransport(ctx)
+        if (!t.ok) return Result(false, "固定端口失败：${t.message}")
+
+        // 已连上 5555：先确认 persist 真的写入了（跨重启才有效）
+        val current = run(
+            ctx,
+            listOf("-s", TARGET, "shell", "getprop persist.adb.tcp.port"),
+            timeoutMs = 10_000,
+        )
+        if (current.ok && current.message.trim() == CONNECT_PORT.toString()) {
+            return Result(
+                true,
+                "已固定 ADB 端口为 $CONNECT_PORT（persist 属性已写入，跨重启保持）",
+            )
+        }
+
+        // 属性没写 → 用现有 transport 再下发一次 tcpip
+        val r = run(ctx, listOf("tcpip", CONNECT_PORT.toString()), timeoutMs = 30_000)
         if (!r.ok) {
             return Result(false, "固定端口失败：${r.message}")
         }
@@ -557,6 +709,8 @@ object AdbBootstrap {
         var value = ""
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(1_000)
+            val conn = connectAndVerify(ctx, TARGET)
+            if (!conn.ok) continue
             val v = run(
                 ctx,
                 listOf("-s", TARGET, "shell", "getprop persist.adb.tcp.port"),
@@ -580,26 +734,6 @@ object AdbBootstrap {
     }
 
     // ---------------- 每次开机执行 ----------------
-
-    /** 连接目标 + 校验确实拿到了 shell 身份。 */
-    private fun connect(ctx: Context): Result {
-        val c = run(ctx, listOf("connect", TARGET))
-        val connected = c.message.contains("connected to", ignoreCase = true)
-        if (!connected) {
-            return Result(false, "连接 $TARGET 失败：${c.message}")
-        }
-
-        // 连接成功 ≠ 认证通过。adbd 可能仍在等待授权，
-        // 此时 shell 命令会失败，故必须实际取一次身份来验证。
-        val id = run(ctx, listOf("-s", TARGET, "shell", "id"))
-        if (!id.ok) {
-            return Result(false, "已连接但无法执行 shell：${id.message}")
-        }
-        if (!id.message.contains("uid=2000") && !id.message.contains("shell")) {
-            return Result(false, "未取得 shell 身份：${id.message}")
-        }
-        return Result(true, "已取得 shell 身份")
-    }
 
     /** 框架是否已在运行（避免重复拉起）。 */
     private fun frameworkRunning(ctx: Context): Boolean {
@@ -632,7 +766,8 @@ object AdbBootstrap {
             if (!dep.ok) return Result(false, "框架未部署，且自动部署失败：${dep.message}")
         }
 
-        val c = connect(ctx)
+        // 首次使用 / 5555 尚未监听时，这里会先连无线调试动态端口再固定 5555
+        val c = ensureTransport(ctx)
         if (!c.ok) return c
 
         if (frameworkRunning(ctx)) {

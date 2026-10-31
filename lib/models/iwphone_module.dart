@@ -1,3 +1,5 @@
+import '../i18n/app_strings.dart';
+
 /// iwphone modrunner v3 模块数据。
 ///
 /// 框架对外有两个数据来源：
@@ -326,9 +328,13 @@ class IwphoneConfigItem {
 
   /// 展示用文本：整数带单位，布尔显示开关态。
   String get displayValue {
-    if (isBool) return boolValue ? '已开启' : '已关闭';
+    if (isBool) {
+      return boolValue
+          ? AppStrings.t('moduleConfig.on')
+          : AppStrings.t('moduleConfig.off');
+    }
     if (isInt) return unit.isEmpty ? value : '$value $unit';
-    return value.isEmpty ? '（空）' : value;
+    return value.isEmpty ? AppStrings.t('moduleConfig.emptyValue') : value;
   }
 
   factory IwphoneConfigItem.fromJson(Map<String, dynamic> json) {
@@ -454,9 +460,9 @@ class ConflictEntry {
 
   /// 简洁标签，用于列表徽标。
   String get typeLabel => switch (type) {
-    ConflictType.block => '启动拦截',
-    ConflictType.writer => '多模块写入',
-    ConflictType.drift => '值被改动',
+    ConflictType.block => AppStrings.t('conflictType.block'),
+    ConflictType.writer => AppStrings.t('conflictType.writer'),
+    ConflictType.drift => AppStrings.t('conflictType.drift'),
   };
 
   factory ConflictEntry.fromJson(Map<String, dynamic> json) {

@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../i18n/app_strings.dart';
+
 /// 开机自启的当前状态快照（原生侧 `shellmgr/autostart` 的 `getStatus` 返回值）。
 class AutostartStatus {
   const AutostartStatus({
@@ -165,7 +167,7 @@ class AutostartService {
       );
       return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
     } catch (_) {
-      return (ok: false, msg: '调用失败');
+      return (ok: false, msg: AppStrings.t('service.callFailed'));
     }
   }
 
@@ -176,7 +178,7 @@ class AutostartService {
       final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>('ensurePort');
       return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
     } catch (_) {
-      return (ok: false, msg: '调用失败');
+      return (ok: false, msg: AppStrings.t('service.callFailed'));
     }
   }
 
@@ -191,7 +193,7 @@ class AutostartService {
         skipped: raw?['skipped'] == true,
       );
     } catch (_) {
-      return (ok: false, msg: '调用失败', skipped: false);
+      return (ok: false, msg: AppStrings.t('service.callFailed'), skipped: false);
     }
   }
 
@@ -218,7 +220,22 @@ class AutostartService {
           .invokeMethod<Map<dynamic, dynamic>>('deployFramework');
       return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
     } catch (_) {
-      return (ok: false, msg: '调用失败');
+      return (ok: false, msg: AppStrings.t('service.callFailed'));
+    }
+  }
+
+  /// 完全卸载框架（ADB 直连通道）。
+  ///
+  /// WebUI 不可达时（守护进程已停、框架接口没起来）HTTP 通道用不了，
+  /// 这里直接以 shell 身份执行框架自带的 uninstall.sh，行为与 WebUI 通道一致：
+  /// 先停 WebUI / 守护进程 / 全部模块，再删运行时目录、日志与状态镜像。
+  Future<({bool ok, String msg})> uninstallFrameworkAdb() async {
+    try {
+      final raw = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('uninstallFramework');
+      return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
+    } catch (_) {
+      return (ok: false, msg: AppStrings.t('service.callFailed'));
     }
   }
 
@@ -238,7 +255,7 @@ class AutostartService {
         msg: (raw?['msg'] as String?) ?? '',
       );
     } catch (_) {
-      return (ok: false, needPermission: false, msg: '调用失败');
+      return (ok: false, needPermission: false, msg: AppStrings.t('service.callFailed'));
     }
   }
 
@@ -263,7 +280,7 @@ class AutostartService {
       );
       return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
     } catch (_) {
-      return (ok: false, msg: '调用失败');
+      return (ok: false, msg: AppStrings.t('service.callFailed'));
     }
   }
 
@@ -308,7 +325,12 @@ class AutostartService {
         tokenPromptDismissed: raw['tokenPromptDismissed'] == true,
       );
     } catch (_) {
-      return (themeMode: 'system', locale: 'system', onboardingDone: false);
+      return (
+        themeMode: 'system',
+        locale: 'system',
+        onboardingDone: false,
+        tokenPromptDismissed: false,
+      );
     }
   }
 
@@ -365,7 +387,7 @@ class AutostartService {
       );
       return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
     } catch (_) {
-      return (ok: false, msg: '调用失败');
+      return (ok: false, msg: AppStrings.t('service.callFailed'));
     }
   }
 

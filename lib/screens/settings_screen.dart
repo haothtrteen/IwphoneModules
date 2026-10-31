@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 import '../services/autostart_service.dart';
 import '../services/app_prefs.dart';
 import '../i18n/app_strings.dart';
-import '../services/iwphone_service.dart';
 import '../services/storage_permission_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/confirm_dialog.dart';
+import '../widgets/framework_uninstall.dart';
 import '../widgets/screen_app_bar.dart';
 import '../widgets/settings_rows.dart';
 import 'autostart_screen.dart';
@@ -307,8 +306,8 @@ Future<void> _toggleAutostart(
       st = await AutostartService.instance.status();
       if (!st.provisioned) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('还未完成设备配对，开机自启无法生效，开关保持关闭'),
+          SnackBar(
+            content: Text(AppStrings.t('settings.autostartNeedsPair')),
           ),
         );
         return;
@@ -345,11 +344,11 @@ class _PermissionRow extends StatelessWidget {
   String get _statusText {
     switch (status) {
       case StoragePermissionStatus.granted:
-        return '已授权';
+        return AppStrings.t('settings.permissionGranted');
       case StoragePermissionStatus.notRequired:
-        return '无需授权';
+        return AppStrings.t('settings.permissionNotRequired');
       case StoragePermissionStatus.denied:
-        return '去授权';
+        return AppStrings.t('settings.permissionGrant');
     }
   }
 
@@ -388,40 +387,3 @@ class _PermissionRow extends StatelessWidget {
 
 
 
-/// 卸载框架（最高危）：二次确认 → 调用 → 结果弹窗。
-///
-/// 后端是**延迟 3 秒**执行的 —— 因为 uninstall.sh 会把 WebUI 自己停掉，
-/// 同步执行的话响应根本发不回来。所以这里拿到 ok 只代表「任务已排队」。
-Future<void> confirmFrameworkUninstall(BuildContext context) async {
-  final ok = await showConfirmDialog(
-    context,
-    title: AppStrings.t('settings.uninstallTitle'),
-    message: '⚠️ 最高危操作，不可撤销。\n\n'
-        '将删除：\n'
-        '· 运行时目录（全部已装模块、锁、触发文件）\n'
-        '· 日志目录与状态镜像\n\n'
-        '框架源文件目录会保留，可用一键启动脚本重新安装。\n'
-        '卸载后 App 将无法连接框架。\n\n确定要继续吗？',
-    confirmText: '卸载框架',
-  );
-  if (!ok || !context.mounted) return;
-
-  final res = await IwphoneService.instance.uninstallFramework();
-  if (!context.mounted) return;
-
-  await showDialog<void>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      backgroundColor: AppColors.surface,
-      title: Text(res.ok ? '卸载已启动' : '卸载失败', style: AppText.cardTitle),
-      content: Text(res.msg, style: AppText.body13),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: Text('知道了',
-              style: AppText.rowLabel.copyWith(color: AppColors.accent)),
-        ),
-      ],
-    ),
-  );
-}

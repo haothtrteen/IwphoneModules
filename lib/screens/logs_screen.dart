@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
@@ -101,10 +102,11 @@ class _LogsScreenState extends State<LogsScreen> {
 
   /// 当前视图对应的日志归属描述，用于确认弹窗与结果提示。
   String get _scopeLabel {
-    if (_frameworkSource) return '框架守护日志';
+    if (_frameworkSource) return AppStrings.t('logs.scopeFramework');
     final id = _selectedId;
     if (id == null) return '';
-    return '模块「$id」的日志';
+    return '${AppStrings.t('logs.scopeModulePrefix')}$id'
+        '${AppStrings.t('logs.scopeModuleSuffix')}';
   }
 
   /// 清空当前视图对应的日志。
@@ -115,22 +117,22 @@ class _LogsScreenState extends State<LogsScreen> {
   Future<void> _clearLogs() async {
     if (!_frameworkSource && _selectedId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先选择要清空的模块')),
+        SnackBar(content: Text(AppStrings.t('logs.selectModuleToClear'))),
       );
       return;
     }
 
     final what = _frameworkSource
-        ? '· 框架守护日志（modrunner_*.log）'
+        ? AppStrings.t('logs.clearWhatFramework')
         : '· $_selectedId.log / .out / .err\n· $_selectedId/launcher.log';
 
     final ok = await showConfirmDialog(
       context,
-      title: '清空日志',
-      message: '将清空 $_scopeLabel：\n\n$what\n\n'
-          '文件本身会保留（内容置空），正在运行的模块继续正常写日志。\n'
-          '历史记录一旦清空无法找回。\n\n确定要清空吗？',
-      confirmText: '清空',
+      title: AppStrings.t('logs.clearTitle'),
+      message: '${AppStrings.t('logs.clearMessagePrefix')}$_scopeLabel'
+          '${AppStrings.t('logs.clearMessageSuffix')}$what\n\n'
+          '${AppStrings.t('logs.clearWarning')}',
+      confirmText: AppStrings.t('logs.clearConfirm'),
     );
     if (!ok || !mounted) return;
 
@@ -144,7 +146,11 @@ class _LogsScreenState extends State<LogsScreen> {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(res.ok ? res.msg : '清空失败：${res.msg}')),
+      SnackBar(
+        content: Text(
+          res.ok ? res.msg : '${AppStrings.t('logs.clearFailedPrefix')}${res.msg}',
+        ),
+      ),
     );
   }
 
@@ -155,13 +161,13 @@ class _LogsScreenState extends State<LogsScreen> {
   Future<void> _exportLog() async {
     if (!_frameworkSource && _selectedId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先选择要导出的模块')),
+        SnackBar(content: Text(AppStrings.t('logs.selectModuleToExport'))),
       );
       return;
     }
 
     final kindLabel = switch (_kind) {
-      IwphoneLogKind.log => '执行概览',
+      IwphoneLogKind.log => AppStrings.t('logs.kindOverview'),
       IwphoneLogKind.out => 'stdout',
       IwphoneLogKind.err => 'stderr',
     };
@@ -179,7 +185,11 @@ class _LogsScreenState extends State<LogsScreen> {
 
     if (!res.ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：${res.msg}')),
+        SnackBar(
+          content: Text(
+            '${AppStrings.t('logs.exportFailedPrefix')}${res.msg}',
+          ),
+        ),
       );
       return;
     }
@@ -188,7 +198,8 @@ class _LogsScreenState extends State<LogsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('导出成功', style: AppText.cardTitle),
+        title: Text(AppStrings.t('logs.exportSuccessTitle'),
+            style: AppText.cardTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,8 +209,7 @@ class _LogsScreenState extends State<LogsScreen> {
             SelectableText(res.path, style: AppText.monoValue14),
             const SizedBox(height: 12),
             Text(
-              '可在「文件管理器 → 内部存储 → Download → iwphone_logs」中找到，'
-              '方便发给别人或转存到电脑。',
+              AppStrings.t('logs.exportHint'),
               style: AppText.desc12,
             ),
           ],
@@ -207,7 +217,7 @@ class _LogsScreenState extends State<LogsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('知道了',
+            child: Text(AppStrings.t('logs.gotIt'),
                 style: AppText.rowLabel.copyWith(color: AppColors.accent)),
           ),
         ],
@@ -231,7 +241,7 @@ class _LogsScreenState extends State<LogsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ScreenAppBar(
-              title: '日志',
+              title: AppStrings.t('logs.title'),
               actions: [
                 AppBarActionIcon(
                   icon: Icons.download_outlined,
@@ -287,13 +297,13 @@ class _SourceTabs extends StatelessWidget {
     return Row(
       children: [
         _SourceTab(
-          label: '模块日志',
+          label: AppStrings.t('logs.sourceModule'),
           selected: !framework,
           onTap: () => onChanged(false),
         ),
         const SizedBox(width: 8),
         _SourceTab(
-          label: '框架日志',
+          label: AppStrings.t('logs.sourceFramework'),
           selected: framework,
           onTap: () => onChanged(true),
         ),
@@ -371,7 +381,7 @@ class _KindTabs extends StatelessWidget {
 
     return Row(
       children: [
-        tab(IwphoneLogKind.log, '执行概览'),
+        tab(IwphoneLogKind.log, AppStrings.t('logs.kindOverview')),
         const SizedBox(width: 8),
         tab(IwphoneLogKind.out, 'stdout'),
         const SizedBox(width: 8),
@@ -400,13 +410,13 @@ class _ModuleSelectorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return _container('正在加载模块列表…');
+      return _container(AppStrings.t('logs.loadingModules'));
     }
     if (!available && modules.isEmpty) {
-      return _container('未连接到 WebUI：无法读取模块元数据');
+      return _container(AppStrings.t('logs.webuiUnavailable'));
     }
     if (modules.isEmpty) {
-      return _container('框架中暂无已安装模块');
+      return _container(AppStrings.t('logs.noModules'));
     }
     return Container(
       padding: const EdgeInsets.all(12),
@@ -468,8 +478,8 @@ class _LogCard extends StatelessWidget {
       _ => AppColors.textSecondary,
     };
     final display = hasModule
-        ? (text.isEmpty ? '（暂无日志）' : text)
-        : '请选择模块查看日志';
+        ? (text.isEmpty ? AppStrings.t('logs.emptyLog') : text)
+        : AppStrings.t('logs.selectModulePrompt');
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),

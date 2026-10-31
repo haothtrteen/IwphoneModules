@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
@@ -57,7 +58,7 @@ class _ModuleConfigScreenState extends State<ModuleConfigScreen> {
         ..clear()
         ..addAll(cfg?.values ?? const {});
       _loading = false;
-      _error = cfg == null ? '读取配置失败：WebUI 不可达' : null;
+      _error = cfg == null ? AppStrings.t('modConfig.loadFailed') : null;
     });
   }
 
@@ -89,12 +90,14 @@ class _ModuleConfigScreenState extends State<ModuleConfigScreen> {
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('配置已保存')),
+        SnackBar(content: Text(AppStrings.t('modConfig.saved'))),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('保存失败：${res.msg}'),
+          content: Text(
+            '${AppStrings.t('modConfig.saveFailPrefix')}${res.msg}',
+          ),
           backgroundColor: AppColors.iconRed,
         ),
       );
@@ -106,9 +109,8 @@ class _ModuleConfigScreenState extends State<ModuleConfigScreen> {
     if (cfg == null) return;
     final ok = await showConfirmDialog(
       context,
-      title: '恢复默认值',
-      message: '把本模块的所有配置项还原为模块声明的默认值。\n\n'
-          '这只是改回界面上的取值，需要点「保存」才会真正写入。',
+      title: AppStrings.t('modConfig.resetTitle'),
+      message: AppStrings.t('modConfig.resetMessage'),
       danger: true,
     );
     if (ok != true || !mounted) return;
@@ -142,7 +144,7 @@ class _ModuleConfigScreenState extends State<ModuleConfigScreen> {
                       size: 20,
                       color: AppColors.textSecondary,
                     ),
-                    tooltip: '恢复默认值',
+                    tooltip: AppStrings.t('modConfig.resetTitle'),
                   ),
                 ],
               ),
@@ -174,7 +176,7 @@ class _ModuleConfigScreenState extends State<ModuleConfigScreen> {
             children: [
               Text(_error!, style: AppText.body13, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              _TextButton(label: '重试', onTap: _load),
+              _TextButton(label: AppStrings.t('common.retry'), onTap: _load),
             ],
           ),
         ),
@@ -187,8 +189,7 @@ class _ModuleConfigScreenState extends State<ModuleConfigScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            '这个模块没有可配置的选项。\n'
-            '（模块需要提供 config.prop 才会出现配置项）',
+            AppStrings.t('modConfig.emptyState'),
             style: AppText.body13,
             textAlign: TextAlign.center,
           ),
@@ -216,7 +217,7 @@ class _ModuleConfigScreenState extends State<ModuleConfigScreen> {
         ),
         const SizedBox(height: 12),
         Text(
-          _dirty ? '有改动尚未保存' : '已是最新',
+          _dirty ? AppStrings.t('modConfig.dirty') : AppStrings.t('modConfig.upToDate'),
           style: AppText.desc12,
           textAlign: TextAlign.center,
         ),
@@ -450,7 +451,9 @@ class _SaveButton extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              saving ? '保存中…' : '保存配置',
+              saving
+                  ? AppStrings.t('modConfig.saving')
+                  : AppStrings.t('modConfig.saveAction'),
               style: AppText.rowLabel.copyWith(color: color),
             ),
           ],

@@ -124,12 +124,21 @@ object PairingNotify {
         NotificationManagerCompat.from(ctx).notify(NOTIFY_WAITING, n)
     }
 
-    /** 配对结束，撤掉等待通知并发结果。 */
-    fun postResult(ctx: Context, ok: Boolean, message: String) {
-        // 等待通知先撤掉（无论成败，这个流程已经结束了）
+    /** 撤掉「等待配对码」通知（配对一旦有结果就调它）。 */
+    fun cancelWaiting(ctx: Context) {
         NotificationManagerCompat.from(ctx).cancel(NOTIFY_WAITING)
+    }
 
-        if (!AutostartNotify.hasPermission(ctx)) return
+    /** 配对结束，**原地**把「等待配对码」通知替换成结果通知。 */
+    fun postResult(ctx: Context, ok: Boolean, message: String) {
+        // 为什么不用 cancel + 新 id：
+        // 「等待配对码」是 ongoing 通知，部分 ROM（MIUI 等）对它的 cancel 不生效，
+        // 结果通知都出来了、等待那条还挂在通知栏。用同一个 id 原地替换成
+        // 非 ongoing 的结果通知，就绕开了这个限制，视觉上也更干净。
+        if (!AutostartNotify.hasPermission(ctx)) {
+            cancelWaiting(ctx)
+            return
+        }
         ensureChannel(ctx)
 
         val n = NotificationCompat.Builder(ctx, CHANNEL_ID)
@@ -138,10 +147,14 @@ object PairingNotify {
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setAutoCancel(true)
+            .setOngoing(false)
+            .setOnlyAlertOnce(false)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
 
-        NotificationManagerCompat.from(ctx).notify(NOTIFY_RESULT, n)
+        NotificationManagerCompat.from(ctx).notify(NOTIFY_WAITING, n)
+        // 清掉旧版本可能留下的独立结果通知
+        NotificationManagerCompat.from(ctx).cancel(NOTIFY_RESULT)
     }
 
     /** 清掉配对相关通知（比如用户在 App 里手动取消了流程）。 */

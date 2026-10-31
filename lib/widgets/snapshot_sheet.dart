@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n/app_strings.dart';
 import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
 
@@ -38,12 +39,15 @@ class SnapshotSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('还原系统设置 · $title', style: AppText.cardTitle),
+            Text('${AppStrings.t('snapshotSheet.title')} · $title',
+                style: AppText.cardTitle),
             const SizedBox(height: 4),
             Text(
-              '将把 $restorable 项恢复到该模块**首次写入之前**的原值'
-              '${skipped > 0 ? '（另有 $skipped 项需手动处理）' : ''}。\n'
-              '执行前会先停止该模块，否则守卫循环会把设置又改回去。'
+              '${AppStrings.t('snapshotSheet.restorePrefix')}$restorable'
+              '${AppStrings.t('snapshotSheet.restoreMid')}'
+              '${skipped > 0 ? '${AppStrings.t('snapshotSheet.alsoPrefix')}$skipped'
+                  '${AppStrings.t('snapshotSheet.alsoSuffix')}' : ''}'
+              '${AppStrings.t('snapshotSheet.restoreEnd')}'
               '${note == null ? '' : '\n$note'}',
               style: AppText.desc12,
             ),
@@ -64,7 +68,7 @@ class SnapshotSheet extends StatelessWidget {
                 Expanded(
                   child: TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: Text('取消',
+                    child: Text(AppStrings.t('common.cancel'),
                         style: AppText.rowLabel
                             .copyWith(color: AppColors.textSecondary)),
                   ),
@@ -81,7 +85,10 @@ class SnapshotSheet extends StatelessWidget {
                           : AppColors.iconOrange.withValues(alpha: 0.15),
                     ),
                     child: Text(
-                      restorable == 0 ? '无可还原项' : '还原 $restorable 项',
+                      restorable == 0
+                          ? AppStrings.t('snapshotSheet.noRestorable')
+                          : '${AppStrings.t('snapshotSheet.restoreButtonPrefix')}'
+                              '$restorable${AppStrings.t('snapshotSheet.restoreButtonSuffix')}',
                       style: AppText.rowLabel.copyWith(
                         color: restorable == 0
                             ? AppColors.textInactive
@@ -128,7 +135,9 @@ class SnapshotRow extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  item.resource.isEmpty ? '(未识别资源)' : item.resource,
+                  item.resource.isEmpty
+                      ? AppStrings.t('snapshotSheet.unknownResource')
+                      : item.resource,
                   style: AppText.desc12.copyWith(color: AppColors.textPrimary),
                 ),
               ),
@@ -137,9 +146,11 @@ class SnapshotRow extends StatelessWidget {
           const SizedBox(height: 5),
           Text(
             ok
-                ? '当前 ${item.current.isEmpty ? '(空)' : item.current}'
-                    '  →  还原为 ${item.targetValue.isEmpty ? '(空)' : item.targetValue}'
-                : '沙箱未记录该写法，需手动处理',
+                ? '${AppStrings.t('snapshotSheet.currentPrefix')}'
+                    '${item.current.isEmpty ? AppStrings.t('snapshotSheet.emptyValue') : item.current}'
+                    '${AppStrings.t('snapshotSheet.arrowRestore')}'
+                    '${item.targetValue.isEmpty ? AppStrings.t('snapshotSheet.emptyValue') : item.targetValue}'
+                : AppStrings.t('snapshotSheet.manualNeeded'),
             style: AppText.desc12.copyWith(
               color: ok ? AppColors.textSecondary : AppColors.iconOrange,
             ),
