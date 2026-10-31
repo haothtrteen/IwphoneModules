@@ -38,3 +38,12 @@ framework/webui/runtime/
 *.log
 .flutter_tool_state
 .DS_Store
+
+# ---- 误提交防护 ----
+# Python 字节码缓存（曾在仓库里误留一份 webui_server.cpython-313.pyc）
+__pycache__/
+*.pyc
+
+# 变量未展开的畸形目录 —— 曾把 %SystemDrive%/ProgramData/... 下的
+# Windows 缓存 db 用 git add -A 扫进仓库（约 965 KB）。这里直接挡住。
+%*/

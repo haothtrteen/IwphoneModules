@@ -262,8 +262,8 @@ def tail_text(path, n):
         return ""
 
 
-def sh_run(args, timeout=40):
-    r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+def sh_run(args, timeout=40, cwd=None):
+    r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
     out = (r.stdout + r.stderr).strip()
     return r.returncode, out
 
@@ -1102,11 +1102,15 @@ def _safe_module_name(name):
 
 
 def module_uninstall(name):
-    """卸载模块：停止 → 删除模块目录 → 清理锁 / 触发文件 / 日志。
+    """卸载模块：停止 → 跑模块清理钩子 → 删除模块目录 → 清理锁 / 触发文件 / 日志。
 
-    刻意不调用模块自带的 uninstall.sh —— 各模块写法不一，且已知官方示例里
-    写的是 "$IWPHONE_ROOT/Module"（大写 M），与框架实际使用的 work/ 不符，
-    执行了也删不掉东西。
+    关于模块自带的 uninstall.sh：历史上框架刻意不调用它，因为旧示例写的是
+    "$IWPHONE_ROOT/Module"（大写 M），与实际的 work/ 不符，执行了也删不掉东西。
+    但完全不调用又带来另一个问题 —— 模块把产物部署到工作目录**之外**时
+    （例如把二进制拷到 /data/local/tmp），rmtree 清不到，会永久残留。
+
+    因此改为「尽力执行、失败忽略」：先跑一次钩子用于清理外部产物，再用 rmtree
+    兜底删目录。这样钩子写错也不会卡住卸载，真正的目录清理由框架保证。
     """
     if not _safe_module_name(name):
         return {"ok": False, "msg": "非法模块名：%s" % name}
@@ -1119,7 +1123,19 @@ def module_uninstall(name):
     # 1) 先停掉正在运行的实例（失败不阻断卸载流程）
     sh_run(["sh", os.path.join(FRAME_DIR, "mod_stop.sh"), name])
 
-    # 2) 删除模块目录
+    # 2) 尽力跑一次模块自带的清理钩子 —— 用于清掉模块部署到工作目录之外的产物。
+    #    失败只记录不阻断：钩子可能写错，真正的目录清理由下面的 rmtree 保证。
+    hook_msg = ""
+    hook = os.path.join(target, "uninstall.sh")
+    if os.path.isfile(hook):
+        try:
+            rc, out = sh_run(["sh", hook], timeout=8, cwd=target)
+            if rc != 0:
+                hook_msg = out[-200:]
+        except Exception as e:
+            hook_msg = "%s: %s" % (type(e).__name__, e)
+
+    # 3) 删除模块目录
     if not os.path.exists(target):
         return {"ok": False, "msg": "模块未安装：%s" % name}
     try:
@@ -1127,7 +1143,7 @@ def module_uninstall(name):
     except Exception as e:
         return {"ok": False, "msg": "删除失败：%s" % e}
 
-    # 3) 清理锁、触发文件与沙箱目录、模块日志
+    # 4) 清理锁、触发文件与沙箱目录、模块日志
     shutil.rmtree(os.path.join(LOCK_DIR, name), ignore_errors=True)
     for p in (os.path.join(TMP_DIR, name),
               os.path.join(TMP_DIR, "home_" + name),
@@ -1141,7 +1157,10 @@ def module_uninstall(name):
                 pass
     shutil.rmtree(os.path.join(LOG_ROOT_DIR, "modules", name), ignore_errors=True)
 
-    return {"ok": True, "msg": "已卸载：%s" % name}
+    msg = "已卸载：%s" % name
+    if hook_msg:
+        msg += "\n\n（模块清理钩子返回异常，已忽略，不影响卸载：%s）" % hook_msg
+    return {"ok": True, "msg": msg}
 
 
 # ---------------- 框架配置（env.sh 读写） ----------------

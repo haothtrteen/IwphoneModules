@@ -1,7 +1,7 @@
 {
     "schemaVersion":  2,
     "repository":  "haothtrteen/IwphoneModules",
-    "updatedAt":  "2026-10-31",
+    "updatedAt":  "2026-11-01",
     "modules":  [
                     {
                         "id":  "AnimTuner",
@@ -36,8 +36,8 @@
                         "exclusive":  null,
                         "runtime":  "0",
                         "packagePath":  "framework/module/IWPhone息屏深度doze.iwp",
-                        "sizeBytes":  2234,
-                        "sha256":  "b6660d4f910663890627db2627bdbcce8a2e44ecc621a1fb0e69cc77bf920a8d"
+                        "sizeBytes":  2384,
+                        "sha256":  "bedd691aa8e64a8adfe5436b9eabc3c0b011d5b7a4afda3bbc262ab085bd8ee5"
                     },
                     {
                         "id":  "NightNetOff",
@@ -84,8 +84,8 @@
                         "exclusive":  null,
                         "runtime":  "60",
                         "packagePath":  "framework/module/应用管理aapt.iwp",
-                        "sizeBytes":  446310,
-                        "sha256":  "c15dad409ac817efd7d6f27c346e0e62503cf2cbbea9372b4599e74acc8b8389"
+                        "sizeBytes":  446658,
+                        "sha256":  "193a9261fd4e283b461b49d39bb173d0331ae982949983ce5093567ab85f9125"
                     }
                 ]
 }
