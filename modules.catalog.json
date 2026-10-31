@@ -1,0 +1,84 @@
+{
+    "schemaVersion":  1,
+    "repository":  "haothtrteen/IwphoneModules",
+    "updatedAt":  "2026-10-31",
+    "modules":  [
+                    {
+                        "id":  "AnimTuner",
+                        "name":  "AnimTuner",
+                        "version":  "1.0.0",
+                        "author":  "Shell Manager",
+                        "description":  "调节系统动画速度。0 为完全关闭动画，1 为系统默认。",
+                        "exclusive":  "global.window_animation_scale,global.transition_animation_scale,global.animator_duration_scale",
+                        "runtime":  "0",
+                        "packagePath":  "framework/module/AnimTuner.iwp",
+                        "sizeBytes":  2019
+                    },
+                    {
+                        "id":  "BlurOff",
+                        "name":  "BlurOff",
+                        "version":  "1.0.0",
+                        "author":  "Shell Manager",
+                        "description":  "关闭系统窗口模糊与（可选）降低界面透明度，滑动更顺、也更省电。",
+                        "exclusive":  "global.disable_window_blurs,global.accessibility_reduce_transparency",
+                        "runtime":  "0",
+                        "packagePath":  "framework/module/BlurOff.iwp",
+                        "sizeBytes":  2066
+                    },
+                    {
+                        "id":  "IWPhone息屏深度doze",
+                        "name":  "IWPhone息屏自动深度doze",
+                        "version":  "1.0.0",
+                        "author":  "IWPhone.lnc",
+                        "description":  "iwphone官方插件，息屏后自动进入深度doze，当设备处于亮屏状态时会每x分钟进行一次检测（x取决于你选择的模式策略），当设备处于息屏后，经过大约三次检测（若此时每次检测间隔半分钟则总共约一分半）后进入深度doze状态，当设备亮屏后会继续进行大约三次检测（若此时每次检测间隔三分钟大约需要10分钟）后退出深度doze状态，目前含有，Aggressive，Moderate，Gentle三个策略可以自行尝试适合自己的模式（需要更换模式直接替换模块中对应模式的文件即可），如需手动结束doze插件进程可手动在插件工作目录下新建一个“end”文件",
+                        "exclusive":  null,
+                        "runtime":  "0",
+                        "packagePath":  "framework/module/IWPhone息屏深度doze.iwp",
+                        "sizeBytes":  2234
+                    },
+                    {
+                        "id":  "NightNetOff",
+                        "name":  "NightNetOff",
+                        "version":  "1.0.0",
+                        "author":  "Shell Manager",
+                        "description":  "按时间段自动关闭/恢复移动数据与 WiFi。跨零点的时间段也支持。",
+                        "exclusive":  "svc.data.disable,svc.data.enable,svc.wifi.disable,svc.wifi.enable",
+                        "runtime":  "0",
+                        "packagePath":  "framework/module/NightNetOff.iwp",
+                        "sizeBytes":  2117
+                    },
+                    {
+                        "id":  "PrivateDNS",
+                        "name":  "PrivateDNS",
+                        "version":  "1.0.0",
+                        "author":  "Shell Manager",
+                        "description":  "设置系统私有 DNS（DoT）。可一键切到 AdGuard / Cloudflare 等。",
+                        "exclusive":  "global.private_dns_mode,global.private_dns_specifier",
+                        "runtime":  "0",
+                        "packagePath":  "framework/module/PrivateDNS.iwp",
+                        "sizeBytes":  2098
+                    },
+                    {
+                        "id":  "SampleMagiskMod",
+                        "name":  "示例 Magisk 式模块",
+                        "version":  "v1.2",
+                        "author":  "兼容层测试",
+                        "description":  "用于验证 iwphone 对 Magisk/KernelSU/AxManager 式模块的兼容层",
+                        "exclusive":  null,
+                        "runtime":  null,
+                        "packagePath":  "framework/module/SampleMagiskMod.iwp",
+                        "sizeBytes":  1133
+                    },
+                    {
+                        "id":  "应用管理aapt",
+                        "name":  "IWPhone应用管理aapt",
+                        "version":  "1.0.0",
+                        "author":  "IWPhone.lnc",
+                        "description":  "iwphone官方插件，用于拓展应用管理功能",
+                        "exclusive":  null,
+                        "runtime":  "60",
+                        "packagePath":  "framework/module/应用管理aapt.iwp",
+                        "sizeBytes":  446310
+                    }
+                ]
+}
