@@ -48,12 +48,20 @@ if [ -z "$TAG" ]; then
     exit 1
 fi
 
-# ---------- 0) 代理（本机是 TLS 中间人环境，必须显式传给 curl）----------
+# ---------- 0) 代理 + TLS（本机是 TLS 中间人环境，必须显式传给 curl）----------
 PROXY="${https_proxy:-${HTTPS_PROXY:-}}"
 CURL_PROXY=()
 if [ -n "$PROXY" ]; then
     CURL_PROXY=(--proxy "$PROXY")
     echo "ℹ️  使用代理：$PROXY"
+fi
+
+# Windows 的 schannel 后端会强制查证书吊销链，而中间人代理签发的证书查不到，
+# 直接报 CRYPT_E_NO_REVOCATION_CHECK（curl error 35）。必须显式关掉。
+# 其它平台（Linux/macOS 的 OpenSSL/SecureTransport）没有这个选项，所以先探测。
+CURL_TLS=()
+if curl --help all 2>/dev/null | grep -q -- '--ssl-no-revoke'; then
+    CURL_TLS=(--ssl-no-revoke)
 fi
 
 # ---------- 1) 构建 ----------
@@ -94,7 +102,8 @@ SIZE_MB=$(( $(wc -c < "$ASSET") / 1024 / 1024 ))
 echo "📦 产物：$ASSET（${SIZE_MB} MB）"
 
 # ---------- 3) 校验签名（未签名 / debug 签名的包不该发）----------
-APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner* 2>/dev/null | tail -1 || true)
+# 注意 ${ANDROID_HOME:-}：脚本开了 set -u，直接引用未定义的 ANDROID_HOME 会中断。
+APKSIGNER=$(ls -d "${ANDROID_HOME:-/nonexistent}"/build-tools/*/apksigner* 2>/dev/null | tail -1 || true)
 if [ -z "$APKSIGNER" ]; then
     APKSIGNER=$(ls -d "$HOME"/AppData/Local/Android/Sdk/build-tools/*/apksigner* 2>/dev/null | tail -1 || true)
 fi
@@ -129,7 +138,7 @@ UPLOAD="https://uploads.github.com/repos/$REPO"
 api() {  # api <method> <url> [curl 额外参数...]
     local method="$1"; shift
     local url="$1"; shift
-    curl -sS "${CURL_PROXY[@]}" -X "$method" \
+    curl -sS "${CURL_TLS[@]}" "${CURL_PROXY[@]}" -X "$method" \
         -H "Authorization: Bearer $GITHUB_TOKEN" \
         -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" \

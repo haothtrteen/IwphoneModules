@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/autostart_service.dart';
 import '../services/app_prefs.dart';
+import '../app_info.dart';
 import '../i18n/app_strings.dart';
 import '../services/storage_permission_service.dart';
 import '../theme/app_theme.dart';
@@ -234,7 +235,7 @@ class SettingsScreen extends StatelessWidget {
             children: [
               ValueRow(
                 label: AppStrings.t('settings.version'),
-                value: '1.2.3',
+                value: kAppVersion,
                 mono: true,
               ),
               NavRow(
@@ -271,7 +272,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           // 页脚
-          Text('Shell Manager v1.2.3', style: AppText.footer, textAlign: TextAlign.center),
+          Text('Shell Manager v$kAppVersion', style: AppText.footer, textAlign: TextAlign.center),
           const SizedBox(height: 16),
           Text('Powered by Flutter', style: AppText.footerSub, textAlign: TextAlign.center),
         ],

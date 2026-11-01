@@ -44,6 +44,9 @@ framework/webui/runtime/
 __pycache__/
 *.pyc
 
+# 发布产物（tools/release_github.sh 会把带版本号的 APK 拷到这里，37 MB，别进仓库）
+dist/
+
 # 变量未展开的畸形目录 —— 曾把 %SystemDrive%/ProgramData/... 下的
 # Windows 缓存 db 用 git add -A 扫进仓库（约 965 KB）。这里直接挡住。
 %*/
