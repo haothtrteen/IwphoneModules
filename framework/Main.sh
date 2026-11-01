@@ -80,6 +80,40 @@ consume_commands() {
     fi
 }
 
+# -----------------------------------------------------
+# WebUI 看护
+#
+# WebUI 是 App 读取一切状态的唯一通道（只有模块列表和日志有 /sdcard 兜底）。
+# 它由 webui_start.sh 单独拉起，死掉时 Main.sh 毫无感知 —— 结果就是 App 上
+# 一片空白、按钮全报「WebUI 不可达」，而守护进程看起来还活得好好的。
+#
+# 这里每轮做一次存活检查，挂了就重拉；带节流，避免 python 缺失时刷屏。
+# -----------------------------------------------------
+WEBUI_START_SH="$SCRIPT_DIR/webui/webui_start.sh"
+WEBUI_PIDF="$IWPHONE_ROOT/webui.pid"
+WEBUI_RETRY_EVERY="${WEBUI_RETRY_EVERY:-4}"   # 每 N 轮重试一次（默认 4×15s≈1 分钟）
+_webui_miss=$WEBUI_RETRY_EVERY                # 首次检查立即尝试
+
+ensure_webui() {
+    [ -f "$WEBUI_START_SH" ] || return 0
+
+    if [ -f "$WEBUI_PIDF" ]; then
+        _wp=$(cat "$WEBUI_PIDF" 2>/dev/null)
+        if [ -n "$_wp" ] && ps -A -o pid= 2>/dev/null | grep -q "^[[:space:]]*${_wp}[[:space:]]*$"; then
+            _webui_miss=0
+            return 0
+        fi
+    fi
+
+    _webui_miss=$((_webui_miss + 1))
+    if [ "$_webui_miss" -lt "$WEBUI_RETRY_EVERY" ]; then
+        return 0
+    fi
+    _webui_miss=0
+    log "🩺 检测到 WebUI 未运行，尝试拉起"
+    sh "$WEBUI_START_SH" >> "$RUN_LOG" 2>&1
+}
+
 # ---------------- 入口 ----------------
 if already_running; then
     echo "❌ 守护进程已在运行（PID $(cat "$PID_FILE")），请先执行 stop_runner.sh"
@@ -102,6 +136,7 @@ while true; do
         graceful_exit
     fi
     consume_commands
+    ensure_webui
     sh "$SCRIPT_DIR/iwphone.sh"
     logrotate_tick
     sleep "$POLL_SEC"

@@ -749,6 +749,27 @@ object AdbBootstrap {
     }
 
     /**
+     * 拉起 WebUI 服务（幂等）。
+     *
+     * `webui_start.sh` 自带「已在运行」判断：webui.pid 活着就直接退出，
+     * 不会起第二个实例。因此可以在启动流程里无条件调用。
+     *
+     * ★ `setsid -d` 不能省：这个命令是 App 通过 adb 下发的，adb 会话一结束
+     *   就会给子进程发 SIGHUP。不脱离会话的话，WebUI 会在启动几秒后被悄悄
+     *   杀掉 —— 表现正是「刚点完提示已运行，回头就 WebUI 不可达」。
+     *   Main.sh 的启动命令同样用了 setsid，两者必须一致。
+     */
+    private fun ensureWebui(ctx: Context) {
+        run(
+            ctx,
+            listOf(
+                "-s", TARGET, "shell",
+                "nohup setsid -d sh $WEBUI_START >/dev/null 2>&1 </dev/null &",
+            ),
+        )
+    }
+
+    /**
      * 重认证并拉起框架。开机自启的核心流程。
      *
      * 幂等：若框架已在运行则直接返回成功，不会产生重复实例
@@ -771,6 +792,11 @@ object AdbBootstrap {
         if (!c.ok) return c
 
         if (frameworkRunning(ctx)) {
+            // ★ 守护进程活着 ≠ WebUI 活着。WebUI 是 App 读取一切状态的唯一通道
+            //   （只有模块列表和日志有 /sdcard 兜底），它崩掉时守护进程毫无感知。
+            //   早期版本在这里直接 return，于是出现「点立即执行 → 提示已运行 →
+            //   首页全空、按钮报 WebUI 不可达」。这里补一次幂等启动即可自愈。
+            ensureWebui(ctx)
             return Result(true, "框架已在运行，跳过启动", skipped = true)
         }
 
@@ -787,13 +813,7 @@ object AdbBootstrap {
         }
 
         // WebUI 供 App 读取状态用；它自身有「已在运行」判断，重复调用无副作用
-        run(
-            ctx,
-            listOf(
-                "-s", TARGET, "shell",
-                "nohup sh $WEBUI_START >/dev/null 2>&1 </dev/null &",
-            ),
-        )
+        ensureWebui(ctx)
 
         // 给守护进程一点时间写 PID 文件，然后确认它真的活着
         Thread.sleep(2500)
