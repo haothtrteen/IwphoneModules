@@ -161,10 +161,42 @@ sh tools/build_runtime.sh --arch aarch64 --push     # 生成并 adb push 到设�
 ├── iwphone.prop     # 元信息（PackageName/version/author/description，可选）
 ├── main.sh          # 入口脚本（执行约定）
 ├── uninstall.sh     # 模块自定义卸载逻辑（可选）
+├── icon.png         # 自定义图标（可选，见下节）
 └── （任意资源：二进制、配置、策略文件...）
 ```
 
 **运行时约定**：模块在自身目录内执行；`PATH` 隔离为 `/system/bin:/system/xbin`，`HOME`/`TMPDIR` 指向模块专属沙箱目录；`echo` 输出全部进入 `.out`。常驻模块建议自带 **end 文件退出机制**（参考 doze 示例）。
+
+### 模块图标（可选）
+
+想让模块在列表里一眼能认出来，两种方式，可同时用：
+
+| 方式 | 写在哪 | 说明 |
+|---|---|---|
+| 语义图标 | `iwphone.prop` 里加一行 `icon="battery"` | 客户端内置图标表，跟随浅色/深色主题，零包体积 |
+| 自定义图 | 包里放 `icon.png` | 优先于 `icon=`；192×192 透明底 PNG 效果最好，上限 256 KB |
+
+可用语义名（与 `lib/widgets/module_icon.dart` 的 `ModuleIcons.table` 一一对应）：
+
+```
+app        battery   cloud      debug     display   dns
+input      language  memory     module    motion    network
+performance power    privacy    security  sound     storage
+system     time      visual
+```
+
+> 键名一经发布不要再改，改名等于让已发布的模块丢失图标；新增键是安全的。
+
+**两者都没有**时，客户端按模块名哈希挑一个兜底图标 —— 老模块不需要任何改动。
+
+例：
+
+```ini
+name="BlurOff"
+version="1.0.0"
+description="关闭系统窗口模糊与（可选）降低界面透明度。"
+icon="visual"
+```
 
 ## 配置项速查（env.sh）
 

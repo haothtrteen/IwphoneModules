@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
@@ -557,6 +558,36 @@ class IwphoneService {
       return BulkResult.fromJson(jsonDecode(body) as Map<String, dynamic>);
     } catch (_) {
       return BulkResult(ok: false, message: AppStrings.t('iwphone.badResponse'));
+    }
+  }
+
+  /// 拉取模块自定义图标（PNG 字节）。
+  ///
+  /// 没放 `icon.png` 的模块后端返回 404，这里压平成 null —— 调用方据此回退到
+  /// 内置图标表，属于正常路径而不是错误。鉴权与 JSON 接口共用同一套 token。
+  Future<Uint8List?> moduleIconBytes(String name) async {
+    final url = Uri.parse(
+      '$baseUrl/api/module/${Uri.encodeComponent(name)}/icon',
+    );
+    try {
+      final request = await _client.openUrl('GET', url).timeout(_timeout);
+      request.headers.set(HttpHeaders.acceptHeader, 'image/png');
+      if (_token.isNotEmpty) {
+        request.headers.set('X-Token', _token);
+      }
+      final response = await request.close().timeout(_timeout);
+      if (response.statusCode ~/ 100 != 2) {
+        await response.drain<void>();
+        return null;
+      }
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response.timeout(_timeout)) {
+        builder.add(chunk);
+      }
+      final bytes = builder.takeBytes();
+      return bytes.isEmpty ? null : bytes;
+    } catch (_) {
+      return null;
     }
   }
 

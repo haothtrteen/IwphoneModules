@@ -529,6 +529,10 @@ def list_modules():
             "description": meta.get("description", ""),
             "exclusive": meta.get("exclusive", ""),
             "exclusive_group": meta.get("exclusive.group", ""),
+            # 图标：icon= 是语义名（App 内置图标表里查），icon.png 是自定义图。
+            # 两者都没有时由客户端按模块名哈希兜底，老模块行为不变。
+            "icon": meta.get("icon", ""),
+            "has_icon": os.path.isfile(os.path.join(d, "icon.png")),
             "resources": cf.get("resources", []),
             "blocked_by": cf.get("blocked_by", []),
             "has_conflict": cf.get("has_conflict", False),
@@ -547,6 +551,30 @@ def list_modules():
             "compatReasons": _compat_reasons(d),
         })
     return mods
+
+
+# 自定义图标的体积上限。图标会被 App 以 22~40 px 渲染，
+# 192×192 的 PNG 通常 3~8 KB；超过这个量级基本是用错了文件。
+MAX_ICON_BYTES = 256 * 1024
+
+
+def module_icon_path(name):
+    """返回模块自定义图标的路径；没有或不合法则 None。
+
+    只认模块目录下的 `icon.png`，不递归、不接受其它扩展名：
+    路径由模块名拼出来，且经过 _safe_module_name 校验，避免越过 WORK_DIR。
+    """
+    if not _safe_module_name(name):
+        return None
+    p = os.path.join(WORK_DIR, name, "icon.png")
+    if not os.path.isfile(p):
+        return None
+    try:
+        if os.path.getsize(p) > MAX_ICON_BYTES:
+            return None
+    except OSError:
+        return None
+    return p
 
 
 # ============================================================
@@ -1890,6 +1918,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.match(r"^/api/module/([^/]+)/log$", path)
             if m:
                 return self._api_module_log(m.group(1), q)
+            m = re.match(r"^/api/module/([^/]+)/icon$", path)
+            if m:
+                return self._api_module_icon(m.group(1))
             return self._json({"ok": False, "msg": "未知路径：%s" % path}, 404)
         except Exception as e:
             return self._json({"ok": False, "msg": "服务器错误：%s" % e}, 500)
@@ -2053,6 +2084,22 @@ class Handler(BaseHTTPRequestHandler):
             "running": running, "pid": pid,
             "text": tail_text(path, n),
         })
+
+    def _api_module_icon(self, name):
+        """返回模块自定义图标（PNG 字节流）。
+
+        没放 icon.png 的模块返回 404 —— 客户端据此回退到内置图标表。
+        这属于正常情况，不是错误，所以响应体里给出可读原因即可。
+        """
+        p = module_icon_path(name)
+        if not p:
+            return self._json({"ok": False, "msg": "该模块没有自定义图标"}, 404)
+        try:
+            with open(p, "rb") as f:
+                data = f.read(MAX_ICON_BYTES)
+        except OSError as e:
+            return self._json({"ok": False, "msg": "读取图标失败：%s" % e}, 500)
+        return self._send(data, 200, "image/png")
 
     def _api_module_action(self, name, action):
         # run 必须走非阻塞路径 —— 见 module_run() 的注释：

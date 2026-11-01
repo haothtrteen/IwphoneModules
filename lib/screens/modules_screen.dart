@@ -6,6 +6,7 @@ import '../services/iwphone_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_switch.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/module_icon.dart';
 import '../widgets/resource_summary.dart';
 import '../widgets/screen_app_bar.dart';
 import '../widgets/snapshot_sheet.dart';
@@ -935,11 +936,12 @@ class _ModuleCardState extends State<_ModuleCard> {
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 40,
-                      height: 40,
+                    ModuleIconView(
+                      moduleId: widget.item.module.id,
+                      iconKey: widget.item.module.icon,
+                      hasIcon: widget.item.module.hasIcon,
+                      fallbackIcon: widget.item.icon,
                       color: widget.item.iconColor,
-                      child: Icon(widget.item.icon, size: 22, color: Colors.white),
                     ),
                     const SizedBox(width: 12),
                     Expanded(

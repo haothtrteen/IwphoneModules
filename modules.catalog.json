@@ -12,8 +12,9 @@
                         "exclusive":  "global.window_animation_scale,global.transition_animation_scale,global.animator_duration_scale",
                         "runtime":  "0",
                         "packagePath":  "framework/module/AnimTuner.iwp",
-                        "sizeBytes":  2019,
-                        "sha256":  "b13436404ca343acfc3a0d0aa3ac9117b4f4ebd53f2a34f186f0afa0e403e351"
+                        "icon":  "motion",
+                        "sizeBytes":  2028,
+                        "sha256":  "80eacc26a5955f93906b9f7157c5caec638b385991e717b45841c830b423113d"
                     },
                     {
                         "id":  "BlurOff",
@@ -24,8 +25,9 @@
                         "exclusive":  "global.disable_window_blurs,global.accessibility_reduce_transparency",
                         "runtime":  "0",
                         "packagePath":  "framework/module/BlurOff.iwp",
-                        "sizeBytes":  2066,
-                        "sha256":  "8fedf536484fadc4cafc47c4f3c4c827b2249ca9b9c3b401ebca624f5d57e5c4"
+                        "icon":  "visual",
+                        "sizeBytes":  2076,
+                        "sha256":  "9dd9934e491d4d1bdc1896a623c3d71d8d470c68bf510fb307303bc1982dd2bd"
                     },
                     {
                         "id":  "IWPhone息屏深度doze",
@@ -36,8 +38,9 @@
                         "exclusive":  null,
                         "runtime":  "0",
                         "packagePath":  "framework/module/IWPhone息屏深度doze.iwp",
-                        "sizeBytes":  2384,
-                        "sha256":  "bedd691aa8e64a8adfe5436b9eabc3c0b011d5b7a4afda3bbc262ab085bd8ee5"
+                        "icon":  "battery",
+                        "sizeBytes":  2396,
+                        "sha256":  "6bdecb125d02a819f2a4b50b22c85f204dc270446ede67180d69ba6d0ae2fb61"
                     },
                     {
                         "id":  "NightNetOff",
@@ -48,8 +51,9 @@
                         "exclusive":  "svc.data.disable,svc.data.enable,svc.wifi.disable,svc.wifi.enable",
                         "runtime":  "0",
                         "packagePath":  "framework/module/NightNetOff.iwp",
-                        "sizeBytes":  2117,
-                        "sha256":  "1bbc5be3553acd7886be1ef91848ea233672da9291c72f7b9b45e3b33e28577c"
+                        "icon":  "network",
+                        "sizeBytes":  2130,
+                        "sha256":  "350aa788fdc84fd4e2d08e3c83faa4ff380b6d163af1a9b835a5a0e2782ab13c"
                     },
                     {
                         "id":  "PrivateDNS",
@@ -60,8 +64,9 @@
                         "exclusive":  "global.private_dns_mode,global.private_dns_specifier",
                         "runtime":  "0",
                         "packagePath":  "framework/module/PrivateDNS.iwp",
-                        "sizeBytes":  2098,
-                        "sha256":  "0af4f75f3259475c17e6546368502e6a6e2af0dc9739a39f2a73845452d63863"
+                        "icon":  "dns",
+                        "sizeBytes":  2106,
+                        "sha256":  "d7579779707986141c978511487b6561f3de43b815f55e7b5710f3947d972e3b"
                     },
                     {
                         "id":  "SampleMagiskMod",
@@ -70,10 +75,11 @@
                         "author":  "兼容层测试",
                         "description":  "用于验证 iwphone 对 Magisk/KernelSU/AxManager 式模块的兼容层",
                         "exclusive":  null,
-                        "runtime":  null,
+                        "runtime":  "0",
                         "packagePath":  "framework/module/SampleMagiskMod.iwp",
-                        "sizeBytes":  1133,
-                        "sha256":  "ae06a167f9575779b124a5a88e7dcdc7ce91dfb1244a1b98a9b1c6866c2f7c04"
+                        "icon":  "module",
+                        "sizeBytes":  1419,
+                        "sha256":  "75913451f5eb32b8a847d3ba0d5668e46598938beb3f52f78cf8bac95390eaab"
                     },
                     {
                         "id":  "应用管理aapt",
@@ -84,8 +90,9 @@
                         "exclusive":  null,
                         "runtime":  "60",
                         "packagePath":  "framework/module/应用管理aapt.iwp",
-                        "sizeBytes":  446658,
-                        "sha256":  "193a9261fd4e283b461b49d39bb173d0331ae982949983ce5093567ab85f9125"
+                        "icon":  "app",
+                        "sizeBytes":  446666,
+                        "sha256":  "486d62c86edaa0c58ac2c7e88ad7fc474afdab5e9a09a5b2094d69d7a68f3f92"
                     }
                 ]
 }

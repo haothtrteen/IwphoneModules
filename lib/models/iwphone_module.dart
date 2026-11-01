@@ -16,6 +16,8 @@ class IwphoneModule {
     required this.description,
     required this.running,
     required this.hasMain,
+    this.icon = '',
+    this.hasIcon = false,
     this.hasConfig = false,
     this.hasAction = false,
     this.hasWebroot = false,
@@ -51,6 +53,16 @@ class IwphoneModule {
 
   /// 模块是否声明了可配置项（后端检测 config.prop 是否存在）。
   final bool hasConfig;
+
+  /// 图标语义名（`iwphone.prop` 里的 `icon=`）。
+  ///
+  /// 它是「图标类别」而不是具体图片，例如 `network` / `battery` / `motion`。
+  /// 客户端拿它查内置图标表 —— 这样图标能跟随浅色/深色主题，也不用给
+  /// 每个模块包塞图片。空串表示未声明，此时回退到按模块名哈希。
+  final String icon;
+
+  /// 模块目录下是否有 `icon.png`（自定义图标，优先级高于 [icon]）。
+  final bool hasIcon;
 
   /// 是否有 action.sh（Magisk/KernelSU/AxManager 式「动作」按钮）。
   final bool hasAction;
@@ -138,6 +150,8 @@ class IwphoneModule {
       resources: _strList(json['resources']),
       blockedBy: _strList(json['blocked_by']),
       hasConflict: json['has_conflict'] == true,
+      icon: (json['icon'] as String?)?.trim() ?? '',
+      hasIcon: json['has_icon'] == true,
       hasConfig: json['has_config'] == true,
       hasAction: json['has_action'] == true,
       hasWebroot: json['has_webroot'] == true,
