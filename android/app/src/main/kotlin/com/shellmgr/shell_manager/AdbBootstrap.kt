@@ -49,11 +49,27 @@ import java.util.concurrent.TimeUnit
  */
 object AdbBootstrap {
 
-    /** 框架源目录（shell 脚本所在）。 */
-    const val FRAME_DIR = "/data/local/tmp/iwphone_modrunner_v3_slim/iwphone_modrunner_v3"
+    /**
+     * 框架目录（shell 脚本、webui、runtime 都在这）。
+     *
+     * ★ 与 [IWPHONE_ROOT] 是**同一个路径**，这是刻意的：全项目只认
+     *   `/data/local/tmp/iwphone/` 一个目录，代码和运行时状态同处一处。
+     *   历史上有过 `iwphone_modrunner_v3_slim/iwphone_modrunner_v3` 这层嵌套，
+     *   结果「手动把框架推到 iwphone/ 的人」和「App 认为该看 slim/ 的人」
+     *   各说各话，一升级就报各种错。现在没有第二套路径了。
+     */
+    const val FRAME_DIR = "/data/local/tmp/iwphone"
 
-    /** 框架运行时根目录。 */
+    /** 框架运行时根目录（模块、锁、状态、快照都在这里，与代码同级）。 */
     const val IWPHONE_ROOT = "/data/local/tmp/iwphone"
+
+    /**
+     * 旧版布局的残留目录，部署时顺手删掉。
+     *
+     * 里面只有框架代码副本（无用户数据），删掉是安全的；留着会让排障时
+     * 看到两套「看起来都像框架」的目录。
+     */
+    const val LEGACY_FRAME_PARENT = "/data/local/tmp/iwphone_modrunner_v3_slim"
 
     /**
      * WebUI 访问密钥文件（APatch 式：用户自己设密钥）。
@@ -76,8 +92,9 @@ object AdbBootstrap {
     /**
      * 随 APK 内置的框架包（assets/framework.bin，约 12MB，内容是 tar.gz）。
      *
-     * tar.gz 解开后的路径结构是 `iwphone_modrunner_v3_slim/iwphone_modrunner_v3/…`，
-     * 与设备上的部署路径一致 —— 所以直接解到 /data/local/tmp 即完成部署。
+     * tar.gz 解开后的顶层目录就叫 `iwphone/`，解到 /data/local/tmp 即得到
+     * `/data/local/tmp/iwphone/…`，与 [FRAME_DIR] 完全一致 ——
+     * 所以直接解压就完成部署，不需要再搬一次目录。
      *
      * ★ 文件名故意叫 `.bin` 而不是 `.tar.gz`：AAPT 打包时会**解压 .gz 资产
      *   并去掉 .gz 后缀**（实测得到 assets/framework.tar，35MB 未压缩），
@@ -541,6 +558,7 @@ object AdbBootstrap {
         //   busybox 段用 `;` 收尾而非 `&&` —— 它只是兼容层的增强，失败不该让整个部署失败。
         val extractCmd = "mkdir -p $FW_ROOT_PARENT && " +
             "tar xzf $FW_TAR_ON_DEVICE -C $FW_ROOT_PARENT && " +
+            "rm -rf $LEGACY_FRAME_PARENT; " +
             "mkdir -p $IWPHONE_ROOT/state $IWPHONE_ROOT/modsnap && " +
             "chmod -R 777 $FRAME_DIR && " +
             "if [ -x $FRAME_DIR/bin/busybox ]; then " +
@@ -559,6 +577,8 @@ object AdbBootstrap {
 
         // 4) 确认入口真的就位
         return if (isFrameworkInstalled(ctx)) {
+            // 记下「这次部署对应的 App 安装时间」，下次 App 升级后据此判断要不要重铺
+            AutostartPrefs.setDeployStamp(ctx, installStamp(ctx))
             Result(true, "框架已部署（可重复执行以修复/重置）")
         } else {
             Result(false, "部署命令已执行，但未检测到 $MAIN_SH")
@@ -735,6 +755,32 @@ object AdbBootstrap {
 
     // ---------------- 每次开机执行 ----------------
 
+    /**
+     * 本 App 的安装时间戳。每次覆盖安装都会变，用来判断「App 是不是升级过」。
+     *
+     * 取不到时返回 0 —— 此时【不】触发重新部署，避免因为一次读取失败
+     * 就把用户设备上的框架整个覆盖一遍。
+     */
+    @Suppress("DEPRECATION")
+    private fun installStamp(ctx: Context): Long = try {
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).lastUpdateTime
+    } catch (e: Exception) {
+        0L
+    }
+
+    /**
+     * 框架是否需要重新铺设。
+     *
+     * 判据是「上次部署时的 App 安装时间」和当前不一致。这样 App 一升级，
+     * 内置框架包就会重新解压一遍 —— 解决历史上反复出现的
+     * 「App 是新的，设备上跑的却是几个月前那套框架」。
+     */
+    private fun deployStampStale(ctx: Context): Boolean {
+        val stamp = installStamp(ctx)
+        if (stamp == 0L) return false
+        return AutostartPrefs.deployStamp(ctx) != stamp
+    }
+
     /** 框架是否已在运行（避免重复拉起）。 */
     private fun frameworkRunning(ctx: Context): Boolean {
         val r = run(
@@ -782,7 +828,10 @@ object AdbBootstrap {
 
         // 框架不在（首次使用 / 被删 / 被改坏）→ 自动部署一次再启动。
         // 有了内置框架包，这条链路就完全不需要电脑介入了。
-        if (!isFrameworkInstalled(ctx)) {
+        //
+        // 另外：App 每次升级也会重铺一次。内置框架跟 App 一起走，不重铺就会
+        // 残留旧脚本（踩过：App 装的是新包，设备上跑的还是几个月前的框架）。
+        if (!isFrameworkInstalled(ctx) || deployStampStale(ctx)) {
             val dep = deployFramework(ctx)
             if (!dep.ok) return Result(false, "框架未部署，且自动部署失败：${dep.message}")
         }

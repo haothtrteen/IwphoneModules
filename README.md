@@ -103,7 +103,7 @@ settings put global window_animation_scale '1.0'   # [global.window_animation_sc
                     本机 adb（127.0.0.1:5555）
                                     │
 ┌───────────────────────────────────▼──────────────────────────────────────────┐
-│  框架（以 shell 身份运行，/data/local/tmp/iwphone_modrunner_v3_slim）           │
+│  框架（以 shell 身份运行，/data/local/tmp/iwphone）           │
 │  守护进程 · 模块锁 · 沙箱（记账 + 写前快照）· 冲突检测 · WebUI（Python 运行时）  │
 └───────────────────────────────────┬──────────────────────────────────────────┘
                     模块以 shell 身份运行，沙箱注入其 shell

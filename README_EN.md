@@ -107,7 +107,7 @@ can still be restored (Settings → Snapshot history, including "orphan snapshot
                     local adb (127.0.0.1:5555)
                                     │
 ┌───────────────────────────────────▼───────────────────────────────────┐
-│  Framework (runs as shell: /data/local/tmp/iwphone_modrunner_v3_slim)  │
+│  Framework (runs as shell: /data/local/tmp/iwphone)  │
 │  Daemon · module lock · sandbox (accounting + write-ahead snapshots)   │
 │  · conflict detection · WebUI (Python runtime)                         │
 └───────────────────────────────────┬───────────────────────────────────┘

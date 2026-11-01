@@ -8,12 +8,14 @@
 #   换一个 AAPT 不特殊处理后缀的名字即可（.bin），内容仍是 tar.gz。
 #
 # 包内结构（App 侧 deployFramework 解压到 /data/local/tmp 即完成部署）：
-#   iwphone_modrunner_v3_slim/iwphone_modrunner_v3/…
+#   iwphone/…
+#   解压后就是 /data/local/tmp/iwphone/ —— 代码、webui、runtime、模块包全都
+#   在这一个目录里，和运行时产生的 work/ state/ tmp/ 等同级。全项目只有这一个路径。
 #
 # 前置条件：webui/runtime/ 必须存在（内置 Python 运行时，约 36MB，**不入仓库**）
 #   生成：sh tools/build_runtime.sh --arch aarch64
 #   或从已部署的设备拉一份：
-#     adb pull /data/local/tmp/iwphone_modrunner_v3_slim/iwphone_modrunner_v3/webui/runtime webui/runtime
+#     adb pull /data/local/tmp/iwphone/webui/runtime webui/runtime
 #
 # 用法：
 #   sh tools/build_framework_bin.sh
@@ -40,7 +42,7 @@ if [ ! -d "$FRAME_DIR/webui/runtime" ]; then
     echo "❌ 缺少 framework/webui/runtime/（内置 Python 运行时，约 36MB）"
     echo "   二选一："
     echo "     1) sh \"$SCRIPT_DIR/build_runtime.sh\" --arch $ARCH_HINT"
-    echo "     2) adb pull /data/local/tmp/iwphone_modrunner_v3_slim/iwphone_modrunner_v3/webui/runtime \\"
+    echo "     2) adb pull /data/local/tmp/iwphone/webui/runtime \\"
     echo "                \"$FRAME_DIR/webui/runtime\""
     exit 1
 fi
@@ -59,17 +61,21 @@ fi
 TMP=$(mktemp -d 2>/dev/null || mktemp -d -t fwbuild)
 trap 'rm -rf "$TMP"' EXIT
 
-PKG="$TMP/iwphone_modrunner_v3_slim"
-mkdir -p "$PKG"
-cp -r "$FRAME_DIR" "$PKG/iwphone_modrunner_v3" || { echo "❌ 复制框架目录失败"; exit 1; }
+# ★ 包内根目录就叫 iwphone：App 解压到 /data/local/tmp 后直接得到
+#   /data/local/tmp/iwphone/，代码与运行时状态同处一个目录。
+#   不再有 iwphone_modrunner_v3_slim/iwphone_modrunner_v3 这层嵌套 ——
+#   那层嵌套导致「手动部署过框架」和「App 认为没部署」两套路径并存，
+#   升级 App 就会各种对不上。
+PKG="$TMP/iwphone"
+cp -r "$FRAME_DIR" "$PKG" || { echo "❌ 复制框架目录失败"; exit 1; }
 
 # 清掉不该进包的东西
-rm -rf "$PKG/iwphone_modrunner_v3/webui/__pycache__" 2>/dev/null
+rm -rf "$PKG/webui/__pycache__" 2>/dev/null
 find "$PKG" -name '*.bak*' -delete 2>/dev/null
 find "$PKG" -name '*.pyc'  -delete 2>/dev/null
 
 mkdir -p "$(dirname "$OUT")"
-( cd "$TMP" && tar czf "$OUT" iwphone_modrunner_v3_slim ) || { echo "❌ 打包失败"; exit 1; }
+( cd "$TMP" && tar czf "$OUT" iwphone ) || { echo "❌ 打包失败"; exit 1; }
 
 SIZE=$(wc -c < "$OUT" | tr -d ' ')
 echo "✅ 已生成：$OUT"

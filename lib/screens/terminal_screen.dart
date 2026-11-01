@@ -43,8 +43,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
   bool _busy = false;
 
   /// 框架路径前缀，用于快捷命令。
-  static const _frame =
-      '/data/local/tmp/iwphone_modrunner_v3_slim/iwphone_modrunner_v3';
+  /// 与 AdbBootstrap.FRAME_DIR 保持一致：代码和运行时状态同处这一个目录。
+  static const _frame = '/data/local/tmp/iwphone';
 
   @override
   void dispose() {

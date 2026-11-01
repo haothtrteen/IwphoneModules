@@ -26,6 +26,18 @@ object AutostartPrefs {
     private const val KEY_LAST_OK = "last_ok"
     private const val KEY_LAST_MSG = "last_msg"
     private const val KEY_WEBUI_TOKEN = "webui_token"
+    private const val KEY_DEPLOY_STAMP = "fw_deploy_stamp"
+
+    /**
+     * 上次部署框架时本 App 的安装时间戳（毫秒）。
+     *
+     * 用来判断「App 升级后要不要把内置框架重新铺一遍」。0 表示从未记录过。
+     */
+    fun deployStamp(ctx: Context): Long = sp(ctx).getLong(KEY_DEPLOY_STAMP, 0L)
+
+    fun setDeployStamp(ctx: Context, value: Long) {
+        sp(ctx).edit().putLong(KEY_DEPLOY_STAMP, value).apply()
+    }
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 

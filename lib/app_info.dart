@@ -4,4 +4,4 @@
 /// pubspec 决定 APK 的 versionName，这里只决定界面上写什么。
 /// 项目约定零第三方依赖，不引入 `package_info_plus`，所以只能手工同步 ——
 /// 发版时两处一起改，别只改一处。
-const String kAppVersion = '1.3.0';
+const String kAppVersion = '1.3.1';

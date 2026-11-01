@@ -254,7 +254,7 @@ icon="visual"
 sh tools/build_runtime.sh --arch aarch64
 
 # 2) 从已部署的设备拉一份
-adb pull /data/local/tmp/iwphone_modrunner_v3_slim/iwphone_modrunner_v3/webui/runtime webui/runtime
+adb pull /data/local/tmp/iwphone/webui/runtime webui/runtime
 ```
 
 ### 重新打包 App 内置资产

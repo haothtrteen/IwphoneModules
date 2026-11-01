@@ -41,11 +41,18 @@ already_running() {
     return 1
 }
 
-# 执行区 → /sdcard 状态镜像（sync.sh 会同步删除，因此目标是独立子目录 state/，
-# 不会触碰同层的命令文件与 adbsh/ 投递目录）
+# 执行区 → /sdcard 状态镜像。
+#
+# 只镜像 work/ —— 那是 App 在 WebUI 不可达时唯一会用到的兜底数据
+# （/sdcard/iwphone/state/work/<模块>/iwphone.prop）。
+#
+# ★ 不要整个 IWPHONE_ROOT 全量镜像：框架代码、webui/runtime（解压 32MB）、
+#   module/*.iwp 现在都和它同级，全量同步每轮都要算几十 MB 的 MD5，
+#   而且会把 state/webui_token 这类机密文件写到公共存储上。
 sync_state() {
-    mkdir -p "$STATE_DIR" 2>/dev/null
-    sh "$SCRIPT_DIR/sync.sh" "$IWPHONE_ROOT" "$STATE_DIR" >> "$RUN_LOG" 2>&1
+    [ -d "$IWPHONE_ROOT/work" ] || return 0
+    mkdir -p "$STATE_DIR/work" 2>/dev/null
+    sh "$SCRIPT_DIR/sync.sh" "$IWPHONE_ROOT/work" "$STATE_DIR/work" >> "$RUN_LOG" 2>&1
 }
 
 consume_commands() {
