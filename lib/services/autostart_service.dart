@@ -307,6 +307,25 @@ class AutostartService {
     }
   }
 
+  /// 把「内存里的模块包」导入设备（云端模块库用）。
+  ///
+  /// Dart 侧只负责把字节交给原生，临时文件与 adb 推送由原生处理；
+  /// 导入后仍需调用 `IwphoneService.moduleInstall` 才会真正安装。
+  Future<({bool ok, String msg})> importPackageBytes({
+    required Uint8List bytes,
+    required String name,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'importPackageBytes',
+        {'bytes': bytes, 'name': name},
+      );
+      return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
+    } catch (_) {
+      return (ok: false, msg: AppStrings.t('service.callFailed'));
+    }
+  }
+
   /// 打开模块自带 WebUI（App 内 WebView，注入 ksu 桥）。
   Future<bool> openModuleWebUI(String name) async {
     try {

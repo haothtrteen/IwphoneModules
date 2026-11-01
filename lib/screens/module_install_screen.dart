@@ -6,10 +6,10 @@ import '../services/autostart_service.dart';
 import '../services/iwphone_service.dart';
 import '../services/storage_permission_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/app_switch.dart';
 import '../widgets/back_icon_button.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/screen_app_bar.dart';
+import 'module_store_screen.dart';
 
 /// 模块安装页 —— 独立页面（自带 Scaffold）。
 ///
@@ -202,6 +202,18 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
                           importing: _installing,
                           onImport: _import,
                         ),
+                        const SizedBox(height: 8),
+                        _StoreEntryCard(
+                          onTap: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const ModuleStoreScreen(),
+                              ),
+                            );
+                            // 从模块库回来可能有新装的包，刷新一下已装状态
+                            if (mounted) await _load();
+                          },
+                        ),
                         const SizedBox(height: 16),
                         _sectionTitle(
                             AppStrings.t('install.sectionFramework')),
@@ -330,42 +342,74 @@ class _PackageCard extends StatelessWidget {
         ? AppColors.textSecondary
         : (pkg.installed ? AppColors.iconOrange : AppColors.accent);
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.bg,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              pkg.installed ? Icons.inventory_2_outlined : Icons.archive_outlined,
-              size: 20,
-              color: color,
-            ),
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        // ★ 整行可点。之前这里是纯 Container，函数收了 onTap 却从没绑定过，
+        //   右侧那个 AppSwitch 又是个 onChanged: null 的占位 —— 点击当然没反应。
+        onTap: enabled ? onTap : null,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.bg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  pkg.installed
+                      ? Icons.inventory_2_outlined
+                      : Icons.archive_outlined,
+                  size: 20,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(pkg.name, style: AppText.rowLabel),
+                    const SizedBox(height: 3),
+                    Text(state, style: AppText.desc12.copyWith(color: color)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // 明确的动作按钮，别再放一个"看起来能点其实不能"的假开关
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: !enabled
+                      ? AppColors.bg
+                      : (pkg.installed ? AppColors.bg : AppColors.accentDim),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  busy
+                      ? AppStrings.t('install.installing')
+                      : (pkg.installed
+                          ? AppStrings.t('install.reinstall')
+                          : AppStrings.t('install.install')),
+                  style: AppText.desc12.copyWith(
+                    color: !enabled
+                        ? AppColors.textInactive
+                        : (pkg.installed
+                            ? AppColors.textSecondary
+                            : AppColors.accent),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(pkg.name, style: AppText.rowLabel),
-                const SizedBox(height: 3),
-                Text(state, style: AppText.desc12.copyWith(color: color)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          AppSwitch(value: false, onChanged: null), // 占位说明：真正的开关在模块页
-        ],
+        ),
       ),
     );
   }
@@ -385,6 +429,61 @@ class _EmptyCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(text, style: AppText.desc12, textAlign: TextAlign.center),
+    );
+  }
+}
+
+/// 「在线模块库」入口卡片。
+///
+/// 单独做成一张卡片而不是塞进标题栏：这是"从网络上取模块"的动作，
+/// 和下面「框架自带的模块包」是两条不同的来源，视觉上要分得开。
+class _StoreEntryCard extends StatelessWidget {
+  const _StoreEntryCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.cloud_download_outlined,
+                    size: 20, color: AppColors.accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(AppStrings.t('store.entry'),
+                        style: AppText.rowLabel),
+                    const SizedBox(height: 3),
+                    Text(AppStrings.t('store.entryHint'),
+                        style: AppText.desc12),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded,
+                  size: 20, color: AppColors.textInactive),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

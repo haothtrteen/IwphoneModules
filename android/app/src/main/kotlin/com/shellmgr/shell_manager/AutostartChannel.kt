@@ -132,6 +132,14 @@ class AutostartChannel(private val activity: FlutterActivity) {
                     mapOf("ok" to r.ok, "msg" to r.message)
                 }
 
+                // 云端模块库：Dart 侧下载完直接给字节，原生落缓存再推送
+                "importPackageBytes" -> runAsync(result) {
+                    val bytes = call.argument<ByteArray>("bytes") ?: ByteArray(0)
+                    val name = call.argument<String>("name") ?: ""
+                    val r = AdbBootstrap.importPackageBytes(activity, bytes, name)
+                    mapOf("ok" to r.ok, "msg" to r.message)
+                }
+
                 // ---- 界面偏好：主题 / 语言 / 首次引导 ----
                 "loadUiPrefs" -> result.success(UiPrefs.snapshot(activity))
 

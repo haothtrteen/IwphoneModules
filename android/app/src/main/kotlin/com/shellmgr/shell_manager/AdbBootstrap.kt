@@ -522,6 +522,28 @@ object AdbBootstrap {
     }
 
     /**
+     * 把一个「内存里的模块包」推送到设备。
+     *
+     * 给云端模块库用：Dart 侧下载完 .iwp 后不该自己操心临时目录（零依赖下拿不到
+     * 规范的缓存路径），交给原生写进 cacheDir，再复用 [importPackage] 那条
+     * 已经验证过的推送链路。
+     */
+    fun importPackageBytes(ctx: Context, bytes: ByteArray, fileName: String): Result {
+        if (bytes.isEmpty()) return Result(false, "模块包为空")
+
+        val dir = File(ctx.cacheDir, "import").apply { mkdirs() }
+        val tmp = File(dir, "download.iwp")
+        return try {
+            tmp.writeBytes(bytes)
+            importPackage(ctx, tmp.absolutePath, fileName)
+        } catch (e: Exception) {
+            Result(false, "写入临时文件失败：${e.message}")
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    /**
      * 把 APK 内置的框架包部署到设备上。
      *
      * 流程：asset → App 缓存 → `adb push` 到 /data/local/tmp → tar 解压 → 补权限 → 清理。
