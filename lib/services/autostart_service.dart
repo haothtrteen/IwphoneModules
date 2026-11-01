@@ -198,13 +198,36 @@ class AutostartService {
   }
 
   /// 框架是否已部署在设备上（以 Main.sh 是否存在为准）。
-  Future<bool> frameworkInstalled() async {
+  ///
+  /// ⚠️ 只知道「是 / 否」时用这个；要区分「没部署」和「查不到」请用
+  /// [probeFramework] —— 没配对时它返回的 false 其实是"不知道"。
+  Future<bool> frameworkInstalled() async => (await probeFramework()).installed;
+
+  /// 探测框架部署状态（三态）。
+  ///
+  /// 返回 `installed` / `missing` / `unknown`：
+  /// - `installed`：adb 查到 Main.sh 在
+  /// - `missing`  ：adb 能连，但设备上没有 Main.sh
+  /// - `unknown`  ：没配对或 adb 连不上 —— **不是"没部署"**
+  ///
+  /// 早期这里只有 bool，把 `unknown` 也说成 false，于是框架明明在跑、
+  /// 界面却显示「未部署」。上层拿到 `unknown` 时应该改用 WebUI 是否可达去补判。
+  Future<FrameworkProbe> probeFramework() async {
     try {
       final raw = await _channel
           .invokeMethod<Map<dynamic, dynamic>>('frameworkInstalled');
-      return raw?['installed'] == true;
+      final state = (raw?['state'] as String?)?.trim();
+      if (state != null && state.isNotEmpty) {
+        return FrameworkProbe(state);
+      }
+      // 老版本原生端没返回 state，只能按 bool 推断
+      return FrameworkProbe(
+        raw?['installed'] == true
+            ? FrameworkProbe.kInstalled
+            : FrameworkProbe.kUnknown,
+      );
     } catch (_) {
-      return false;
+      return const FrameworkProbe(FrameworkProbe.kUnknown);
     }
   }
 
@@ -419,4 +442,32 @@ class AutostartService {
       return false;
     }
   }
+}
+
+/// 框架部署状态（三态）。
+///
+/// 为什么要三态：没配对、或 adb 连不上时，框架在不在是**不知道**，不是**没有**。
+/// 早期只返回 bool，把「不知道」说成 false，界面上就会出现
+/// 「WebUI 明明在跑，却显示框架未部署」这种自相矛盾的状态。
+class FrameworkProbe {
+  const FrameworkProbe(this.state);
+
+  static const String kInstalled = 'installed';
+  static const String kMissing = 'missing';
+  static const String kUnknown = 'unknown';
+
+  final String state;
+
+  /// 确定已部署。
+  bool get isInstalled => state == kInstalled;
+
+  /// 确定没部署。
+  bool get isMissing => state == kMissing;
+
+  /// 查不到（没配对 / adb 连不上）。
+  bool get isUnknown => state == kUnknown;
+
+  /// 是否已部署。注意：[isUnknown] 也算 false —— 只有需要区分「不知道」时
+  /// 才应该用 [isUnknown] 单独判断。
+  bool get installed => isInstalled;
 }

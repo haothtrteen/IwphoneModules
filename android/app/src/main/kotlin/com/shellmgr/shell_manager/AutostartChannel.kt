@@ -45,7 +45,14 @@ class AutostartChannel(private val activity: FlutterActivity) {
                 "getStatus" -> result.success(status())
 
                 "frameworkInstalled" -> runAsync(result) {
-                    mapOf("installed" to AdbBootstrap.isFrameworkInstalled(activity))
+                    // state 三态：installed / missing / unknown。
+                    // unknown 表示「没配对或连不上，无法判定」—— 界面上不能当成
+                    // 「未部署」展示，否则会出现「WebUI 明明在跑却显示未部署」。
+                    val state = AdbBootstrap.frameworkState(activity)
+                    mapOf(
+                        "installed" to (state == AdbBootstrap.FW_STATE_INSTALLED),
+                        "state" to state,
+                    )
                 }
 
                 // 部署/修复框架：推送内置包并解压。耗时可达一两分钟（12MB 传输 + 解压），

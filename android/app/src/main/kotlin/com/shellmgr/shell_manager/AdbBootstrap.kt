@@ -71,6 +71,11 @@ object AdbBootstrap {
      */
     const val LEGACY_FRAME_PARENT = "/data/local/tmp/iwphone_modrunner_v3_slim"
 
+    /** 框架部署状态三态。UI 据此区分「没部署」和「查不到」。 */
+    const val FW_STATE_INSTALLED = "installed"
+    const val FW_STATE_MISSING = "missing"
+    const val FW_STATE_UNKNOWN = "unknown"
+
     /**
      * WebUI 访问密钥文件（APatch 式：用户自己设密钥）。
      *
@@ -327,13 +332,23 @@ object AdbBootstrap {
         }
     }
 
-    fun isFrameworkInstalled(ctx: Context): Boolean {
-        if (!isProvisioned(ctx)) return false
+    /**
+     * 探测框架状态，**三态**而不是 bool。
+     *
+     * 为什么不能是 bool：没配对、或 adb 连不上时，我们**不知道**框架在不在，
+     * 而不是「不在」。早期这里直接 return false，导致一个很别扭的现象 ——
+     * 框架明明部署好了、WebUI 也在跑，界面却显示「未部署」，两个状态自相矛盾。
+     *
+     * 现在把「不知道」如实返回给上层，由上层用 WebUI 是否可达去补判：
+     * 统一路径之后 WebUI 属于框架的一部分，它能应答就说明框架确实部署着。
+     */
+    fun frameworkState(ctx: Context): String {
+        if (!isProvisioned(ctx)) return FW_STATE_UNKNOWN
         // App 冷启动时 adb server 的设备列表是空的，不 connect 直接 -s 会
         // 「device not found」，探测结果全部失真 —— 必须先确保连接
         if (!ensureConnected(ctx)) {
-            android.util.Log.d("AdbBootstrap", "isFrameworkInstalled: 未连接，无法判定")
-            return false
+            android.util.Log.d("AdbBootstrap", "frameworkState: 未连接，无法判定")
+            return FW_STATE_UNKNOWN
         }
         val r = run(
             ctx,
@@ -344,13 +359,21 @@ object AdbBootstrap {
         //   早期用 contains("yes") —— 在连接失败时 adb 会输出
         //   「adb: device '…' not found」，理论上不含 yes，但实测出现过
         //   误判为已部署的情况；宽松匹配是隐患，改成精确比较。
-        val installed = r.ok && r.message.trim() == "yes"
+        val state = if (r.ok && r.message.trim() == "yes") {
+            FW_STATE_INSTALLED
+        } else {
+            FW_STATE_MISSING
+        }
         android.util.Log.d(
             "AdbBootstrap",
-            "isFrameworkInstalled: ok=${r.ok} msg=[${r.message.take(200)}] -> $installed",
+            "frameworkState: ok=${r.ok} msg=[${r.message.take(200)}] -> $state",
         )
-        return installed
+        return state
     }
+
+    /** 框架是否确定已部署。只认「查到且存在」，不确定一律不算。 */
+    fun isFrameworkInstalled(ctx: Context): Boolean =
+        frameworkState(ctx) == FW_STATE_INSTALLED
 
     /**
      * 固定端口是否已写进 persist 属性。

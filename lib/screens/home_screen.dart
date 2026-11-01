@@ -59,14 +59,25 @@ class _HomeScreenState extends State<HomeScreen> {
       IwphoneService.instance.getStatus(),
       SystemInfoService.instance.load(),
       WebuiTokenManager.instance.isSetOnDevice(),
-      AutostartService.instance.frameworkInstalled(),
+      AutostartService.instance.probeFramework(),
     ]);
     if (!mounted) return;
+    final status = results[0] as IwphoneStatus;
+    final probe = results[3] as FrameworkProbe;
     setState(() {
-      _status = results[0] as IwphoneStatus;
+      _status = status;
       _info = results[1] as SystemInfo;
       _tokenSet = results[2] as bool;
-      _frameworkInstalled = results[3] as bool;
+      // 部署状态必须和运行状态自洽：
+      //   adb 查得到      → 以设备上的文件为准；
+      //   adb 查不到      → 看 WebUI 有没有应答（没配对/连不上时就是这条路）；
+      //   两边都拿不到    → 承认「不知道」(null)，绝不说成「未部署」。
+      // 统一路径之后 WebUI 属于框架的一部分 —— 它能应答，就证明框架部署着且在跑。
+      _frameworkInstalled = probe.isInstalled
+          ? true
+          : probe.isMissing
+              ? false
+              : (status.daemonRunning ? true : null);
       _statusLoading = false;
     });
   }
