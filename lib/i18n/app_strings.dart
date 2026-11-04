@@ -698,6 +698,23 @@ abstract final class AppStrings {
       'missing.systemVersion': '系统版本',
       'missing.arch': '架构',
       'missing.hint': '框架未安装时只显示本页。模块、日志、启停等功能依赖框架提供的服务，部署完成后才会出现。',
+
+      // ---- 安装页 / 未安装首页补充 ----
+      'missing.installTitle': '安装',
+      'missing.installIntro': '安装过程在手机上完成，不需要电脑。先配对取得 shell 权限，再解压内置框架包。',
+      'missing.stepPairTitle': '配对无线调试',
+      'missing.stepPairDesc': '在通知栏输入配对码，App 会自动连上本机 adb',
+      'missing.stepDeployTitle': '部署框架',
+      'missing.stepDeployDesc': '解压内置包（约 13 MB，含 Python 运行时）',
+      'missing.stepPairing': '正在配对…',
+      'missing.notifyNeeded': '配对需要在通知栏输入配对码，请先允许通知权限',
+      'missing.grant': '授权',
+      'missing.startInstall': '开始安装',
+      'missing.goPair': '去配对',
+      'missing.notPairedThenInstall': '点击完成配对并安装',
+      'missing.kernelVersion': '内核版本',
+      'missing.selinux': 'SELinux 状态',
+      'missing.license': '许可证',
     },
     'en': {
       // ---- nav ----
@@ -1414,6 +1431,23 @@ abstract final class AppStrings {
       'missing.systemVersion': 'System version',
       'missing.arch': 'Architecture',
       'missing.hint': 'This is the only screen shown while the framework is missing. Modules, logs and start/stop controls depend on the framework service and appear once it is deployed.',
+
+      // ---- install page / missing home extras ----
+      'missing.installTitle': 'Install',
+      'missing.installIntro': 'Everything happens on the phone. Pair wireless debugging to get a shell, then unpack the bundled framework.',
+      'missing.stepPairTitle': 'Pair wireless debugging',
+      'missing.stepPairDesc': 'Enter the pairing code from the notification; the app connects to local adb',
+      'missing.stepDeployTitle': 'Deploy framework',
+      'missing.stepDeployDesc': 'Unpacks the bundled package (~13 MB, includes the Python runtime)',
+      'missing.stepPairing': 'Pairing…',
+      'missing.notifyNeeded': 'Pairing needs the notification to accept the code. Please allow notifications first.',
+      'missing.grant': 'Allow',
+      'missing.startInstall': 'Start install',
+      'missing.goPair': 'Pair now',
+      'missing.notPairedThenInstall': 'Tap to pair and install',
+      'missing.kernelVersion': 'Kernel',
+      'missing.selinux': 'SELinux',
+      'missing.license': 'License',
     },
   };
 }

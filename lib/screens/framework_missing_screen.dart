@@ -5,29 +5,26 @@ import '../i18n/app_strings.dart';
 import '../services/autostart_service.dart';
 import '../services/system_info_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/confirm_dialog.dart';
+import 'framework_install_screen.dart';
 
-/// 框架未安装时的**唯一界面**。
+/// 框架未安装时的**唯一界面**（参照 KernelSU / Magisk 的首页）。
 ///
-/// 借鉴 KernelSU / Magisk 的做法：安装状态是整个 App 的前置条件 ——
-/// 框架不在，模块列表、日志、启停按钮全都没有数据来源，继续显示这些界面
-/// 只会产生一堆「看着能点、点了没反应 / 报错」的逻辑混乱。
+/// 安装状态是整个 App 的前置条件：框架不在，模块列表、日志、启停按钮全都
+/// 没有数据来源，继续显示只会点出各种无意义报错。所以这一页只做三件事：
+///   1. 说明没装，并给出唯一的安装入口
+///   2. 把设备真实信息摊开（用户排障时第一眼看的就是这些）
+///   3. 放项目与作者信息，避免整页下半截空荡荡
 ///
-/// 所以这里只做三件事：说明没装、给一个安装入口、展示设备基本信息。
-/// 部署成功后由上层重新探测，四页主界面才会出现。
+/// 真正的安装动作在 [FrameworkInstallScreen] 里，这页只负责"看见状态"。
 class FrameworkMissingScreen extends StatefulWidget {
   const FrameworkMissingScreen({
     super.key,
     required this.onInstalled,
-    required this.onNeedPairing,
     required this.onRefresh,
   });
 
-  /// 部署成功后回调（上层据此重新探测并切到主界面）。
+  /// 安装成功后回调（上层据此重新探测并放行主界面）。
   final VoidCallback onInstalled;
-
-  /// 未配对时回调（上层负责把用户送去配对）。
-  final VoidCallback onNeedPairing;
 
   /// 手动刷新状态。
   final VoidCallback onRefresh;
@@ -38,64 +35,49 @@ class FrameworkMissingScreen extends StatefulWidget {
 
 class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
   SystemInfo? _info;
-  bool _deploying = false;
-  bool _needPairing = false;
+  bool _paired = false;
 
   @override
   void initState() {
     super.initState();
-    _loadInfo();
-    _checkPairing();
+    _load();
   }
 
-  Future<void> _loadInfo() async {
-    final info = await SystemInfoService.instance.load();
+  Future<void> _load() async {
+    final results = await Future.wait([
+      SystemInfoService.instance.load(),
+      AutostartService.instance.status(),
+    ]);
     if (!mounted) return;
-    setState(() => _info = info);
+    setState(() {
+      _info = results[0] as SystemInfo;
+      _paired = (results[1] as AutostartStatus).provisioned;
+    });
   }
 
-  Future<void> _checkPairing() async {
-    final st = await AutostartService.instance.status();
-    if (!mounted) return;
-    setState(() => _needPairing = !st.provisioned);
-  }
-
-  Future<void> _deploy() async {
-    if (_deploying) return;
-
-    if (_needPairing) {
-      widget.onNeedPairing();
-      return;
-    }
-
-    final ok = await showConfirmDialog(
-      context,
-      title: AppStrings.t('missing.deployTitle'),
-      message: AppStrings.t('missing.deployMessage'),
-      confirmText: AppStrings.t('missing.tapToInstall'),
+  Future<void> _openInstall() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FrameworkInstallScreen(
+          onInstalled: () {
+            widget.onInstalled();
+          },
+        ),
+      ),
     );
-    if (ok != true || !mounted) return;
-
-    setState(() => _deploying = true);
-    final r = await AutostartService.instance.deployFramework();
-    if (!mounted) return;
-    setState(() => _deploying = false);
-
-    if (r.ok) {
-      // 给框架文件一点落盘时间，再让上层重新探测
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-      if (!mounted) return;
-      widget.onInstalled();
-    } else {
-      // 未配对 / 连不上时，原生侧会在这里给出原因
-      final pairing = r.msg.contains('配对');
-      if (pairing) setState(() => _needPairing = true);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${AppStrings.t('missing.deployFail')}${r.msg}'),
-        backgroundColor: AppColors.iconRed,
-      ));
+    // 从安装页回来：无论装没装成，状态都重新读一次
+    if (mounted) {
+      await _load();
+      widget.onRefresh();
     }
+  }
+
+  Future<void> _openUrl(String url) async {
+    final ok = await AutostartService.instance.openUrl(url);
+    if (!mounted || ok) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${AppStrings.t('settings.linkFailed')}\n$url'),
+    ));
   }
 
   @override
@@ -107,8 +89,7 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
           color: AppColors.accent,
           backgroundColor: AppColors.surface,
           onRefresh: () async {
-            await _loadInfo();
-            await _checkPairing();
+            await _load();
             widget.onRefresh();
           },
           child: ListView(
@@ -128,11 +109,8 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
               _statusCard(),
               const SizedBox(height: 12),
               _infoCard(),
-              const SizedBox(height: 16),
-              Text(
-                AppStrings.t('missing.hint'),
-                style: AppText.desc12,
-              ),
+              const SizedBox(height: 12),
+              _aboutCard(),
             ],
           ),
         ),
@@ -140,41 +118,30 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
     );
   }
 
-  /// 状态卡片 —— 整块可点，就是安装入口（KernelSU 的「未安装 / 点击安装」）。
+  /// 状态卡片 —— 整块可点，就是安装入口。
   Widget _statusCard() {
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: _deploying ? null : _deploy,
+        onTap: _openInstall,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              if (_deploying)
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Icon(
-                  _needPairing
-                      ? Icons.link_off_rounded
-                      : Icons.error_outline_rounded,
-                  size: 24,
-                  color: AppColors.textSecondary,
-                ),
+              Icon(
+                Icons.error_outline_rounded,
+                size: 24,
+                color: AppColors.textSecondary,
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _needPairing
-                          ? AppStrings.t('missing.notPaired')
-                          : AppStrings.t('missing.notInstalled'),
+                      AppStrings.t('missing.notInstalled'),
                       style: AppText.rowLabel.copyWith(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -182,11 +149,9 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _deploying
-                          ? AppStrings.t('missing.deploying')
-                          : (_needPairing
-                              ? AppStrings.t('missing.tapToPair')
-                              : AppStrings.t('missing.tapToInstall')),
+                      _paired
+                          ? AppStrings.t('missing.tapToInstall')
+                          : AppStrings.t('missing.notPairedThenInstall'),
                       style: AppText.desc12,
                     ),
                   ],
@@ -204,7 +169,7 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
   Widget _infoCard() {
     final info = _info;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
@@ -217,6 +182,11 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
             value: 'v$kAppVersion',
           ),
           _InfoRow(
+            icon: Icons.memory_rounded,
+            label: AppStrings.t('missing.kernelVersion'),
+            value: info?.kernelVersion ?? '—',
+          ),
+          _InfoRow(
             icon: Icons.smartphone_rounded,
             label: AppStrings.t('missing.deviceModel'),
             value: info?.deviceDisplay ?? '—',
@@ -227,9 +197,44 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
             value: info?.androidDisplay ?? '—',
           ),
           _InfoRow(
-            icon: Icons.memory_rounded,
+            icon: Icons.developer_board_rounded,
             label: AppStrings.t('missing.arch'),
             value: info?.abi ?? '—',
+          ),
+          _InfoRow(
+            icon: Icons.shield_outlined,
+            label: AppStrings.t('missing.selinux'),
+            value: info?.selinux ?? '—',
+            last: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aboutCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          _LinkRow(
+            label: AppStrings.t('settings.projectHome'),
+            value: 'haothtrteen/IwphoneModules',
+            onTap: () => _openUrl(AppStrings.t('about.github')),
+          ),
+          _LinkRow(
+            label: AppStrings.t('settings.author'),
+            value: 'haothtrteen',
+            onTap: () => _openUrl('https://github.com/haothtrteen'),
+          ),
+          _InfoRow(
+            icon: Icons.verified_user_outlined,
+            label: AppStrings.t('missing.license'),
+            value: AppStrings.t('about.license'),
             last: true,
           ),
         ],
@@ -274,13 +279,65 @@ class _InfoRow extends StatelessWidget {
           Flexible(
             child: Text(
               value,
-              style: AppText.desc12,
+              style: AppText.desc12.copyWith(color: AppColors.textSecondary),
               textAlign: TextAlign.right,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 可点击的链接行（项目主页 / 作者）。
+class _LinkRow extends StatelessWidget {
+  const _LinkRow({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.divider, width: 1)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.link_rounded,
+                size: 20, color: AppColors.textSecondary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: AppText.rowLabel.copyWith(fontSize: 15),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                value,
+                style: AppText.desc12.copyWith(color: AppColors.accent),
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.north_east_rounded,
+                size: 14, color: AppColors.textInactive),
+          ],
+        ),
       ),
     );
   }
