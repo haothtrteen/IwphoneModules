@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../i18n/app_strings.dart';
 import '../services/autostart_service.dart';
 import '../services/shell_executor.dart';
+import '../services/webui_token.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_switch.dart';
 import '../widgets/back_icon_button.dart';
 import '../widgets/confirm_dialog.dart';
 
@@ -32,6 +34,20 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   String _busyMsg = '';
   bool _hasRoot = false;
 
+  /// WebUI 访问密钥。默认要求设置 —— 不设的话同设备任何应用都能调用
+  /// `/api/shell`（shell 权限），这是唯一拦得住它们的东西。
+  final TextEditingController _tokenCtrl = TextEditingController();
+  bool _tokenVisible = false;
+
+  /// 高级选项面板是否展开。
+  bool _advancedOpen = false;
+
+  /// 跳过密钥（对应「不设置 WebUI 密钥」）。
+  bool _skipToken = false;
+
+  /// 是否固定 adb 端口（默认 true，关掉后重启需重新配对）。
+  bool _pinPort = true;
+
   @override
   void initState() {
     super.initState();
@@ -50,7 +66,20 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _tokenCtrl.dispose();
     super.dispose();
+  }
+
+  /// 密钥是否就绪（跳过或填写合法）。
+  bool get _tokenOk =>
+      _skipToken || WebuiTokenManager.validate(_tokenCtrl.text) == null;
+
+  /// 输入框下方的错误提示；为空表示没问题。
+  String get _tokenError {
+    if (_skipToken) return '';
+    final v = _tokenCtrl.text;
+    if (v.isEmpty) return '';
+    return WebuiTokenManager.validate(v) ?? '';
   }
 
   @override
@@ -232,6 +261,10 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
       _busy = true;
       _busyMsg = AppStrings.t('missing.deploying');
     });
+
+    // 高级选项先落盘：是否固定端口由原生在配对时决定
+    await AutostartService.instance.setPinPort(_pinPort);
+
     final r = await AutostartService.instance.deployFramework();
     if (!mounted) return;
     setState(() {
@@ -240,6 +273,17 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     });
 
     if (r.ok) {
+      // 密钥要在框架就位后才能下发（走 adb 写到 state/webui_token）
+      if (!_skipToken) {
+        final tok = await WebuiTokenManager.instance.set(_tokenCtrl.text);
+        if (!mounted) return;
+        if (!tok.ok) {
+          // 框架已经装好了，密钥没下发不该把用户卡在安装页 ——
+          // 提示一句，之后可以在「设置 → 访问密钥」补设。
+          _toast('${AppStrings.t('webuiToken.applyFailed')}${tok.msg}',
+              ok: false);
+        }
+      }
       _toast(AppStrings.t('onboarding.deployOk'));
       await Future<void>.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
@@ -252,6 +296,136 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   }
 
   bool get _paired => _status?.provisioned ?? false;
+
+  /// WebUI 访问密钥输入区。
+  Widget _tokenCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            AppStrings.t('missing.tokenTitle'),
+            style: AppText.rowLabel.copyWith(fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          Text(AppStrings.t('missing.tokenDesc'), style: AppText.desc12),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _tokenCtrl,
+            enabled: !_skipToken,
+            obscureText: !_tokenVisible,
+            onChanged: (_) => setState(() {}),
+            style: AppText.monoValue14.copyWith(
+              color: _skipToken ? AppColors.textInactive : AppColors.textPrimary,
+            ),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: AppColors.bg,
+              hintText: _skipToken
+                  ? AppStrings.t('missing.tokenSkipped')
+                  : AppStrings.t('missing.tokenHint'),
+              hintStyle: AppText.desc12,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide.none,
+              ),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _tokenVisible
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                  size: 18,
+                ),
+                color: AppColors.textInactive,
+                onPressed: () =>
+                    setState(() => _tokenVisible = !_tokenVisible),
+              ),
+            ),
+          ),
+          if (_tokenError.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              _tokenError,
+              style: AppText.desc12.copyWith(color: AppColors.iconRed),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 高级选项：默认收起，展开后是两个带后果说明的开关。
+  Widget _advancedPanel() {
+    return Column(
+      children: [
+        Material(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => setState(() => _advancedOpen = !_advancedOpen),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      AppStrings.t('missing.advanced'),
+                      style: AppText.rowLabel.copyWith(fontSize: 16),
+                    ),
+                  ),
+                  Icon(
+                    _advancedOpen
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 20,
+                    color: AppColors.textInactive,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (_advancedOpen) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                _OptRow(
+                  title: AppStrings.t('missing.optNoToken'),
+                  desc: AppStrings.t('missing.optNoTokenDesc'),
+                  value: _skipToken,
+                  warn: _skipToken,
+                  onChanged: (v) => setState(() => _skipToken = v),
+                ),
+                _OptRow(
+                  title: AppStrings.t('missing.optPinPort'),
+                  desc: AppStrings.t('missing.optPinPortDesc'),
+                  value: _pinPort,
+                  warn: !_pinPort,
+                  onChanged: (v) => setState(() => _pinPort = v),
+                  last: true,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -310,6 +484,10 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                     enabled: _paired && !_busy,
                     onTap: _paired && !_busy ? _deploy : null,
                   ),
+                  const SizedBox(height: 16),
+                  _tokenCard(),
+                  const SizedBox(height: 12),
+                  _advancedPanel(),
                   const SizedBox(height: 24),
                   Text(
                     AppStrings.t('missing.otherWays'),
@@ -376,7 +554,7 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                 child: FilledButton(
                   onPressed: _busy
                       ? null
-                      : (_paired ? _deploy : _pair),
+                      : (_paired ? (_tokenOk ? _deploy : null) : _pair),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.accent,
                     disabledBackgroundColor:
@@ -388,9 +566,11 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                   child: Text(
                     _busy
                         ? _busyMsg
-                        : (_paired
-                            ? AppStrings.t('missing.startInstall')
-                            : AppStrings.t('missing.goPair')),
+                        : (!_paired
+                            ? AppStrings.t('missing.goPair')
+                            : (!_tokenOk
+                                ? AppStrings.t('missing.needToken')
+                                : AppStrings.t('missing.startInstall'))),
                     style: const TextStyle(fontSize: 15),
                   ),
                 ),
@@ -543,6 +723,65 @@ class _AltCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 高级选项里的一个开关行：标题 + 后果说明 + 开关。
+///
+/// 说明文字在「不该动这个」的状态下会变成警示色 —— 这类选项的价值就是让
+/// 用户看清代价，文字比开关本身更重要。
+class _OptRow extends StatelessWidget {
+  const _OptRow({
+    required this.title,
+    required this.desc,
+    required this.value,
+    required this.onChanged,
+    this.warn = false,
+    this.last = false,
+  });
+
+  final String title;
+  final String desc;
+  final bool value;
+  final bool warn;
+  final bool last;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : Border(bottom: BorderSide(color: AppColors.divider, width: 1)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: AppText.rowLabel),
+                const SizedBox(height: 4),
+                Text(
+                  desc,
+                  style: AppText.desc12.copyWith(
+                    color: warn ? AppColors.iconOrange : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: AppSwitch(value: value, onChanged: onChanged),
+          ),
+        ],
       ),
     );
   }

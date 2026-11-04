@@ -786,6 +786,12 @@ object AdbBootstrap {
      * 只有 adb 协议指令或 root 能写 —— 这正是必须由 adb 下发而非 shell 直接 setprop 的原因。
      */
     fun ensureFixedPort(ctx: Context): Result {
+        // 用户可在安装页「高级选项」里选择不固定端口。
+        // 这是有意的取舍：不让调试端口长期常开，代价是重启后要重新配对。
+        if (!UiPrefs.pinPort(ctx)) {
+            return Result(true, "已按设置跳过固定端口（重启后需重新配对）")
+        }
+
         // 先确保有可用 transport（首次配置时 5555 还没起来，必须走动态端口）
         val t = ensureTransport(ctx)
         if (!t.ok) return Result(false, "固定端口失败：${t.message}")

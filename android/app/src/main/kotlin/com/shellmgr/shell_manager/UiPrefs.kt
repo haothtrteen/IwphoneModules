@@ -17,6 +17,7 @@ object UiPrefs {
     private const val KEY_LOCALE = "locale"           // system | zh | en
     private const val KEY_ONBOARDING = "onboarding_done"
     private const val KEY_TOKEN_PROMPT = "token_prompt_dismissed"
+    private const val KEY_PIN_PORT = "pin_adb_port"
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -46,7 +47,23 @@ object UiPrefs {
         sp(ctx).edit().putBoolean(KEY_TOKEN_PROMPT, value).apply()
     }
 
+    /**
+     * 是否固定 adb 端口（默认开启）。
+     *
+     * 开启时配对成功后会 `adb tcpip 5555`，把 `persist.adb.tcp.port` 写死，
+     * 重启后 adbd 自动监听 5555，App 无需重新配对即可连接。
+     *
+     * 关掉它的代价很直接：重启后 adbd 回到动态端口，**必须重新配对**才能用，
+     * 开机自启也因此失效。给在意"调试端口不该长期常开"的人留的开关。
+     */
+    fun pinPort(ctx: Context): Boolean = sp(ctx).getBoolean(KEY_PIN_PORT, true)
+
+    fun setPinPort(ctx: Context, value: Boolean) {
+        sp(ctx).edit().putBoolean(KEY_PIN_PORT, value).apply()
+    }
+
     fun snapshot(ctx: Context): Map<String, Any> = mapOf(
+        "pinPort" to pinPort(ctx),
         "themeMode" to themeMode(ctx),
         "locale" to locale(ctx),
         "onboardingDone" to onboardingDone(ctx),

@@ -153,6 +153,12 @@ class AutostartChannel(private val activity: FlutterActivity) {
                 // ---- 界面偏好：主题 / 语言 / 首次引导 ----
                 "loadUiPrefs" -> result.success(UiPrefs.snapshot(activity))
 
+                // 安装页「高级选项」：是否固定 adb 端口
+                "setPinPort" -> {
+                    UiPrefs.setPinPort(activity, call.argument<Boolean>("value") ?: true)
+                    result.success(true)
+                }
+
                 "saveUiPrefs" -> {
                     call.argument<String>("themeMode")?.let { UiPrefs.setThemeMode(activity, it) }
                     call.argument<String>("locale")?.let { UiPrefs.setLocale(activity, it) }

@@ -326,6 +326,17 @@ class AutostartService {
     }
   }
 
+  /// 是否固定 adb 端口（默认 true）。
+  ///
+  /// 关掉后重启不会自动监听 5555，需要重新配对 —— 安装页「高级选项」会写这个值。
+  Future<void> setPinPort(bool value) async {
+    try {
+      await _channel.invokeMethod<bool>('setPinPort', {'value': value});
+    } catch (_) {
+      // 写失败就保持默认（固定端口），不影响安装流程
+    }
+  }
+
   /// 导出「激活脚本 + 框架包」到外部存储，返回脚本绝对路径。
   ///
   /// 用于电脑 adb / root 两条不依赖无线调试配对的路径。
