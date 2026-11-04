@@ -217,6 +217,10 @@ class _ModuleInstallScreenState extends State<ModuleInstallScreen> {
                         const SizedBox(height: 16),
                         _sectionTitle(
                             AppStrings.t('install.sectionFramework')),
+                        const SizedBox(height: 6),
+                        // 内置包现在只留一个示例，其余走云端模块库
+                        Text(AppStrings.t('install.builtinHint'),
+                            style: AppText.desc12),
                         const SizedBox(height: 8),
                         if (_packages.isEmpty)
                           _EmptyCard(

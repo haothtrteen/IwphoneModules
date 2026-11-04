@@ -69,6 +69,16 @@ trap 'rm -rf "$TMP"' EXIT
 PKG="$TMP/iwphone"
 cp -r "$FRAME_DIR" "$PKG" || { echo "❌ 复制框架目录失败"; exit 1; }
 
+# 内置模块包：APK 里只留一个最简示例，其余改为从「云端模块库」按需下载。
+#
+# ★ 这些 .iwp 仍然保留在仓库的 framework/module/ 下 —— modules.catalog.json
+#   里的 packagePath 就指向它们，把文件删掉会让云端下载全部 404。
+#   所以这里是「打包时排除」，不是「删除源文件」。
+#
+# 保留 SampleMagiskMod：它是最小的模块格式示例（1.4KB，Magisk 兼容写法），
+# 给开发者和"想看看模块长什么样"的用户一个参照。
+find "$PKG/module" -maxdepth 1 -name '*.iwp' ! -name 'SampleMagiskMod.iwp' -delete 2>/dev/null
+
 # 清掉不该进包的东西
 rm -rf "$PKG/webui/__pycache__" 2>/dev/null
 find "$PKG" -name '*.bak*' -delete 2>/dev/null

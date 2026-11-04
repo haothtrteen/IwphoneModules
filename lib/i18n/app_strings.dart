@@ -308,6 +308,7 @@ abstract final class AppStrings {
       'install.installedSuffix': '」安装完成',
       'install.installFailedSuffix': '」安装失败（详情见框架日志）',
       'install.sectionFramework': '框架包（module/ 目录）',
+      'install.builtinHint': '安装包内置只保留一个示例，更多模块请从「在线模块库」获取。',
       'install.emptyPackages':
           '框架 module/ 目录里没有可安装的包。\n可以先用上方「本地导入」把 .iwp 或 Magisk 式模块 zip 推进来。',
       'install.footnote':
@@ -1085,6 +1086,7 @@ abstract final class AppStrings {
       'install.installedSuffix': '" installed successfully',
       'install.installFailedSuffix': '" failed to install (see framework logs)',
       'install.sectionFramework': 'Framework packages (module/ folder)',
+      'install.builtinHint': 'Only one sample is bundled. Get more from the Module Store.',
       'install.emptyPackages':
           'No installable packages in the framework module/ folder.\n'
               'Use Local import above to push in an .iwp or Magisk-style module zip first.',
