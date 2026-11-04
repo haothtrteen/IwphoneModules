@@ -356,6 +356,17 @@ class AutostartService {
     }
   }
 
+  /// 重启本 App（安装日志页完成后调用）。
+  ///
+  /// 会杀掉当前进程并重新拉起入口 Activity，让 main() 重新探测框架状态。
+  Future<void> restartApp() async {
+    try {
+      await _channel.invokeMethod<bool>('restartApp');
+    } catch (_) {
+      // 进程会被杀掉，收不到返回值是正常的
+    }
+  }
+
   /// 导出「激活脚本 + 框架包」到外部存储，返回脚本绝对路径。
   ///
   /// 用于电脑 adb / root 两条不依赖无线调试配对的路径。

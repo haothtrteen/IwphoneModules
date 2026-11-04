@@ -10,6 +10,7 @@ import '../services/webui_token.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_switch.dart';
 import '../widgets/back_icon_button.dart';
+import 'install_log_screen.dart';
 import '../widgets/confirm_dialog.dart';
 
 /// 框架安装页（唯一的"安装"入口）。
@@ -293,7 +294,8 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     }
   }
 
-  Future<void> _deploy() async {
+  /// 配置完成 → 跳日志页执行。安装页本身不再逐步触发任何动作。
+  Future<void> _startInstall() async {
     if (_busy) return;
     // 设备上已有框架 → 这次是覆盖/更新，先说清影响
     if (_deployedVer != 0) {
@@ -307,45 +309,70 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
       if (ok != true || !mounted) return;
     }
 
-    setState(() {
-      _busy = true;
-      _busyMsg = AppStrings.t('missing.deploying');
-    });
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => InstallLogScreen(
+          runner: _runInstall,
+          onInstalled: widget.onInstalled,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _loadVersion();
+    await _refresh();
+  }
 
-    // 高级选项先落盘：是否固定端口由原生在配对时决定
+  /// 真正的执行流程，由日志页驱动，逐行回写进度。
+  Future<({bool ok, String msg})> _runInstall(InstallLogEmitter log) async {
+    log(AppStrings.t('log.stepPair'), LogKind.info);
+    final st = await AutostartService.instance.status();
+    if (!st.provisioned) {
+      log(AppStrings.t('log.notPaired'), LogKind.fail);
+      return (ok: false, msg: AppStrings.t('log.notPaired'));
+    }
+    log(AppStrings.t('log.paired'), LogKind.ok);
+
+    log(AppStrings.t('log.stepPort'), LogKind.info);
     await AutostartService.instance.setPinPort(_pinPort);
+    log(
+      _pinPort
+          ? AppStrings.t('log.portPinned')
+          : AppStrings.t('log.portSkipped'),
+      _pinPort ? LogKind.ok : LogKind.warn,
+    );
 
+    log(AppStrings.t('log.stepDeploy'), LogKind.info);
     final r = await AutostartService.instance.deployFramework(
       path: _localPath.isEmpty ? null : _localPath,
     );
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _busyMsg = '';
-    });
-
-    if (r.ok) {
-      // 密钥要在框架就位后才能下发（走 adb 写到 state/webui_token）
-      if (!_skipToken) {
-        final tok = await WebuiTokenManager.instance.set(_tokenCtrl.text);
-        if (!mounted) return;
-        if (!tok.ok) {
-          // 框架已经装好了，密钥没下发不该把用户卡在安装页 ——
-          // 提示一句，之后可以在「设置 → 访问密钥」补设。
-          _toast('${AppStrings.t('webuiToken.applyFailed')}${tok.msg}',
-              ok: false);
-        }
-      }
-      _toast(AppStrings.t('onboarding.deployOk'));
-      await Future<void>.delayed(const Duration(milliseconds: 600));
-      if (!mounted) return;
-      await _loadVersion();
-      widget.onInstalled();
-      if (mounted) Navigator.of(context).maybePop();
-    } else {
-      _toast('${AppStrings.t('missing.deployFail')}${r.msg}', ok: false);
-      await _refresh();
+    if (!r.ok) {
+      log('${AppStrings.t('missing.deployFail')}${r.msg}', LogKind.fail);
+      return (ok: false, msg: r.msg);
     }
+    log(AppStrings.t('log.deployed'), LogKind.ok);
+
+    if (!_skipToken) {
+      log(AppStrings.t('log.stepKey'), LogKind.info);
+      final tok = await WebuiTokenManager.instance.set(_tokenCtrl.text);
+      if (tok.ok) {
+        log(AppStrings.t('log.keyOk'), LogKind.ok);
+      } else {
+        // 框架已经装好，密钥没下发不该判定为整体失败
+        log('${AppStrings.t('webuiToken.applyFailed')}${tok.msg}',
+            LogKind.warn);
+      }
+    } else {
+      log(AppStrings.t('log.keySkipped'), LogKind.warn);
+    }
+
+    log(AppStrings.t('log.stepVerify'), LogKind.info);
+    final v = await AutostartService.instance.frameworkVersion();
+    if (v.deployed > 0) {
+      log('${AppStrings.t('log.frameVersion')} ${v.deployed}', LogKind.ok);
+    } else {
+      log(AppStrings.t('log.noVersionMark'), LogKind.warn);
+    }
+    return (ok: true, msg: '');
   }
 
   bool get _paired => _status?.provisioned ?? false;
@@ -605,13 +632,15 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                     onTap: _busy ? null : _pair,
                   ),
                   const SizedBox(height: 8),
+                  // ② 只是"会做什么"的说明，不再是可点动作 ——
+                  //    用户要配的东西全部集中在本页，底部按钮一次性执行。
                   _StepCard(
                     index: 2,
                     title: AppStrings.t('missing.stepDeployTitle'),
                     subtitle: AppStrings.t('missing.stepDeployDesc'),
                     done: false,
-                    enabled: _paired && !_busy,
-                    onTap: _paired && !_busy ? _deploy : null,
+                    enabled: true,
+                    onTap: null,
                   ),
                   const SizedBox(height: 16),
                   _tokenCard(),
@@ -683,7 +712,7 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                 child: FilledButton(
                   onPressed: _busy
                       ? null
-                      : (_paired ? (_tokenOk ? _deploy : null) : _pair),
+                      : (_paired ? (_tokenOk ? _startInstall : null) : _pair),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.accent,
                     disabledBackgroundColor:
@@ -734,7 +763,10 @@ class _StepCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final active = enabled && onTap != null;
+    // 可点 ≠ 会执行：步骤②没有 onTap（统一由底部按钮触发），但它依然是
+    // 正常颜色，不能被画成灰色"禁用"让人以为这步跳过了。
+    final interactive = onTap != null;
+    final dim = !enabled && !done;
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(12),
@@ -761,9 +793,9 @@ class _StepCard extends StatelessWidget {
                     : Text(
                         '$index',
                         style: AppText.desc12.copyWith(
-                          color: active
-                              ? AppColors.textPrimary
-                              : AppColors.textInactive,
+                          color: dim
+                              ? AppColors.textInactive
+                              : AppColors.textPrimary,
                         ),
                       ),
               ),
@@ -776,9 +808,9 @@ class _StepCard extends StatelessWidget {
                       title,
                       style: AppText.rowLabel.copyWith(
                         fontSize: 16,
-                        color: active || done
-                            ? AppColors.textPrimary
-                            : AppColors.textInactive,
+                        color: dim
+                            ? AppColors.textInactive
+                            : AppColors.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -786,7 +818,7 @@ class _StepCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (active)
+              if (interactive)
                 Icon(Icons.chevron_right_rounded,
                     size: 20, color: AppColors.textInactive),
             ],

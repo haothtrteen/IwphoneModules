@@ -44,6 +44,12 @@ class AutostartChannel(private val activity: FlutterActivity) {
             when (call.method) {
                 "getStatus" -> result.success(status())
 
+                // 安装日志页完成后的「重启应用」
+                "restartApp" -> {
+                    result.success(true)
+                    AppRestarter.restart(activity)
+                }
+
                 "frameworkInstalled" -> runAsync(result) {
                     // state 三态：installed / missing / unknown。
                     // unknown 表示「没配对或连不上，无法判定」—— 界面上不能当成
