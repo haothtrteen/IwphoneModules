@@ -248,7 +248,13 @@ object AdbBootstrap {
         if (!dynamic.ok) return dynamic
 
         // 3) 已经有 transport，才能把端口固定到 5555（写 persist 属性）
-        val tcpip = run(ctx, listOf("tcpip", CONNECT_PORT.toString()), timeoutMs = 30_000)
+        // ★ 这里必须显式指定**刚刚验证过的动态端口**：此刻 5555 还没起来，
+        //   run() 的兜底若补成 -s TARGET 反而会连到不存在的设备。
+        val tcpip = run(
+            ctx,
+            listOf("-s", "127.0.0.1:$port", "tcpip", CONNECT_PORT.toString()),
+            timeoutMs = 30_000,
+        )
         if (!tcpip.ok) {
             return Result(false, "固定端口失败：${tcpip.message}")
         }
@@ -436,7 +442,7 @@ object AdbBootstrap {
         )
         val pushed = run(
             ctx,
-            listOf("push", cachePath, WEBUI_TOKEN_FILE),
+            listOf("-s", TARGET, "push", cachePath, WEBUI_TOKEN_FILE),
             timeoutMs = 30_000,
         )
         if (!pushed.ok) {
@@ -505,7 +511,7 @@ object AdbBootstrap {
 
         val pushed = run(
             ctx,
-            listOf("push", cachePath, "$FRAME_DIR/module/$safe"),
+            listOf("-s", TARGET, "push", cachePath, "$FRAME_DIR/module/$safe"),
             timeoutMs = 120_000,
         )
         if (!pushed.ok) {
@@ -647,7 +653,7 @@ object AdbBootstrap {
         // 2) push 到设备（12MB 走 localhost，通常几秒）
         val pushed = run(
             ctx,
-            listOf("push", staged.absolutePath, FW_TAR_ON_DEVICE),
+            listOf("-s", TARGET, "push", staged.absolutePath, FW_TAR_ON_DEVICE),
             timeoutMs = 120_000,
         )
         if (!pushed.ok) {
@@ -749,6 +755,39 @@ object AdbBootstrap {
     )
 
     /**
+     * 需要「指定某一台设备」的 adb 子命令。
+     *
+     * ★ 为什么必须统一在这里兜底：手机内部的 adbd 监听 5555 时，adb server
+     *   会把本机 5555 自动识别成 `emulator-5554`；随后我们又显式
+     *   `adb connect 127.0.0.1:5555`，于是 devices 里出现**两个指向同一台设备**
+     *   的 transport。此时任何不带 `-s` 的 `push` / `tcpip` 都会报
+     *   `failed to get feature set: more than one device/emulator`。
+     *
+     *   实测（2026-11-04，配对完成后）：
+     *     adb devices → 127.0.0.1:5555 device / emulator-5554 device
+     *     adb push (无 -s) → 失败；adb -s 127.0.0.1:5555 push → 成功
+     *
+     *   只给三处已知的 push 补 `-s` 治标不治本，以后新增一个又会漏。
+     *   所以凡是 device-scoped 子命令且调用方没显式给 `-s/-d/-e`，一律补上
+     *   `-s TARGET`。`connect`/`pair`/`devices`/`kill-server` 这类全局命令不在表内。
+     */
+    private val DEVICE_SCOPED_COMMANDS = setOf(
+        "push", "pull", "sync", "shell", "install", "install-multiple",
+        "uninstall", "tcpip", "usb", "root", "unroot", "remount",
+        "reboot", "logcat", "bugreport", "forward", "reverse",
+        "backup", "restore", "emu", "jdwp", "get-state",
+        "get-serialno", "get-devpath",
+    )
+
+    private fun withDeviceSelector(args: List<String>): List<String> {
+        if (args.isEmpty()) return args
+        // 调用方已经显式指定目标（例如 tcpip 阶段要用动态端口，不能改成 5555）
+        if (args[0] in setOf("-s", "-d", "-e", "-t")) return args
+        if (args[0] !in DEVICE_SCOPED_COMMANDS) return args
+        return listOf("-s", TARGET) + args
+    }
+
+    /**
      * 运行一次 adb 命令。
      *
      * 输出在两个线程上并行读取 —— adb 的输出可能超过管道缓冲区（64KB），
@@ -767,9 +806,10 @@ object AdbBootstrap {
             }
         }
 
+        val effectiveArgs = withDeviceSelector(args)
         val home = homeDir(ctx)
         return try {
-            val pb = ProcessBuilder(listOf(adb.absolutePath) + args)
+            val pb = ProcessBuilder(listOf(adb.absolutePath) + effectiveArgs)
             pb.directory(home)
             pb.redirectErrorStream(true)
             pb.environment().apply {
@@ -796,7 +836,7 @@ object AdbBootstrap {
             if (!finished) {
                 proc.destroyForcibly()
                 reader.join(500)
-                return Result(false, "adb 超时（${timeoutMs / 1000}s）：${args.joinToString(" ")}")
+                return Result(false, "adb 超时（${timeoutMs / 1000}s）：${effectiveArgs.joinToString(" ")}")
             }
             reader.join(1000)
 
@@ -869,7 +909,11 @@ object AdbBootstrap {
         }
 
         // 属性没写 → 用现有 transport 再下发一次 tcpip
-        val r = run(ctx, listOf("tcpip", CONNECT_PORT.toString()), timeoutMs = 30_000)
+        val r = run(
+            ctx,
+            listOf("-s", TARGET, "tcpip", CONNECT_PORT.toString()),
+            timeoutMs = 30_000,
+        )
         if (!r.ok) {
             return Result(false, "固定端口失败：${r.message}")
         }
@@ -1039,9 +1083,10 @@ object AdbBootstrap {
     ): Result {
         val adb = adbFile(ctx)
         if (!adb.exists()) return Result(false, "内置 adb 不存在：${adb.absolutePath}")
+        val effectiveArgs = withDeviceSelector(args)
         val home = homeDir(ctx)
         return try {
-            val pb = ProcessBuilder(listOf(adb.absolutePath) + args)
+            val pb = ProcessBuilder(listOf(adb.absolutePath) + effectiveArgs)
             pb.directory(home)
             pb.redirectErrorStream(true)
             pb.environment().apply {
@@ -1065,7 +1110,7 @@ object AdbBootstrap {
             if (!proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
                 proc.destroyForcibly()
                 reader.join(500)
-                return Result(false, "adb 超时（${timeoutMs / 1000}s）：${args.joinToString(" ")}")
+                return Result(false, "adb 超时（${timeoutMs / 1000}s）：${effectiveArgs.joinToString(" ")}")
             }
             reader.join(1000)
 
