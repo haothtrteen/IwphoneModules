@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 
 import '../app_info.dart';
 import '../i18n/app_strings.dart';
+import '../models/iwphone_module.dart';
 import '../services/autostart_service.dart';
+import '../services/iwphone_service.dart';
 import '../services/shell_executor.dart';
 import '../services/storage_permission_service.dart';
 import '../services/webui_token.dart';
@@ -365,7 +367,37 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
       log(AppStrings.t('log.keySkipped'), LogKind.warn);
     }
 
+    // ★ 部署只是"把文件放好"，Main.sh 从来不会自己起来。
+    //   必须显式拉起守护，否则安装完成后首页必然显示"框架未运行"。
+    log(AppStrings.t('log.stepStart'), LogKind.info);
+    final started = await AutostartService.instance.runNow();
+    if (!started.ok) {
+      log('${AppStrings.t('log.startFail')}${started.msg}', LogKind.warn);
+    } else {
+      log(
+        started.skipped
+            ? AppStrings.t('log.alreadyRunning')
+            : AppStrings.t('log.started'),
+        LogKind.ok,
+      );
+    }
+
+    // 最后一步以 WebUI 真的可访问为准，而不是以某个标记文件存在为准。
+    // 守护启动后 WebUI 可能还要一两秒，轮询几次避免误判。
     log(AppStrings.t('log.stepVerify'), LogKind.info);
+    IwphoneService.instance.invalidate();
+    IwphoneStatus? status;
+    for (var i = 0; i < 5; i++) {
+      status = await IwphoneService.instance.getStatus();
+      if (status.daemonRunning) break;
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    }
+    if (status == null || !status.daemonRunning) {
+      log(AppStrings.t('log.verifyFail'), LogKind.fail);
+      return (ok: false, msg: AppStrings.t('log.verifyFail'));
+    }
+    log(AppStrings.t('log.runningOk'), LogKind.ok);
+
     final v = await AutostartService.instance.frameworkVersion();
     if (v.deployed > 0) {
       log('${AppStrings.t('log.frameVersion')} ${v.deployed}', LogKind.ok);

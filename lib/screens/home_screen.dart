@@ -211,7 +211,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 message: AppStrings.t('home.restartMessage'),
                 confirmText: AppStrings.t('home.restartAction'),
                 successText: AppStrings.t('home.restartDone'),
-                action: () => IwphoneService.instance.runnerRestart(),
+                action: () async {
+                  // ★ 框架没在跑时 WebUI 本来就不可达，runnerRestart() 必失败。
+                  //   这时走 adb 通道的 startFramework 才能真正拉起 Main.sh，
+                  //   它内部还会自愈 WebUI。这就是「重启兼具启动语义」的实现。
+                  if (!_status.daemonRunning) {
+                    final r = await AutostartService.instance.runNow();
+                    return r.ok;
+                  }
+                  return IwphoneService.instance.runnerRestart();
+                },
               ),
               onSync: () => _frameworkAction(
                 title: AppStrings.t('home.sync'),
@@ -432,7 +441,9 @@ class _FrameworkActions extends StatelessWidget {
         Expanded(
           child: _ActionButton(
             icon: Icons.restart_alt_rounded,
-            label: AppStrings.t('home.restart'),
+            label: running
+                ? AppStrings.t('home.restart')
+                : AppStrings.t('home.start'),
             color: AppColors.iconOrange,
             onTap: enabled ? onRestart : null,
           ),

@@ -782,6 +782,13 @@ abstract final class AppStrings {
       'log.stepVerify': '验证框架版本标记…',
       'log.frameVersion': '设备框架版本：',
       'log.noVersionMark': '未读到版本标记（不影响使用）',
+
+      'log.stepStart': '启动框架守护进程…',
+      'log.started': '框架已启动',
+      'log.alreadyRunning': '框架已在运行',
+      'log.startFail': '启动指令未成功：',
+      'log.verifyFail': '框架未就绪：WebUI 仍不可达',
+      'log.runningOk': '框架运行中，WebUI 已可访问',
     },
     'en': {
       // ---- nav ----
@@ -932,7 +939,7 @@ abstract final class AppStrings {
       'home.androidVersion': 'Android',
       'home.kernel': 'Kernel',
       'home.device': 'Device',
-      'home.start': 'Start',
+      'home.start': 'Start framework',
       'home.stop': 'Stop',
       'home.restart': 'Restart',
       'home.sync': 'Sync',
@@ -1582,6 +1589,13 @@ abstract final class AppStrings {
       'log.stepVerify': 'Verifying the framework version mark…',
       'log.frameVersion': 'Device framework version: ',
       'log.noVersionMark': 'No version mark found (harmless)',
+
+      'log.stepStart': 'Starting the framework daemon…',
+      'log.started': 'Framework started',
+      'log.alreadyRunning': 'Framework already running',
+      'log.startFail': 'Start command failed: ',
+      'log.verifyFail': 'Framework not ready: WebUI is still unreachable',
+      'log.runningOk': 'Framework running, WebUI reachable',
     },
   };
 }
