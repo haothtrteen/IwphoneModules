@@ -113,6 +113,9 @@ object AdbBootstrap {
     /** 框架部署根目录的父级（tar 里的顶层目录名与之对应）。 */
     const val FW_ROOT_PARENT = "/data/local/tmp"
 
+    /** 本地选择的框架包上限（防止选错成大文件）。 */
+    private const val MAX_LOCAL_FRAMEWORK_BYTES = 128L * 1024 * 1024
+
     /** 部署用临时包在设备上的位置。 */
     private const val FW_TAR_ON_DEVICE = "/data/local/tmp/.iwphone_framework.tar.gz"
 
@@ -600,7 +603,7 @@ object AdbBootstrap {
      * 文件由 shell 用户解出，属主天然是 shell —— 正合框架以 shell 身份运行的要求，
      * 不需要也不能 chown root。
      */
-    fun deployFramework(ctx: Context): Result {
+    fun deployFramework(ctx: Context, localPath: String? = null): Result {
         if (!isProvisioned(ctx)) {
             return Result(false, "尚未配对：请先完成设备配对，拿到 shell 才能部署")
         }
@@ -612,17 +615,33 @@ object AdbBootstrap {
             return Result(false, "未连接到设备：${transport.message}")
         }
 
-        // 1) asset → 缓存文件（12MB，一次性读出写盘即可）
-        val staged = File(ctx.cacheDir, "framework.tar.gz")
-        try {
-            ctx.assets.open(FW_ASSET).use { input ->
-                staged.outputStream().use { output -> input.copyTo(output) }
+        // 1) 准备待部署的包：内置资产，或用户从本地选的框架文件
+        val fromUser = !localPath.isNullOrBlank()
+        val staged: File
+        if (fromUser) {
+            val src = File(localPath!!)
+            if (!src.exists() || !src.isFile) {
+                return Result(false, "找不到文件：$localPath")
             }
-        } catch (e: Exception) {
-            return Result(false, "读取内置框架包失败：${e.message}")
-        }
-        if (staged.length() == 0L) {
-            return Result(false, "内置框架包为空")
+            if (src.length() == 0L) {
+                return Result(false, "选择的文件是空的")
+            }
+            if (src.length() > MAX_LOCAL_FRAMEWORK_BYTES) {
+                return Result(false, "文件过大（超过 128 MB），不像是框架包")
+            }
+            staged = src
+        } else {
+            staged = File(ctx.cacheDir, "framework.tar.gz")
+            try {
+                ctx.assets.open(FW_ASSET).use { input ->
+                    staged.outputStream().use { output -> input.copyTo(output) }
+                }
+            } catch (e: Exception) {
+                return Result(false, "读取内置框架包失败：${e.message}")
+            }
+            if (staged.length() == 0L) {
+                return Result(false, "内置框架包为空")
+            }
         }
 
         // 2) push 到设备（12MB 走 localhost，通常几秒）
@@ -659,7 +678,8 @@ object AdbBootstrap {
             listOf("-s", TARGET, "shell", extractCmd),
             timeoutMs = 180_000,
         )
-        staged.delete()
+        // 用户选的文件不能删 —— 那是他自己的文件
+        if (!fromUser) staged.delete()
 
         if (!extract.ok || !extract.message.contains("deployed")) {
             return Result(false, "解压框架失败：${extract.message}")
@@ -669,10 +689,49 @@ object AdbBootstrap {
         return if (isFrameworkInstalled(ctx)) {
             // 记下「这次部署对应的 App 安装时间」，下次 App 升级后据此判断要不要重铺
             AutostartPrefs.setDeployStamp(ctx, installStamp(ctx))
+
+            // 落一个版本标记：首页据此判断「设备上的框架是否落后于 App」。
+            // 用 versionCode 而不是字符串版本，比较时不用解析。
+            val vc = appVersionCode(ctx)
+            run(
+                ctx,
+                listOf(
+                    "-s", TARGET, "shell",
+                    "echo $vc > $FRAME_DIR/.deployed && chmod 666 $FRAME_DIR/.deployed",
+                ),
+                timeoutMs = 10_000,
+            )
+
             Result(true, "框架已部署（可重复执行以修复/重置）")
         } else {
             Result(false, "部署命令已执行，但未检测到 $MAIN_SH")
         }
+    }
+
+    /** App 的 versionCode。 */
+    @Suppress("DEPRECATION")
+    fun appVersionCode(ctx: Context): Int = try {
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionCode
+    } catch (e: Exception) {
+        0
+    }
+
+    /**
+     * 设备上已部署框架对应的 App versionCode。
+     *
+     * 返回：`-1` 无法判定（未配对/连不上）、`0` 没有标记（旧版部署或手工部署）、
+     * 其它为写入时的 versionCode。首页拿它和 [appVersionCode] 比，判断要不要提示更新。
+     */
+    fun deployedFrameworkVersion(ctx: Context): Int {
+        if (!isProvisioned(ctx)) return -1
+        if (!ensureConnected(ctx)) return -1
+        val r = run(
+            ctx,
+            listOf("-s", TARGET, "shell", "cat $FRAME_DIR/.deployed 2>/dev/null"),
+            timeoutMs = 8_000,
+        )
+        if (!r.ok) return -1
+        return r.message.trim().toIntOrNull() ?: 0
     }
 
     // ---------------- 执行 ----------------

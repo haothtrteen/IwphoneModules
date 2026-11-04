@@ -58,8 +58,18 @@ class AutostartChannel(private val activity: FlutterActivity) {
                 // 部署/修复框架：推送内置包并解压。耗时可达一两分钟（12MB 传输 + 解压），
                 // 必须在后台线程；界面侧应有明确的「进行中」提示。
                 "deployFramework" -> runAsync(result) {
-                    val r = AdbBootstrap.deployFramework(activity)
+                    // path 非空表示用用户从本地选的框架包，否则用内置资产
+                    val path = call.argument<String>("path")
+                    val r = AdbBootstrap.deployFramework(activity, path)
                     mapOf("ok" to r.ok, "msg" to r.message)
+                }
+
+                // 设备框架版本 vs App 版本（首页判断是否提示更新）
+                "frameworkVersion" -> runAsync(result) {
+                    mapOf(
+                        "deployed" to AdbBootstrap.deployedFrameworkVersion(activity),
+                        "app" to AdbBootstrap.appVersionCode(activity),
+                    )
                 }
 
                 // 完全卸载（adb 直连备用通道）：WebUI 不可用时由这里执行 uninstall.sh。

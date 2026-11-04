@@ -11,6 +11,7 @@ import '../i18n/app_strings.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/framework_uninstall.dart';
 import '../widgets/webui_token_dialog.dart';
+import 'framework_install_screen.dart';
 
 /// 主页 —— 聚焦 iwphone modrunner v3 框架状态。
 ///
@@ -140,37 +141,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 部署 / 修复框架：与开机自启页同一套动作，首页提供快捷入口。
+  /// 安装 / 更新 / 修复框架：统一跳到安装页。
   ///
-  /// 「修复」= 用 App 内置包覆盖设备上的框架源文件，脚本改坏/误删都能还原；
-  /// 已有文件会被覆盖，所以走危险确认（红色按钮）。
+  /// 首页只做入口，不再自己拼一套部署逻辑 —— 否则"首页直接部署"和
+  /// "安装页部署"会慢慢长出两套行为，覆盖确认、密钥下发、版本标记都要维护两遍。
   Future<void> _deployFramework() async {
-    final installed = _frameworkInstalled == true;
-    final ok = await showConfirmDialog(
-      context,
-      title: installed
-          ? AppStrings.t('home.repairFramework')
-          : AppStrings.t('home.deployFramework'),
-      message: AppStrings.t('home.deployMessage'),
-      confirmText: installed
-          ? AppStrings.t('home.repairFramework')
-          : AppStrings.t('home.deployFramework'),
-      danger: installed,
-    );
-    if (!ok || !mounted) return;
-
-    setState(() => _statusLoading = true);
-    final res = await AutostartService.instance.deployFramework();
+    // 统一走安装页：那里有安装源选择（内置/本地）、版本对比、密钥与高级选项。
+    // 首页只负责跳转，不再复制一套部署逻辑。
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => FrameworkInstallScreen(onInstalled: () {}),
+    ));
     if (!mounted) return;
-    setState(() => _statusLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(res.ok
-            ? AppStrings.t('onboarding.deployOk')
-            : '${AppStrings.t('onboarding.deployFail')}'
-                '${res.msg.isEmpty ? '' : ' · ${res.msg}'}'),
-      ),
-    );
     await _load();
   }
 
@@ -391,12 +372,10 @@ class _FrameworkStatusCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _ActionButton(
-                  icon: installed == true
-                      ? Icons.build_circle_outlined
-                      : Icons.system_update_alt_rounded,
-                  label: installed == true
-                      ? AppStrings.t('home.repairFramework')
-                      : AppStrings.t('home.deployFramework'),
+                  // 这一格现在统一跳「安装页」—— 那里能选安装源、看版本差异、
+                  // 设密钥、调高级选项，比首页直接触发一次覆盖部署更清楚。
+                  icon: Icons.system_update_alt_rounded,
+                  label: AppStrings.t('home.installEntry'),
                   color: AppColors.accent,
                   onTap: loading ? null : onDeploy,
                 ),

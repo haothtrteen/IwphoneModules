@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../app_info.dart';
 import '../i18n/app_strings.dart';
 import '../services/autostart_service.dart';
 import '../services/shell_executor.dart';
+import '../services/storage_permission_service.dart';
 import '../services/webui_token.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_switch.dart';
@@ -48,12 +50,48 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   /// 是否固定 adb 端口（默认 true，关掉后重启需重新配对）。
   bool _pinPort = true;
 
+  /// 设备上已部署框架的 versionCode：-1 无法判定，0 无标记。
+  int _deployedVer = -1;
+
+  /// App 自身的 versionCode（与设备框架版本比较用）。
+  int _appVerCode = 0;
+
+  /// 用户从本地选的框架包；为空表示用内置包。
+  String _localPath = '';
+  String _localName = '';
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refresh();
     _detectRoot();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final v = await AutostartService.instance.frameworkVersion();
+    if (!mounted) return;
+    setState(() {
+      _deployedVer = v.deployed;
+      _appVerCode = v.app;
+    });
+  }
+
+  /// 从本地选一个框架包（.bin / .tar.gz）。
+  Future<void> _pickLocal() async {
+    final pick = await StoragePermissionService.instance.pickFile();
+    if (!mounted) return;
+    if (!pick.ok) {
+      if (pick.msg.isNotEmpty && pick.msg != '未选择文件') {
+        _toast(pick.msg, ok: false);
+      }
+      return;
+    }
+    setState(() {
+      _localPath = pick.path;
+      _localName = pick.name;
+    });
   }
 
   /// 只在页面首次打开时探一次 root（会触发 su 授权弹窗，别反复问）。
@@ -257,6 +295,18 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
 
   Future<void> _deploy() async {
     if (_busy) return;
+    // 设备上已有框架 → 这次是覆盖/更新，先说清影响
+    if (_deployedVer != 0) {
+      final ok = await showConfirmDialog(
+        context,
+        title: AppStrings.t('missing.reinstallTitle'),
+        message: AppStrings.t('missing.reinstallMessage'),
+        confirmText: AppStrings.t('missing.reinstall'),
+        danger: true,
+      );
+      if (ok != true || !mounted) return;
+    }
+
     setState(() {
       _busy = true;
       _busyMsg = AppStrings.t('missing.deploying');
@@ -265,7 +315,9 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     // 高级选项先落盘：是否固定端口由原生在配对时决定
     await AutostartService.instance.setPinPort(_pinPort);
 
-    final r = await AutostartService.instance.deployFramework();
+    final r = await AutostartService.instance.deployFramework(
+      path: _localPath.isEmpty ? null : _localPath,
+    );
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -287,6 +339,7 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
       _toast(AppStrings.t('onboarding.deployOk'));
       await Future<void>.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
+      await _loadVersion();
       widget.onInstalled();
       if (mounted) Navigator.of(context).maybePop();
     } else {
@@ -296,6 +349,78 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   }
 
   bool get _paired => _status?.provisioned ?? false;
+
+  /// 设备框架与 App 的版本对照，落后时标出来。
+  Widget _versionRow() {
+    String device;
+    if (_deployedVer > 0) {
+      device = 'v$_deployedVer';
+    } else if (_deployedVer == 0) {
+      device = AppStrings.t('missing.unknownVersion');
+    } else {
+      device = '—';
+    }
+    final outdated =
+        _deployedVer > 0 && _appVerCode > 0 && _deployedVer < _appVerCode;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${AppStrings.t('missing.deviceFramework')} $device'
+            '   ·   ${AppStrings.t('missing.appVersion')} v$kAppVersion',
+            style: AppText.desc12,
+          ),
+        ),
+        if (outdated)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.iconOrange.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              AppStrings.t('missing.outdated'),
+              style: AppText.desc12.copyWith(color: AppColors.iconOrange),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 安装来源：内置包，或用户自己选的本地框架包。
+  Widget _sourceCard() {
+    final builtin = _localPath.isEmpty;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          _SourceRow(
+            title: AppStrings.t('missing.sourceBuiltin'),
+            subtitle: 'v$kAppVersion · ~13 MB',
+            selected: builtin,
+            onTap: () => setState(() {
+              _localPath = '';
+              _localName = '';
+            }),
+          ),
+          _SourceRow(
+            title: AppStrings.t('missing.sourceLocal'),
+            subtitle: _localName.isEmpty
+                ? AppStrings.t('missing.sourceLocalHint')
+                : _localName,
+            selected: !builtin,
+            onTap: _busy ? null : _pickLocal,
+            last: true,
+          ),
+        ],
+      ),
+    );
+  }
 
   /// WebUI 访问密钥输入区。
   Widget _tokenCard() {
@@ -467,7 +592,11 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                     AppStrings.t('missing.installIntro'),
                     style: AppText.desc12,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
+                  _versionRow(),
+                  const SizedBox(height: 16),
+                  _sourceCard(),
+                  const SizedBox(height: 16),
                   _StepCard(
                     index: 1,
                     title: AppStrings.t('missing.stepPairTitle'),
@@ -570,7 +699,9 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                             ? AppStrings.t('missing.goPair')
                             : (!_tokenOk
                                 ? AppStrings.t('missing.needToken')
-                                : AppStrings.t('missing.startInstall'))),
+                                : (_deployedVer > 0
+                                    ? AppStrings.t('missing.reinstall')
+                                    : AppStrings.t('missing.startInstall')))),
                     style: const TextStyle(fontSize: 15),
                   ),
                 ),
@@ -782,6 +913,65 @@ class _OptRow extends StatelessWidget {
             child: AppSwitch(value: value, onChanged: onChanged),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 安装来源的单选行。
+class _SourceRow extends StatelessWidget {
+  const _SourceRow({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+    this.last = false,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback? onTap;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          border: last
+              ? null
+              : Border(bottom: BorderSide(color: AppColors.divider, width: 1)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 20,
+              color: selected ? AppColors.accent : AppColors.textInactive,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppText.rowLabel.copyWith(fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: AppText.desc12,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

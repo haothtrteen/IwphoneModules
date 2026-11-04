@@ -190,6 +190,7 @@ abstract final class AppStrings {
       'home.tokenCardAction': '去设置',
       'home.tokenSet': '访问密钥已生效，框架功能已解锁',
       'home.deployFramework': '部署框架',
+      'home.installEntry': '安装 / 更新框架',
       'home.repairFramework': '修复框架',
       'home.completeUninstall': '完全卸载',
       'home.deployMessage':
@@ -745,6 +746,17 @@ abstract final class AppStrings {
       'missing.optNoTokenDesc': '不设密钥时，本机任意应用都能以 shell 权限调用 /api/shell，且没有二次确认。',
       'missing.optPinPort': '固定 ADB 端口',
       'missing.optPinPortDesc': '开启后重启无需重新配对。关闭后每次重启都要重新配对，开机自启也会失效。',
+
+      'missing.deviceFramework': '设备框架',
+      'missing.appVersion': 'App',
+      'missing.unknownVersion': '无版本标记',
+      'missing.outdated': '可更新',
+      'missing.sourceBuiltin': '内置框架包',
+      'missing.sourceLocal': '从本地选择…',
+      'missing.sourceLocalHint': '选择 .bin 或 .tar.gz 框架包',
+      'missing.reinstall': '更新框架',
+      'missing.reinstallTitle': '覆盖现有框架',
+      'missing.reinstallMessage': '将用所选包覆盖设备上现有的框架脚本与运行时。已安装的模块与快照不受影响，但正在运行的模块会按新框架的行为重新加载。',
     },
     'en': {
       // ---- nav ----
@@ -908,6 +920,7 @@ abstract final class AppStrings {
       'home.tokenCardAction': 'Set now',
       'home.tokenSet': 'Access key active — framework unlocked',
       'home.deployFramework': 'Deploy framework',
+      'home.installEntry': 'Install / update',
       'home.repairFramework': 'Repair framework',
       'home.completeUninstall': 'Complete uninstall',
       'home.deployMessage':
@@ -1507,6 +1520,17 @@ abstract final class AppStrings {
       'missing.optNoTokenDesc': 'Without a key, any app on this device can call /api/shell with shell privileges, without confirmation.',
       'missing.optPinPort': 'Pin the ADB port',
       'missing.optPinPortDesc': 'On: no re-pairing after reboot. Off: you must re-pair on every reboot and autostart stops working.',
+
+      'missing.deviceFramework': 'Device framework',
+      'missing.appVersion': 'App',
+      'missing.unknownVersion': 'no version mark',
+      'missing.outdated': 'Update available',
+      'missing.sourceBuiltin': 'Bundled framework',
+      'missing.sourceLocal': 'Choose from device…',
+      'missing.sourceLocalHint': 'Pick a .bin or .tar.gz framework package',
+      'missing.reinstall': 'Update framework',
+      'missing.reinstallTitle': 'Overwrite existing framework',
+      'missing.reinstallMessage': 'The selected package will overwrite the framework scripts and runtime on this device. Installed modules and snapshots are kept, but running modules reload with the new framework behaviour.',
     },
   };
 }

@@ -237,13 +237,32 @@ class AutostartService {
   /// 这是「用户全程不碰电脑」的关键一环：配对 → 部署 → 启动，闭环都在 App 里。
   ///
   /// 耗时可达一两分钟（12MB 传输 + 解压），调用方需显示进行中状态。
-  Future<({bool ok, String msg})> deployFramework() async {
+  Future<({bool ok, String msg})> deployFramework({String? path}) async {
     try {
-      final raw = await _channel
-          .invokeMethod<Map<dynamic, dynamic>>('deployFramework');
+      final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'deployFramework',
+        {if (path != null && path.isNotEmpty) 'path': path},
+      );
       return (ok: raw?['ok'] == true, msg: (raw?['msg'] as String?) ?? '');
     } catch (_) {
       return (ok: false, msg: AppStrings.t('service.callFailed'));
+    }
+  }
+
+  /// 设备上已部署框架的版本号 vs App 版本号。
+  ///
+  /// `deployed == -1` 表示无法判定（未配对/连不上），`0` 表示没有版本标记
+  /// （旧版部署或手工部署）。
+  Future<({int deployed, int app})> frameworkVersion() async {
+    try {
+      final raw =
+          await _channel.invokeMethod<Map<dynamic, dynamic>>('frameworkVersion');
+      return (
+        deployed: (raw?['deployed'] as num?)?.toInt() ?? -1,
+        app: (raw?['app'] as num?)?.toInt() ?? 0,
+      );
+    } catch (_) {
+      return (deployed: -1, app: 0);
     }
   }
 
