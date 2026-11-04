@@ -42,7 +42,11 @@ class AutostartChannel(private val activity: FlutterActivity) {
     fun register(messenger: BinaryMessenger) {
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
-                "getStatus" -> result.success(status())
+                // ★ status() 内部原先会调 isPortFixed → ensureConnected →
+                //   adb get-state（最长 10s 超时）。同步跑在主线程上会把
+                //   Flutter platform thread 卡死，MIUI 直接报 APP_SCOUT_HANG，
+                //   实测冷启动 WaitTime 10050ms（对照 App 仅 550~700ms）。
+                "getStatus" -> runAsync(result) { status() }
 
                 // 安装日志页完成后的「重启应用」
                 "restartApp" -> {

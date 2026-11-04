@@ -393,14 +393,13 @@ object AdbBootstrap {
      */
     fun isPortFixed(ctx: Context): Boolean {
         if (!isProvisioned(ctx)) return false
-        if (!ensureConnected(ctx)) {
-            android.util.Log.d("AdbBootstrap", "isPortFixed: 未连接，无法判定")
-            return false
-        }
+        // ★ 只读一个属性，不该为了它去建立 transport：ensureConnected 里的
+        //   get-state / connect 最长各 10s，会把调用方拖死。连不上就如实
+        //   返回 false，需要建连的动作交给 startFramework / deployFramework。
         val r = run(
             ctx,
             listOf("-s", TARGET, "shell", "getprop persist.adb.tcp.port"),
-            timeoutMs = 10_000,
+            timeoutMs = 3_000,
         )
         android.util.Log.d(
             "AdbBootstrap",
