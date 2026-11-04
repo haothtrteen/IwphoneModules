@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../i18n/app_strings.dart';
 import '../services/autostart_service.dart';
+import '../services/shell_executor.dart';
 import '../theme/app_theme.dart';
 import '../widgets/back_icon_button.dart';
+import '../widgets/confirm_dialog.dart';
 
 /// 框架安装页（唯一的"安装"入口）。
 ///
@@ -27,12 +30,21 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   AutostartStatus? _status;
   bool _busy = false;
   String _busyMsg = '';
+  bool _hasRoot = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _refresh();
+    _detectRoot();
+  }
+
+  /// 只在页面首次打开时探一次 root（会触发 su 授权弹窗，别反复问）。
+  Future<void> _detectRoot() async {
+    final ok = await ShellExecutor.instance.hasRoot;
+    if (!mounted) return;
+    setState(() => _hasRoot = ok);
   }
 
   @override
@@ -105,6 +117,112 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
           _busyMsg = '';
         });
       }
+    }
+  }
+
+  /// 电脑 adb：导出脚本，弹出一条可复制的命令。
+  Future<void> _showAdbCommand() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _busyMsg = AppStrings.t('missing.exporting');
+    });
+    final r = await AutostartService.instance.exportBootstrap();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _busyMsg = '';
+    });
+    if (!r.ok) {
+      _toast(r.msg, ok: false);
+      return;
+    }
+
+    final cmd = 'adb shell sh ${r.path}';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(AppStrings.t('missing.adbTitle'), style: AppText.cardTitle),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(AppStrings.t('missing.adbHint'), style: AppText.desc12),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.bg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(cmd, style: AppText.monoValue14),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: cmd));
+              if (ctx.mounted) Navigator.of(ctx).pop();
+              _toast(AppStrings.t('missing.copied'));
+            },
+            child: Text(
+              AppStrings.t('missing.copy'),
+              style: AppText.rowLabel.copyWith(color: AppColors.accent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Root：导出后在本地直接 su 执行同一份脚本。
+  Future<void> _activateRoot() async {
+    if (_busy || !_hasRoot) return;
+    final ok = await showConfirmDialog(
+      context,
+      title: AppStrings.t('missing.rootTitle'),
+      message: AppStrings.t('missing.rootMessage'),
+      confirmText: AppStrings.t('missing.rootConfirm'),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _busyMsg = AppStrings.t('missing.exporting');
+    });
+    final r = await AutostartService.instance.exportBootstrap();
+    if (!mounted) return;
+    if (!r.ok) {
+      setState(() {
+        _busy = false;
+        _busyMsg = '';
+      });
+      _toast(r.msg, ok: false);
+      return;
+    }
+
+    setState(() => _busyMsg = AppStrings.t('missing.activating'));
+    final done = await ShellExecutor.instance.rootOk(
+      "sh '${r.path}'",
+      timeout: const Duration(seconds: 180),
+    );
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _busyMsg = '';
+    });
+
+    if (done) {
+      _toast(AppStrings.t('missing.activated'));
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      widget.onInstalled();
+      if (mounted) Navigator.of(context).maybePop();
+    } else {
+      _toast(AppStrings.t('missing.rootFail'), ok: false);
     }
   }
 
@@ -191,6 +309,27 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                     done: false,
                     enabled: _paired && !_busy,
                     onTap: _paired && !_busy ? _deploy : null,
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    AppStrings.t('missing.otherWays'),
+                    style: AppText.desc12,
+                  ),
+                  const SizedBox(height: 8),
+                  _AltCard(
+                    icon: Icons.computer_rounded,
+                    title: AppStrings.t('missing.adbTitle'),
+                    subtitle: AppStrings.t('missing.adbSubtitle'),
+                    onTap: _busy ? null : _showAdbCommand,
+                  ),
+                  const SizedBox(height: 8),
+                  _AltCard(
+                    icon: Icons.bolt_rounded,
+                    title: AppStrings.t('missing.rootTitle'),
+                    subtitle: _hasRoot
+                        ? AppStrings.t('missing.rootReady')
+                        : AppStrings.t('missing.rootUnavailable'),
+                    onTap: (_hasRoot && !_busy) ? _activateRoot : null,
                   ),
                   if (_status != null && !_status!.notifyGranted) ...[
                     const SizedBox(height: 16),
@@ -337,6 +476,68 @@ class _StepCard extends StatelessWidget {
                 ),
               ),
               if (active)
+                Icon(Icons.chevron_right_rounded,
+                    size: 20, color: AppColors.textInactive),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「其他激活方式」卡片：一个图标 + 标题 + 说明，整行可点。
+class _AltCard extends StatelessWidget {
+  const _AltCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 22,
+                color: enabled ? AppColors.accent : AppColors.textInactive,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppText.rowLabel.copyWith(
+                        fontSize: 16,
+                        color: enabled
+                            ? AppColors.textPrimary
+                            : AppColors.textInactive,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(subtitle, style: AppText.desc12),
+                  ],
+                ),
+              ),
+              if (enabled)
                 Icon(Icons.chevron_right_rounded,
                     size: 20, color: AppColors.textInactive),
             ],

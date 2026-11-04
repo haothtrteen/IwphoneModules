@@ -140,6 +140,16 @@ class AutostartChannel(private val activity: FlutterActivity) {
                     mapOf("ok" to r.ok, "msg" to r.message)
                 }
 
+                // 电脑 adb / root 激活：导出激活脚本与框架包到外部存储
+                "exportBootstrap" -> runAsync(result) {
+                    val r = AdbBootstrap.exportBootstrap(activity)
+                    mapOf(
+                        "ok" to r.ok,
+                        "msg" to r.message,
+                        "path" to if (r.ok) r.message else "",
+                    )
+                }
+
                 // ---- 界面偏好：主题 / 语言 / 首次引导 ----
                 "loadUiPrefs" -> result.success(UiPrefs.snapshot(activity))
 

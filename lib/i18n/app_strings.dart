@@ -615,6 +615,7 @@ abstract final class AppStrings {
 
       // ---- 系统信息 ----
       'systemInfo.unknown': '未知',
+      'systemInfo.needShell': '需要 shell 权限',
       'systemInfo.enforcing': '强制',
       'systemInfo.permissive': '宽容',
       'systemInfo.disabled': '已关闭',
@@ -715,6 +716,23 @@ abstract final class AppStrings {
       'missing.kernelVersion': '内核版本',
       'missing.selinux': 'SELinux 状态',
       'missing.license': '许可证',
+      'missing.securityPatch': '安全补丁',
+
+      'missing.otherWays': '其他激活方式',
+      'missing.adbTitle': '电脑 adb 激活',
+      'missing.adbSubtitle': '复制一条命令到电脑执行，不需要无线调试配对',
+      'missing.adbHint': '手机先用 USB 连上电脑并授权调试，然后在电脑终端执行：',
+      'missing.copy': '复制',
+      'missing.copied': '命令已复制',
+      'missing.exporting': '正在导出…',
+      'missing.activating': '正在激活…',
+      'missing.activated': '框架已激活',
+      'missing.rootTitle': 'Root 激活',
+      'missing.rootMessage': '将解压框架并以 shell 身份启动守护进程，不会修改系统分区，也不会改动 adb 授权列表。',
+      'missing.rootConfirm': '激活',
+      'missing.rootReady': '已检测到 root，可直接激活',
+      'missing.rootUnavailable': '未检测到 root',
+      'missing.rootFail': 'Root 激活失败，可改用电脑 adb',
     },
     'en': {
       // ---- nav ----
@@ -1347,6 +1365,7 @@ abstract final class AppStrings {
 
       // ---- system info ----
       'systemInfo.unknown': 'Unknown',
+      'systemInfo.needShell': 'Needs shell access',
       'systemInfo.enforcing': 'Enforcing',
       'systemInfo.permissive': 'Permissive',
       'systemInfo.disabled': 'Disabled',
@@ -1448,6 +1467,23 @@ abstract final class AppStrings {
       'missing.kernelVersion': 'Kernel',
       'missing.selinux': 'SELinux',
       'missing.license': 'License',
+      'missing.securityPatch': 'Security patch',
+
+      'missing.otherWays': 'Other ways to activate',
+      'missing.adbTitle': 'Activate via PC adb',
+      'missing.adbSubtitle': 'Copy one command and run it on your computer; no wireless pairing needed',
+      'missing.adbHint': 'Connect the phone over USB and authorize debugging, then run:',
+      'missing.copy': 'Copy',
+      'missing.copied': 'Command copied',
+      'missing.exporting': 'Exporting…',
+      'missing.activating': 'Activating…',
+      'missing.activated': 'Framework activated',
+      'missing.rootTitle': 'Activate via root',
+      'missing.rootMessage': 'Unpacks the framework and starts the daemon as the shell user. No system partition is modified and adb authorizations are untouched.',
+      'missing.rootConfirm': 'Activate',
+      'missing.rootReady': 'Root detected, ready to activate',
+      'missing.rootUnavailable': 'Root not detected',
+      'missing.rootFail': 'Root activation failed, try PC adb instead',
     },
   };
 }

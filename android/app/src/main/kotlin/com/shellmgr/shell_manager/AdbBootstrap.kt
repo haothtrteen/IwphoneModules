@@ -544,6 +544,51 @@ object AdbBootstrap {
     }
 
     /**
+     * 把「激活脚本 + 框架包」导出到外部存储，供电脑 adb 或 root 直接执行。
+     *
+     * 为什么放外部存储：`adb shell` 能读到 `/sdcard/Android/data/<包名>/files/`，
+     * 而 App 私有目录读不到。这也是"不用无线调试配对也能装框架"的关键 ——
+     * 用户只要在电脑上跑一条 `adb shell sh …/bootstrap.sh`。
+     *
+     * framework.bin 有 13MB，只在缺失或 App 版本变化时重写，避免每次导出都拷一遍。
+     */
+    @Suppress("DEPRECATION")
+    fun exportBootstrap(ctx: Context): Result {
+        val dir = ctx.getExternalFilesDir(null)
+            ?: return Result(false, "外部存储不可用，请检查存储权限")
+        return try {
+            val fw = File(dir, "framework.bin")
+            val stamp = File(dir, ".fw_stamp")
+            val version = try {
+                ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionCode.toString()
+            } catch (e: Exception) {
+                "0"
+            }
+            val upToDate = stamp.exists() &&
+                stamp.readText().trim() == version &&
+                fw.exists() && fw.length() > 0
+            if (!upToDate) {
+                ctx.assets.open(FW_ASSET).use { input ->
+                    fw.outputStream().use { output -> input.copyTo(output) }
+                }
+                stamp.writeText(version)
+            }
+            fw.setReadable(true, false)
+
+            val script = File(dir, "bootstrap.sh")
+            ctx.assets.open("bootstrap.sh").use { input ->
+                script.outputStream().use { output -> input.copyTo(output) }
+            }
+            script.setReadable(true, false)
+            script.setExecutable(true, false)
+
+            Result(true, script.absolutePath)
+        } catch (e: Exception) {
+            Result(false, "导出失败：${e.message}")
+        }
+    }
+
+    /**
      * 把 APK 内置的框架包部署到设备上。
      *
      * 流程：asset → App 缓存 → `adb push` 到 /data/local/tmp → tar 解压 → 补权限 → 清理。

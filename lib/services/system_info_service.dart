@@ -15,6 +15,7 @@ class SystemInfo {
     required this.manufacturer,
     required this.model,
     required this.selinux,
+    required this.securityPatch,
   });
 
   final String androidVersion;
@@ -24,6 +25,9 @@ class SystemInfo {
   final String manufacturer;
   final String model;
   final String selinux;
+
+  /// Android 安全补丁级别，如 `2023-10-01`。读不到时为空串。
+  final String securityPatch;
 
   /// 界面上「Android 版本」一行显示的文本，如 `14 (UP1A.231105.003)`。
   String get androidDisplay {
@@ -48,8 +52,6 @@ class SystemInfoService {
 
   static final SystemInfoService instance = SystemInfoService._();
 
-  String get _unknown => AppStrings.t('systemInfo.unknown');
-
   final ShellExecutor _shell = ShellExecutor.instance;
 
   Future<SystemInfo> load() async {
@@ -60,6 +62,7 @@ class SystemInfoService {
       _shell.text('getprop ro.product.cpu.abi'),
       _shell.text('getprop ro.product.manufacturer'),
       _shell.text('getprop ro.product.model'),
+      _shell.text('getprop ro.build.version.security_patch'),
     ]);
 
     final selinux = await _readSelinux();
@@ -72,10 +75,16 @@ class SystemInfoService {
       manufacturer: props[4] ?? '',
       model: props[5] ?? '',
       selinux: selinux,
+      securityPatch: props[6] ?? '',
     );
   }
 
-  /// SELinux 模式：优先 `getenforce`，部分 ROM 没有该命令则回退读 selinuxfs。
+  /// SELinux 模式。
+  ///
+  /// ★ 这个值**只有 shell 权限才读得到**：`getenforce` 和
+  ///   `/sys/fs/selinux/enforce` 对普通应用一律 Permission denied，
+  ///   `ro.boot.selinux` 在不少 ROM 上又是空的。所以三条都失败时不能笼统
+  ///   显示「未知」—— 那会让用户以为设备有问题，其实只是缺权限。
   Future<String> _readSelinux() async {
     final mode = await _shell.text('getenforce');
     if (mode != null) {
@@ -87,6 +96,14 @@ class SystemInfoService {
     final enforce = await _shell.text('cat /sys/fs/selinux/enforce 2>/dev/null');
     if (enforce == '1') return AppStrings.t('systemInfo.enforcing');
     if (enforce == '0') return AppStrings.t('systemInfo.permissive');
-    return _unknown;
+
+    // 最后一条：部分 ROM 会把启动时的模式写进 ro.boot.selinux
+    final boot = await _shell.text('getprop ro.boot.selinux');
+    if (boot != null && boot.isNotEmpty) {
+      final m = boot.toLowerCase();
+      if (m.contains('enforcing')) return AppStrings.t('systemInfo.enforcing');
+      if (m.contains('permissive')) return AppStrings.t('systemInfo.permissive');
+    }
+    return AppStrings.t('systemInfo.needShell');
   }
 }

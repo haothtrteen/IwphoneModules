@@ -202,6 +202,13 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
             value: info?.abi ?? '—',
           ),
           _InfoRow(
+            icon: Icons.update_rounded,
+            label: AppStrings.t('missing.securityPatch'),
+            value: (info?.securityPatch.isNotEmpty ?? false)
+                ? info!.securityPatch
+                : '—',
+          ),
+          _InfoRow(
             icon: Icons.shield_outlined,
             label: AppStrings.t('missing.selinux'),
             value: info?.selinux ?? '—',
@@ -223,7 +230,7 @@ class _FrameworkMissingScreenState extends State<FrameworkMissingScreen> {
         children: [
           _LinkRow(
             label: AppStrings.t('settings.projectHome'),
-            value: 'haothtrteen/IwphoneModules',
+            value: 'IwphoneModules',
             onTap: () => _openUrl(AppStrings.t('about.github')),
           ),
           _LinkRow(
@@ -269,14 +276,12 @@ class _InfoRow extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: AppColors.textSecondary),
           const SizedBox(width: 14),
+          // ★ 标签按内容取宽，剩余宽度全给值。
+          //   原来标签用 Expanded 会把空间吃满，长值（内核版本、系统版本）
+          //   被挤成一两行再省略号，看起来像数据不全。
+          Text(label, style: AppText.rowLabel.copyWith(fontSize: 15)),
+          const SizedBox(width: 16),
           Expanded(
-            child: Text(
-              label,
-              style: AppText.rowLabel.copyWith(fontSize: 15),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Flexible(
             child: Text(
               value,
               style: AppText.desc12.copyWith(color: AppColors.textSecondary),
@@ -317,14 +322,9 @@ class _LinkRow extends StatelessWidget {
             Icon(Icons.link_rounded,
                 size: 20, color: AppColors.textSecondary),
             const SizedBox(width: 14),
+            Text(label, style: AppText.rowLabel.copyWith(fontSize: 15)),
+            const SizedBox(width: 16),
             Expanded(
-              child: Text(
-                label,
-                style: AppText.rowLabel.copyWith(fontSize: 15),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Flexible(
               child: Text(
                 value,
                 style: AppText.desc12.copyWith(color: AppColors.accent),

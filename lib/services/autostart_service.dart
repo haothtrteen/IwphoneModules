@@ -326,6 +326,23 @@ class AutostartService {
     }
   }
 
+  /// 导出「激活脚本 + 框架包」到外部存储，返回脚本绝对路径。
+  ///
+  /// 用于电脑 adb / root 两条不依赖无线调试配对的路径。
+  Future<({bool ok, String msg, String path})> exportBootstrap() async {
+    try {
+      final raw = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('exportBootstrap');
+      return (
+        ok: raw?['ok'] == true,
+        msg: (raw?['msg'] as String?) ?? '',
+        path: (raw?['path'] as String?) ?? '',
+      );
+    } catch (_) {
+      return (ok: false, msg: AppStrings.t('service.callFailed'), path: '');
+    }
+  }
+
   /// 打开模块自带 WebUI（App 内 WebView，注入 ksu 桥）。
   Future<bool> openModuleWebUI(String name) async {
     try {
