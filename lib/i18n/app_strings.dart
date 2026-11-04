@@ -613,7 +613,7 @@ abstract final class AppStrings {
       'webuiToken.tooShortSuffix': ' 位',
       'webuiToken.hasWhitespace': '不能包含空格或换行',
       'webuiToken.applied': '访问密钥已生效',
-      'webuiToken.applyFailed': '访问密钥未能下发：',
+      'webuiToken.applyFailed': 'IWPhone 密钥未能下发：',
 
       // ---- 系统信息 ----
       'systemInfo.unknown': '未知',
@@ -736,13 +736,13 @@ abstract final class AppStrings {
       'missing.rootUnavailable': '未检测到 root',
       'missing.rootFail': 'Root 激活失败，可改用电脑 adb',
 
-      'missing.tokenTitle': 'WebUI 访问密钥',
-      'missing.tokenDesc': '用来挡住同设备其它应用调用 WebUI 接口，至少 8 位。',
+      'missing.tokenTitle': 'IWPhone 密钥',
+      'missing.tokenDesc': '用来挡住同设备其它应用调用 IWPhone 接口，至少 8 位。',
       'missing.tokenHint': '至少 8 位',
       'missing.tokenSkipped': '已选择不设置',
-      'missing.needToken': '请先设置访问密钥',
+      'missing.needToken': '请先设置 IWPhone 密钥',
       'missing.advanced': '高级选项',
-      'missing.optNoToken': '不设置 WebUI 密钥',
+      'missing.optNoToken': '不设置 IWPhone 密钥',
       'missing.optNoTokenDesc': '不设密钥时，本机任意应用都能以 shell 权限调用 /api/shell，且没有二次确认。',
       'missing.optPinPort': '固定 ADB 端口',
       'missing.optPinPortDesc': '开启后重启无需重新配对。关闭后每次重启都要重新配对，开机自启也会失效。',
@@ -1387,6 +1387,7 @@ abstract final class AppStrings {
       'webuiToken.tooShortSuffix': ' characters',
       'webuiToken.hasWhitespace': 'Must not contain spaces or line breaks',
       'webuiToken.applied': 'Access key is now active',
+      'webuiToken.applyFailed': 'IWPhone key could not be applied: ',
 
       // ---- system info ----
       'systemInfo.unknown': 'Unknown',
@@ -1510,13 +1511,13 @@ abstract final class AppStrings {
       'missing.rootUnavailable': 'Root not detected',
       'missing.rootFail': 'Root activation failed, try PC adb instead',
 
-      'missing.tokenTitle': 'WebUI access key',
-      'missing.tokenDesc': 'Blocks other apps on this device from calling the WebUI API. At least 8 characters.',
+      'missing.tokenTitle': 'IWPhone key',
+      'missing.tokenDesc': 'Blocks other apps on this device from calling the IWPhone API. At least 8 characters.',
       'missing.tokenHint': 'At least 8 characters',
       'missing.tokenSkipped': 'Skipped',
-      'missing.needToken': 'Set an access key first',
+      'missing.needToken': 'Set an IWPhone key first',
       'missing.advanced': 'Advanced options',
-      'missing.optNoToken': 'Do not set a WebUI key',
+      'missing.optNoToken': 'Do not set an IWPhone key',
       'missing.optNoTokenDesc': 'Without a key, any app on this device can call /api/shell with shell privileges, without confirmation.',
       'missing.optPinPort': 'Pin the ADB port',
       'missing.optPinPortDesc': 'On: no re-pairing after reboot. Off: you must re-pair on every reboot and autostart stops working.',
