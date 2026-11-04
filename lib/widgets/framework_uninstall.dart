@@ -15,34 +15,39 @@ import 'confirm_dialog.dart';
 ///    以 shell 身份执行框架自带的 uninstall.sh（先停进程再删目录），行为一致。
 ///
 /// 首页与设置页共用，避免两处确认文案与调用链分叉。
-Future<void> confirmFrameworkUninstall(BuildContext context) async {
+/// 返回 true 表示卸载已发起（WebUI 排队或 ADB 直连成功）。
+Future<bool> confirmFrameworkUninstall(BuildContext context) async {
   final ok = await showConfirmDialog(
     context,
     title: AppStrings.t('settings.uninstallTitle'),
     message: AppStrings.t('settings.uninstallMessage'),
     confirmText: AppStrings.t('settings.uninstallFramework'),
   );
-  if (!ok || !context.mounted) return;
+  if (!ok || !context.mounted) return false;
 
   final http = await IwphoneService.instance.uninstallFramework();
-  if (!context.mounted) return;
+  if (!context.mounted) return false;
 
   String title;
   String body;
+  bool success;
   if (http.ok) {
     title = AppStrings.t('settings.uninstallQueued');
     body = http.msg;
+    success = true;
   } else {
     // WebUI 不可达（或被拒）→ 走 adb 直连备用通道
     final adb = await AutostartService.instance.uninstallFrameworkAdb();
-    if (!context.mounted) return;
+    if (!context.mounted) return false;
     if (adb.ok) {
       title = AppStrings.t('settings.uninstallDoneAdb');
       body = AppStrings.t('settings.uninstallDoneAdbHint');
+      success = true;
     } else {
       title = AppStrings.t('settings.uninstallFailedTitle');
       body = '${http.msg}\n\n'
           '${AppStrings.t('settings.uninstallAdbFailedPrefix')}${adb.msg}';
+      success = false;
     }
   }
 
@@ -61,4 +66,5 @@ Future<void> confirmFrameworkUninstall(BuildContext context) async {
       ],
     ),
   );
+  return success;
 }

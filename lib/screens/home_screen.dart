@@ -22,9 +22,17 @@ import '../widgets/webui_token_dialog.dart';
 ///
 /// 数据来源：[IwphoneService]（WebUI 优先 / sdcard 兜底） + [SystemInfoService]（设备信息）。
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.reloadToken});
+  const HomeScreen({
+    super.key,
+    required this.reloadToken,
+    this.onFrameworkRemoved,
+  });
 
   final int reloadToken;
+
+  /// 框架被「完全卸载」后回调，让上层马上切到「未安装」门禁页。
+  /// 不这样做的话用户还留在四页界面里，模块/日志全空，很容易以为应用坏了。
+  final VoidCallback? onFrameworkRemoved;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -170,10 +178,16 @@ class _HomeScreenState extends State<HomeScreen> {
   ///
   /// 后端是延迟 3 秒执行的，立刻刷新会读不到变化，所以等一拍再重新探测。
   Future<void> _uninstallFramework() async {
-    await confirmFrameworkUninstall(context);
+    final removed = await confirmFrameworkUninstall(context);
     if (!mounted) return;
+    // 后端是延迟 3 秒执行的，立刻探测还读得到旧状态
     await Future<void>.delayed(const Duration(seconds: 3));
-    if (mounted) await _load();
+    if (!mounted) return;
+    if (removed) {
+      widget.onFrameworkRemoved?.call();
+    } else {
+      await _load();
+    }
   }
 
   @override

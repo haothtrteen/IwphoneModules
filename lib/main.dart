@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'screens/framework_missing_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/logs_screen.dart';
 import 'screens/modules_screen.dart';
@@ -174,6 +175,13 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
   int _modulesReloadToken = 0;
   int _logsReloadToken = 0;
 
+  /// 框架是否「确定没装」。为 true 时整个四页界面都不渲染 ——
+  /// 只留 [FrameworkMissingScreen]，避免在没有数据来源的界面上点出各种错。
+  bool _frameworkMissing = false;
+
+  /// 首次探测完成前先不渲染任何一页，避免"先闪一下主界面再跳走"。
+  bool _checkingFramework = true;
+
   @override
   void initState() {
     super.initState();
@@ -182,6 +190,28 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
     WidgetsBinding.instance.addObserver(this);
     _refreshStorageStatus();
     _refreshAutostart();
+    _checkFramework();
+  }
+
+  /// 探测框架是否已部署，决定要不要走「未安装」门禁。
+  ///
+  /// 判定与首页一致：adb 查得到就以文件为准；查不到再看 WebUI 有没有应答。
+  /// 只有「确定没有」或「查不到且 WebUI 也不通」才进未安装页 ——
+  /// 后者意味着框架实际上不可用，继续显示四页界面只会点出各种无意义报错。
+  Future<void> _checkFramework() async {
+    try {
+      final probe = await AutostartService.instance.probeFramework();
+      final st = await IwphoneService.instance.getStatus();
+      if (!mounted) return;
+      setState(() {
+        _frameworkMissing = probe.isMissing ||
+            (probe.isUnknown && !st.daemonRunning);
+        _checkingFramework = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _checkingFramework = false);
+    }
   }
 
   @override
@@ -196,6 +226,8 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
       _refreshStorageStatus();
       // 自启开关可能被「立即执行一次」等操作改变，回来对齐一次
       _refreshAutostart();
+      // 用户可能刚在别处装好/卸载了框架，回来重新判定一次门禁
+      _checkFramework();
     }
   }
 
@@ -235,6 +267,44 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
 
   @override
   Widget build(BuildContext context) {
+    // 首次探测未完成：先空着，避免先渲染主界面再跳走造成的闪动
+    if (_checkingFramework) {
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        body: const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    // ★ 门禁：框架没装就只显示这一页（KernelSU / Magisk 的做法）。
+    //   框架不在时模块列表、日志、启停按钮都没有数据来源，继续渲染四页界面
+    //   只会点出一堆无意义的报错。部署成功后再放行到主界面。
+    if (_frameworkMissing) {
+      return FrameworkMissingScreen(
+        onRefresh: () {
+          _checkFramework();
+        },
+        onInstalled: () {
+          setState(() => _frameworkMissing = false);
+          _homeReloadToken++;
+          _modulesReloadToken++;
+          _logsReloadToken++;
+          _refreshAutostart();
+        },
+        onNeedPairing: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const OnboardingScreen()),
+          );
+          if (mounted) await _checkFramework();
+        },
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       // SafeArea 避让系统状态栏与底部导航栏 —— edgeToEdge 下页面会延伸到系统栏下方，
@@ -246,7 +316,16 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
               child: IndexedStack(
                 index: _pageIndex,
                 children: [
-                  HomeScreen(reloadToken: _homeReloadToken),
+                  HomeScreen(
+                    reloadToken: _homeReloadToken,
+                    onFrameworkRemoved: () {
+                      if (!mounted) return;
+                      setState(() {
+                        _frameworkMissing = true;
+                        _checkingFramework = false;
+                      });
+                    },
+                  ),
                   ModulesScreen(reloadToken: _modulesReloadToken),
                   LogsScreen(reloadToken: _logsReloadToken),
                   SettingsScreen(

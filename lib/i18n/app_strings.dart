@@ -683,6 +683,21 @@ abstract final class AppStrings {
       'store.installedPrefix': '已安装：',
       'store.mirrorHint': '国内网络会自动尝试加速镜像，全部失败时才回落到 GitHub 官方源。',
       'store.versionHint': '清单 schemaVersion 2 · 客户端 v',
+
+      // ---- 框架未安装门禁页 ----
+      'missing.notInstalled': '未安装',
+      'missing.notPaired': '未配对',
+      'missing.tapToInstall': '点击安装',
+      'missing.tapToPair': '点击完成配对',
+      'missing.deploying': '正在部署框架…',
+      'missing.deployTitle': '安装框架',
+      'missing.deployMessage': '将把 App 内置的框架包解压到设备，并把访问方式切换到新路径。已有模块与快照不受影响。',
+      'missing.deployFail': '部署失败：',
+      'missing.managerVersion': '管理器版本',
+      'missing.deviceModel': '设备型号',
+      'missing.systemVersion': '系统版本',
+      'missing.arch': '架构',
+      'missing.hint': '框架未安装时只显示本页。模块、日志、启停等功能依赖框架提供的服务，部署完成后才会出现。',
     },
     'en': {
       // ---- nav ----
@@ -1384,6 +1399,21 @@ abstract final class AppStrings {
       'store.installedPrefix': 'Installed: ',
       'store.mirrorHint': 'Mirrors are tried automatically; the official GitHub source is the last resort.',
       'store.versionHint': 'Catalog schemaVersion 2 · Client v',
+
+      // ---- framework-missing gate ----
+      'missing.notInstalled': 'Not installed',
+      'missing.notPaired': 'Not paired',
+      'missing.tapToInstall': 'Tap to install',
+      'missing.tapToPair': 'Tap to finish pairing',
+      'missing.deploying': 'Deploying framework…',
+      'missing.deployTitle': 'Install framework',
+      'missing.deployMessage': 'The framework bundled with the app will be unpacked onto the device. Existing modules and snapshots are kept.',
+      'missing.deployFail': 'Deploy failed: ',
+      'missing.managerVersion': 'Manager version',
+      'missing.deviceModel': 'Device model',
+      'missing.systemVersion': 'System version',
+      'missing.arch': 'Architecture',
+      'missing.hint': 'This is the only screen shown while the framework is missing. Modules, logs and start/stop controls depend on the framework service and appear once it is deployed.',
     },
   };
 }
