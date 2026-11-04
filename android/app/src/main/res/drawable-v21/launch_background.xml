@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- API 24~30 的兜底启动画面：品牌底色 + 居中图标。
+     Android 12+ 会由 values-v31 的系统 SplashScreen 覆盖，这里不会闪白屏。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="?android:colorBackground" />
-
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+    <item android:drawable="@color/splash_background" />
+    <item
+        android:width="240dp"
+        android:height="240dp"
+        android:gravity="center"
+        android:drawable="@drawable/splash_icon" />
 </layer-list>

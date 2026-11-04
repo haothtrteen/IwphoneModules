@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ 系统 SplashScreen 配色（亮色）。
+         与 lib/theme/app_theme.dart 的 light 调色板保持一致。 -->
+    <color name="splash_background">#FFF4F4F6</color>
+    <color name="splash_accent">#FF00A344</color>
+    <color name="splash_icon_plate">#FF1A1A1E</color>
+</resources>

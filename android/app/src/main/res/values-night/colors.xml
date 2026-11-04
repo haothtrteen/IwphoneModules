@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 暗色模式下的 SplashScreen 配色，对应 dark 调色板 -->
+    <color name="splash_background">#FF0D0D0F</color>
+    <color name="splash_accent">#FF00C853</color>
+    <color name="splash_icon_plate">#FF1A1A1E</color>
+</resources>

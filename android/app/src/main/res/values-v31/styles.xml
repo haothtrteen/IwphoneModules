@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12 (API 31)+ 的系统 SplashScreen。
+
+  只覆盖 LaunchTheme：系统会在进程启动到 Flutter 首帧之间显示这个闪屏，
+  首帧绘制后由系统自动移除，不需要任何 Java/Kotlin 代码，也不引入
+  androidx.core:core-splashscreen 依赖（项目约定零第三方依赖）。
+
+  低版本继续用 values/styles.xml 里的 LaunchTheme + launch_background。
+-->
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+    </style>
+</resources>

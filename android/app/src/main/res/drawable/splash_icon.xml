@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ 系统 SplashScreen 的图标。
+
+  系统规范：画布 240dp，图标内容须落在中心直径 160dp 的圆内。
+  所以这里画一个直径 160dp 的深色圆盘，里面放品牌绿的 `>_` 终端提示符
+  —— 和「shell 管理器」的定位一致，也和 launcher 图标的深色底呼应。
+
+  用固定色值而非 @color 引用：VectorDrawable 在部分 ROM 上解析 @color 时
+  不跟随 values-night，会造成深浅模式配色错乱。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp"
+    android:height="240dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+
+    <!-- 中心直径 160dp 的圆盘 -->
+    <path
+        android:fillColor="#FF1A1A1E"
+        android:pathData="M120,40 A80,80 0 0 1 120,200 A80,80 0 0 1 120,40 Z" />
+
+    <!-- 提示符 > -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M92,96 L120,120 L92,144"
+        android:strokeColor="#FF00C853"
+        android:strokeWidth="12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 光标 _ -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M132,150 L162,150"
+        android:strokeColor="#FF00C853"
+        android:strokeWidth="12"
+        android:strokeLineCap="round" />
+</vector>
