@@ -411,6 +411,51 @@ fun ensureTransport(ctx: Context, allowReprovision: Boolean = false): Result {
 - `AutostartJobService` 失败时**指数退避重试 2 次**（10s / 30s / 90s）：无线调试广播可能在 BOOT_COMPLETED 之后才出现，一次判死会误报。用 `AutostartPrefs` 记重试次数，成功或用户在场操作后清零。
 - 失败文案必须给出三条可行动路径，不能只说「失败」：① 打开无线调试开关；② 在设置里点一次「固定端口」（会重启 adbd，提示先停用 Shizuku）；③ 若已有 root/Sui，走 root 直启框架路径，完全绕开 adbd。
 
+### 4.4.1 已确认的代码缺陷：`pinPort` 开关被开机路径绕过
+
+`UiPrefs.pinPort()` 只在 `ensureFixedPort()`（886 行）里被检查；
+**`ensureTransport()`（231 行）里的 `adb tcpip 5555`（255 行）完全不检查这个开关**，
+而 `startFramework()` → `AutostartJobService`（开机路径）直接调 `ensureTransport()`。
+
+后果：用户在安装页勾选「不固定 adb 端口」后，只要开机时 5555 不通，链路仍会
+`mDNS 发现动态端口 → 连上 → 无条件 adb tcpip 5555` —— 写 persist 属性 + 重启 adbd。
+**开关形同虚设**，而且恰好在无线调试开着（Shizuku 正要用）的时候触发。
+
+修这个缺陷不能只在 255 行前加一个 `if (!pinPort) return`：后续 `startFramework()`、
+`withDeviceSelector()`、三处 push 都硬编码了 `TARGET = 127.0.0.1:5555`，
+跳过 tcpip 后连的是动态端口，所有后续命令会打到不存在的 5555。
+安全修法必须先把 **transport target 参数化**（当前连接串贯穿 AdbBootstrap），
+这属于 R1 的一部分，不能作为一行 hotfix 草率落地。
+
+### 4.4.2 归因强度修正：Shizuku「失去激活」尚未在本项目证实
+
+之前把「固定端口导致 Shizuku 失效」写得过于确定，这里降级并区分两个层次：
+
+| 层次 | 机制 | 更贴合的现象 |
+|---|---|---|
+| (a) **一次性动作** `adb tcpip 5555` | 重启 adbd → E4 清理自己 spawn 的进程树 | **框架**突然消失 / 当次 Shizuku 连接被打断 |
+| (b) **持久状态** `persist.adb.tcp.port=5555` | adbd 长期处于 legacy TCP 模式；ColorOS 实测会把 `adb_wifi_enabled` 清 0 | **Shizuku 开机后起不来 / 反复失去激活** |
+
+对用户观察到的「Shizuku 失去激活」，**(b) 更可能是主因**；4.4.1 的缺陷会让 (a) 在每次
+开机 5555 不通时额外发生一次。但两者都仍是**机制推断**：本项目从未在真机复现，
+没有 logcat / 启动顺序 / 报错记录。反向因果也存在：Shizuku 切换无线调试 → adbd 重启 →
+框架被杀（E4），表现是「框架掉了」而不是「Shizuku 掉了」。
+
+判定对照实验（会重启 adbd 一次，注意框架会被杀）：
+清掉 `persist.adb.tcp.port` 后观察 Shizuku 能否正常启动并保持。
+- 清掉后正常 → 坐实 (b)；
+- 清掉后仍不正常 → 与本 App 无关，转查 Shizuku 自身开机自启 / 多用户 / ROM 限制。
+
+### 4.4.3 R2 的隐藏前置：免 root 能否写这个属性
+
+`ensureFixedPort()` 注释已实机确认：**shell 身份写不了 `persist.adb.tcp.port`**
+（SELinux `adbd_config_prop`），所以才必须由 adb 协议指令或 root 写。
+`persist.adb.tls_server.enable` 同属系统属性，AOSP 的 `property_contexts` 是否允许
+shell 写入**未验证**；公开资料里的 `setprop` 示例多来自 root shell。
+若免 root 写不了，R2 直接不成立（除非借 Shizuku/Sui 的权限写一次）。
+`Settings.Global.adb_wifi_enabled` 虽然 adb shell 能写，但会被 `AdbService.systemReady()`
+用 persist 属性覆盖，跨重启无效。
+
 ## 4.5 三条「不固定端口」路线对比
 
 | 路线 | 做法 | 开机自启 | 与 Shizuku 共存 | 代价 / 风险 |
@@ -452,11 +497,14 @@ WiFi、不需要 mDNS、不需要等系统服务回调的。R2 想换的那一�
 ## 4.7 仍未确认
 
 - 小米 22011211C 上 `persist.adb.tls_server.enable=1` 写入后，**开机解锁并连上 WiFi 时该值是否仍为 1**（会不会被可信网络检查重置为 0）
+- **免 root（adb shell, uid 2000）能否写入 `persist.adb.tls_server.enable`** —— 写不了则 R2 不成立（见 4.4.3）
+- Shizuku「失去激活」的真实时间点与原因：需 logcat 中 adbd 重启事件与 Shizuku 启动/失败时间对齐（见 4.4.2）
 - App 进程能否读 `/proc/net/tcp` 并看到 adbd 的 LISTEN 条目
 - `NsdManager` 在开机后多久开始稳定广播 `_adb-tls-connect._tcp`（决定退避窗口取值）
 - Shizuku 具体版本在无线调试开启时是否也会重启 adbd（影响共存判据）
 
-以上四项决定 R2 是否可选、以及退避参数怎么定；R1 不依赖这些结论，可先落地。
+以上决定 R2 是否可选、以及退避参数怎么定；R1 不依赖这些结论，可先落地。
+R2 不是 R1 的替代：R1 的「只读探测 + 开机路径禁止写 adbd」正是 R2 的前置条件。
 
 ---
 
