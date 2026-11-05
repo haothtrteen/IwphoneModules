@@ -477,6 +477,31 @@ WiFi、不需要 mDNS、不需要等系统服务回调的。R2 想换的那一�
 **不占用 5555、不会把 `adb_wifi_enabled` 清 0，因而对 Shizuku 更友好**；代价是把自动化建立在一串
 开机时序条件（WiFi 已连接且可信 → AdbService.bootCompleted → adb_wifi 启动 → mDNS 广播 → App 探测）之上。
 
+#### 4.5.2 纠错：「可信 WiFi」门槛不适用于固定端口方案
+
+有一个容易混淆的推理：「不可信 WiFi 下无线调试本来就不能激活，所以固定端口也一样受限，
+两者门槛相同」。**不成立**，因为这两条路径根本不是同一套机制：
+
+| | legacy `adb tcpip` + `persist.adb.tcp.port` | 无线调试 / TLS（R2） |
+|---|---|---|
+| 谁启动监听 | **init 直接读 persist 属性**，adbd 启动即在 `*:5555` 监听 | `AdbDebuggingManager` 在 `AdbService.bootCompleted()` 之后按条件开启 |
+| 是否判断 WiFi 可信 | **不判断** | **判断**（不可信/未连接时会把 `persist.adb.tls_server.enable` 改回 0） |
+| 连接路径 | App 自持 adb 连 **127.0.0.1 回环** | 同为回环，但服务端要先被系统服务拉起 |
+| 需不需要 WiFi | **不需要**，飞行模式下也能连 | 需要 WiFi 已连接且被判定可信 |
+
+关键点：**App 是「连自己」，所有命令走 `adb connect 127.0.0.1:5555`，流量在设备内部回环，
+不经过任何网络接口。** `AdbDebuggingManager` 的可信网络检查管的是「要不要开启无线调试
+TLS 服务」，跟回环 TCP 端口和 adb 授权密钥是两回事。adb 配对公钥是 adbd 的连接认证凭据，
+也不受 WiFi 可信状态影响。
+
+所以「不可信 WiFi 下密钥无法使用」这个判断对固定端口方案不成立；**可信 WiFi 恰恰是 R2 独有的
+门槛，不是两者的共同门槛**。这也解释了 `AdbBootstrap.kt` 当年为什么选 legacy 5555：它把
+自启从一串系统服务时序里摘出来，压到 init 阶段一个 persist 属性上。
+
+代价是另一回事：`tcpip 5555` 与 `adb_wifi_enabled` 互斥（ColorOS 实测会把后者清 0），
+这就是 Shizuku 冲突的根源。**固定端口在「自启可靠性」上明显更优，在「Shizuku 共存」上明显更差**，
+两个目标本身冲突，R2 的价值只在后者。
+
 **推荐 R1**：它把用户真正想要的东西（自动化激活 + 不与 Shizuku 抢 adbd）都拿到了，而且不必放弃已经生效的固定端口。R2 作为增强实验项，在真机验证 `persist.adb.tls_server.enable` 确实能跨重启保持且开机自启 TLS 服务之后再考虑；R3 不建议。
 
 一句更直白的总结：**该改的不是「要不要固定端口」，而是「谁有资格触发 `adb tcpip`」。** 把写操作从开机链路里摘出去，冲突窗口就从「每次开机」缩小到「首次配对那一次」。
@@ -505,6 +530,78 @@ WiFi、不需要 mDNS、不需要等系统服务回调的。R2 想换的那一�
 
 以上决定 R2 是否可选、以及退避参数怎么定；R1 不依赖这些结论，可先落地。
 R2 不是 R1 的替代：R1 的「只读探测 + 开机路径禁止写 adbd」正是 R2 的前置条件。
+
+---
+
+# 五、当前首次激活与「固定 ADB 端口」的实际实现（代码核对）
+
+## 5.1 首次激活的两条入口
+
+**入口 A：通知栏配对（`startPairingFlow` → 通知 → `PairingReceiver`）**
+
+1. `PairingNsd.findPairingPort()` 用 mDNS 找 `_adb-tls-pairing._tcp` 端口
+2. `AdbBootstrap.pair()`：`adb kill-server`，再 `adb pair 127.0.0.1:<配对端口>`（配对码走 stdin）
+3. 配对成功 → **立刻 `ensureFixedPort()`**：这一步才是自启持久化的真正落地点
+4. 通知栏回报结果
+
+**入口 B：安装页「部署框架」（`FrameworkInstallScreen._runInstall`）**
+
+1. `status()` 查 `provisioned`（判据只是 `filesDir/adbhome/.android/adbkey` 存在）
+2. `setPinPort(_pinPort)` → **只写 UI 偏好，不执行任何 adb 命令**
+3. `deployFramework()` → `ensureTransport()` → push `framework.tar.gz` → `shell` 解压/建 busybox 链接
+4. `WebuiTokenManager.set()` 下发访问密钥
+5. `runNow()` → `startFramework()` → `ensureTransport()` + `frameworkRunning()` + `ensureWebui()`
+   + `nohup setsid -d sh Main.sh >/dev/null 2>&1 </dev/null &`
+6. 轮询 `GET /api/status` 直到 `daemonRunning=true`（最多 5 次 × 800ms）
+
+## 5.2 自启持久化的四根支柱
+
+| # | 内容 | 落地位置 | 跨重启机制 |
+|---|---|---|---|
+| ① | App 端 adb 私钥 | `filesDir/adbhome/.android/adbkey` | App 私有目录 |
+| ② | adbd 记住的公钥 | `adb pair` | 系统侧保存，注释明确「密钥跨重启保持，此后无需再配对」 |
+| ③ | **开机后有 TCP 监听** | `adb tcpip 5555` → `persist.adb.tcp.port=5555` | **init 属性；开机 adbd 自动监听 5555** |
+| ④ | 开机调度 | `BootReceiver` → `AutostartScheduler`（`setPersisted(true)` JobScheduler，delay 10s）→ `AutostartJobService` → `startFramework()` | 系统 JobScheduler 持久化 |
+
+外加 `AutostartPrefs.isEnabled` 总开关、`deployStamp`（App 升级自动重铺框架）、`.deployed` 版本标记。
+
+**③ 是唯一让「开机后 adbd 有端口可连」的东西**；①②④ 都只是「能连上」的必要条件。
+注释里那句「死结：开无线调试需要 shell，而重启后没 shell」说的就是：不靠 ③，
+开机后没有任何 TCP 监听，`_adb-tls-connect._tcp` 也就没有广播，探测找不到对象。
+
+## 5.3 UI「固定 ADB 端口」按钮的命令序列
+
+位置：设置 → 开机自启设置 → 第 3 步（`autostart_screen.dart:388`）
+→ `AutostartService.ensurePort()` → MethodChannel `ensurePort` → `AdbBootstrap.ensureFixedPort()`。
+
+`run()` 的 `withDeviceSelector()` 会自动给 `get-state` / `shell` / `tcpip` / `push` 等补
+`-s 127.0.0.1:5555`（除非调用方已显式指定目标，如 tcpip 阶段必须用动态端口）。
+
+按顺序实际下发：
+
+1. 读 `UiPrefs.pinPort()`；为 false 直接返回，**一条 adb 命令都不发**
+2. `ensureTransport()`：
+   - `adb -s 127.0.0.1:5555 get-state`（探活，命中就返回）
+   - 不通 → `adb connect 127.0.0.1:5555`，再 `adb -s … shell id`（校验 `uid=2000`）
+   - 仍不通 → mDNS 找 `_adb-tls-connect._tcp` 动态端口 → `adb connect 127.0.0.1:<动态>`
+     + `adb -s 127.0.0.1:<动态> shell id`
+   - **`adb -s 127.0.0.1:<动态> tcpip 5555`** ← 唯一的写操作：写 persist 属性并重启 adbd
+   - 轮询 `connectAndVerify(5555)` 最多 20s
+3. `adb -s 127.0.0.1:5555 shell getprop persist.adb.tcp.port`；已是 `5555` 则直接成功
+4. 没写进去 → 再 `adb -s 127.0.0.1:5555 tcpip 5555`
+5. 15s 轮询：`connectAndVerify` + `getprop persist.adb.tcp.port`，**必须读到 `5555` 才算成功**
+
+第 5 步是踩过坑加的：只看 `adb tcpip` 回的 "restarting in TCP mode" 会被骗 ——
+adbd 可能只设运行时 `service.adb.tcp.port` 而不写 persist，结果是「本次开机能用、重启就失效」。
+
+## 5.4 与「不固定端口」有关的两处绕不过去的事实
+
+- `ensureTransport()`（231 行）里的 `adb tcpip 5555` **不检查 `pinPort`**，
+  而 `deployFramework()` 与 `startFramework()` 都直接调它。所以安装页勾了「不固定端口」，
+  只要 5555 不通仍会执行 tcpip（见 4.4.1）。这个选项当前**没有真正生效**。
+- 密钥不是障碍：配对公钥跨重启保持，App 私钥也在私有目录。**「开机用密钥连接」这半句成立，
+  「开机探测到端口」这半句不成立** —— 开机后若无线调试没自启，adbd 根本不监听任何 TCP 端口，
+  mDNS 没有广播，探测无对象；而打开无线调试开关又需要此刻还没有的 shell。
 
 ---
 
