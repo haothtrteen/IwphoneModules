@@ -10,6 +10,7 @@ import '../widgets/framework_uninstall.dart';
 import '../widgets/screen_app_bar.dart';
 import '../widgets/settings_rows.dart';
 import 'autostart_screen.dart';
+import 'app_auth_screen.dart';
 import 'config_screen.dart';
 import 'tools_screen.dart';
 import '../services/webui_token.dart';
@@ -224,6 +225,15 @@ class SettingsScreen extends StatelessWidget {
                 label: AppStrings.t('settings.storageAllFiles'),
                 status: storageStatus,
                 onRequest: onRequestStorage,
+              ),
+              // 「把 shell 权限授予别的应用」——本质是权限，放在这里而不是
+              // Shell 分组里；用户找它会往「权限」翻，不会去翻「框架配置」。
+              NavRow(
+                label: AppStrings.t('auth.entry'),
+                hint: AppStrings.t('auth.entryHint'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AppAuthScreen()),
+                ),
               ),
             ],
           ),

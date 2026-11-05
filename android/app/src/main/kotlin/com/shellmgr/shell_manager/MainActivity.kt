@@ -45,6 +45,9 @@ class MainActivity : FlutterActivity() {
     /** 「开机自启」通道（通知权限 / 自启开关 / adb 配对与拉起）。 */
     private val autostart = AutostartChannel(this)
 
+    /** 「应用授权」通道（已授权清单 / 待审批 / 调用记录）。 */
+    private val appAuth = AppAuthChannel(this)
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -62,6 +65,7 @@ class MainActivity : FlutterActivity() {
             }
 
         autostart.register(flutterEngine.dartExecutor.binaryMessenger)
+        appAuth.register(flutterEngine.dartExecutor.binaryMessenger)
     }
 
     /**

@@ -117,6 +117,27 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- ============================================================
+             应用授权通道（Shizuku 那类「让别的应用以 shell 身份执行命令」）
+
+             为什么是一个导出的 ContentProvider：
+               - ContentResolver.call() 是同步的，客户端一次往返就能拿到
+                 stdout / exitCode，不用自己写回调与连接管理；
+               - call() 跑在 Binder 线程上，Binder.getCallingUid() 拿到的是
+                 **真实调用方** uid —— Service + Messenger 的 Handler 里已经拿不到了；
+               - 跨应用 provider 调用走标准 Binder，绕开 untrusted_app 与 shell
+                 之间的 SELinux 域限制（直接开 Unix socket 会被 EACCES 拦）。
+
+             没有 android:permission：任何应用都可以发起调用，但**能不能真执行**
+             由 BrokerProvider 内部按 (包名, uid, 签名) 三元组校验，
+             未授权时只返回 NEED_APPROVAL 并把请求记进本应用的「应用授权」页。
+             ============================================================ -->
+        <provider
+            android:name=".BrokerProvider"
+            android:authorities="com.shellmgr.shell_manager.broker"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+
         <!-- 配对码接收器：通知里的 RemoteInput 输入框提交后走这里。
              exported=false —— 只有本应用的通知能触发它。 -->
         <receiver
@@ -132,6 +153,12 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- 「应用授权 → 添加应用」要列出可授权的应用。
+             只查桌面启动器列表，不申请 QUERY_ALL_PACKAGES（敏感权限，没必要背）。 -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 </manifest>
