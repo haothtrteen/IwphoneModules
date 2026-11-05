@@ -298,6 +298,146 @@ logcat -d -b events | grep -i adbd    # adbd 重启时间点
 
 ---
 
+# 四、端口探测能否替代固定端口实现自动化激活（补充评估）
+
+## 4.1 结论速览
+
+**探测该加，且应该加；但它只解决「端口是多少」，不解决「开机后 adbd 有没有在 TCP 上监听」。因此单靠探测不能替代固定端口实现可靠的开机自启。**
+
+不过要先纠正一个容易被误解的前提：**「固定端口」不等于「每次开机都执行 `adb tcpip` 重启 adbd」。** `ensureTransport()` 第一步就是 `transportAlive(5555)`，命中即直接返回；`adb tcpip` 只在「5555 不通 + 发现动态端口成功」时执行，即首次配置或端口状态丢失时。日常开机自启**根本不碰 adbd**。所以「为了和 Shizuku 共存而放弃固定端口」是代价大于收益的交换。
+
+开机后能否自动化，取决于设备处于哪一档：
+
+| 开机后 adbd 状态 | 只读探测能否自启 | 说明 |
+|---|---|---|
+| `persist.adb.tcp.port=5555` 已设 | **能**（甚至不需要探测） | 现状；开机即监听，直连即可 |
+| 无线调试服务开机自启（部分 ROM 或 `persist.adb.tls_server.enable` 生效） | **能** | mDNS 发现动态端口 + 已有配对密钥直连，无需重新配对 |
+| 无线调试不自启（本项目实机小米、ColorOS 实测） | **不能** | adbd 不监听任何 TCP 端口 → mDNS 无广播 → 探测无对象；而 App 此时没有 shell，无法执行 `settings put global adb_wifi_enabled 1` 打开开关，死结 |
+
+**探测方案真正的价值**在第二档：ADB 配对密钥跨重启保持（XDA ColorOS 实测：重启后只需重新打开无线调试，TLS 端口变了但配对仍有效，不需要重新输配对码）。所以只要 adbd 肯监听，探测链就能直接复用旧密钥连上；但**「把无线调试开关拨一次」这一步仍然躲不掉**，App 只是省掉了后面的配对与端口查询。
+
+## 4.2 补充的外部实证（印证第 1.4 节）
+
+- `tcpip 5555` 与 `adb_wifi_enabled` **互斥**：启用固定端口会把无线调试标志清 0（ColorOS 实测）。这正是 App 的 `adb tcpip 5555` 打断 Shizuku 的具体机制，比上一轮的推断更实。
+- `adb_wifi_enabled` 这个 global setting 值本身是持久的，但**服务不会因此自启**：重启后全端口扫描找不到任何 ADB 监听端口，必须手动把无线调试开关拨一次。与 `AdbBootstrap.kt` 类注释的实机结论一致。
+- `service.adb.tls.port`（动态端口）、`persist.adb.tls_server.enable`（prop 才是实际生效的开关）在 AOSP/部分 ROM 上存在，提供了「不固定端口但固定自启开关」的理论路径（见 R2）。
+- 有资料称 Android 12+ 的 `_adb-tls-connect._tcp` 自动发现可在无线调试关闭时广播，但与主流 OEM 实测相反，**以本项目真机为准，不作为设计前提**。
+
+## 4.3 设计：只读探测链 `probeTransport()`
+
+硬约束：**探测阶段绝不执行 `adb tcpip` / `adb usb` / `setprop` / 开关无线调试**。任何一次写都会重启 adbd，重新踩进 E4 的「清理自己 spawn 的进程树」，也重新和 Shizuku 抢状态。
+
+```kotlin
+/**
+ * 只读探测：找到一条可用 transport，但不改变 adbd 的任何状态。
+ * 总预算 <= 15s，跑在 JobService 的子线程，禁止放平台主线程。
+ */
+fun probeTransport(ctx: Context): Result {
+    // 0) 已有连接（含 5555）—— 零成本
+    if (transportAlive(ctx)) return Result(true, "已连接 $TARGET")
+
+    // 1) 上次成功的动态端口（SharedPreferences 缓存）
+    //    很多 ROM 会复用端口，命中可省掉整段 mDNS 等待
+    AutostartPrefs.lastDynamicPort(ctx)?.let { p ->
+        connectAndVerify(ctx, "127.0.0.1:$p").let {
+            if (it.ok) { cachePort(ctx, p); return it }
+        }
+    }
+
+    // 2) mDNS _adb-tls-connect._tcp（开机路径 6s，首次配置路径 12s）
+    discoverConnectPort(ctx, timeoutMs = probeTimeoutMs)?.let { p ->
+        connectAndVerify(ctx, "127.0.0.1:$p").let {
+            if (it.ok) { cachePort(ctx, p); return it }
+        }
+    }
+
+    // 3) 只读属性候选：persist.adb.tcp.port / service.adb.tls.port
+    //    读属性本身需要 shell，无 transport 时读不到；
+    //    仅作「已有 transport 但端口变了」的补充，不作为开机主路径
+    for (p in readCandidatePorts(ctx)) {
+        connectAndVerify(ctx, "127.0.0.1:$p").let {
+            if (it.ok) { cachePort(ctx, p); return it }
+        }
+    }
+
+    // 4) 可选：读 /proc/net/tcp 找 LISTEN(state 0A) 且落在无线调试端口段的候选
+    //    一次文件读 + 少量候选 connect；App 能否读该文件受 SELinux 限制，失败即跳过
+    for (p in listeningPortCandidates(ctx)) {
+        connectAndVerify(ctx, "127.0.0.1:$p").let {
+            if (it.ok) { cachePort(ctx, p); return it }
+        }
+    }
+
+    return Result(false, "只读探测失败：开机后 adbd 没有可连的 TCP 监听（未改动任何 adbd 状态）")
+}
+```
+
+**不做全端口扫描**：Android 无线调试端口落在 30000–49999，从 App 侧逐个 `adb connect` 验证成本过高；XDA 那条 1.4 秒是设备 shell 内扫 `/proc/net/tcp`，App 侧没有这个条件。`/proc/net/tcp` 快路径若可读就够用。
+
+## 4.4 `ensureTransport()` 拆分与调用点改造
+
+```kotlin
+fun ensureTransport(ctx: Context, allowReprovision: Boolean = false): Result {
+    probeTransport(ctx).let { if (it.ok) return it }
+    if (!allowReprovision) {
+        return Result(false, "只读探测失败；为避免重启 adbd 已停止自动配置，请手动重试")
+    }
+    return ensureFixedPort(ctx)   // 唯一允许 adb tcpip 的入口
+}
+```
+
+| 调用点 | 现状 | 改造后 `allowReprovision` |
+|---|---|---|
+| `startFramework()` ← `AutostartJobService`（开机） | `ensureTransport(ctx)` | **false** —— 开机路径绝不重启 adbd |
+| `startFramework()` ← `AutostartChannel.runNow`（用户手点） | 同上 | **true**，但 UI 需二次确认「这会重启 adbd，可能中断 Shizuku」 |
+| `ensureFixedPort()` ← `PairingReceiver`（配对成功） | 直接调 | 保持 true，这是首次配置的唯一合法窗口 |
+| `ensureFixedPort()` ← `AutostartChannel`（用户点「固定端口」） | 直接调 | 保持 true，同上 |
+| `AdbBootstrap:317 / :618` | `ensureTransport(ctx)` | 按业务判断：读状态类用 false，用户显式操作用 true |
+
+配套新增：
+
+- `AutostartPrefs.lastDynamicPort()` / `setLastDynamicPort()` —— 缓存上次成功的动态端口。
+- `PairingNsd.findConnectPort()` 的 `timeoutMs` 由调用方传入；开机路径降到 6s。
+- `probeTransport()` 检测到 `_adb-tls-connect._tcp` 存在时（意味着无线调试开着、Shizuku 可能正用），置 `coexistMode = true`：只连不写，并把该状态回传给 UI。
+- `AutostartJobService` 失败时**指数退避重试 2 次**（10s / 30s / 90s）：无线调试广播可能在 BOOT_COMPLETED 之后才出现，一次判死会误报。用 `AutostartPrefs` 记重试次数，成功或用户在场操作后清零。
+- 失败文案必须给出三条可行动路径，不能只说「失败」：① 打开无线调试开关；② 在设置里点一次「固定端口」（会重启 adbd，提示先停用 Shizuku）；③ 若已有 root/Sui，走 root 直启框架路径，完全绕开 adbd。
+
+## 4.5 三条「不固定端口」路线对比
+
+| 路线 | 做法 | 开机自启 | 与 Shizuku 共存 | 代价 / 风险 |
+|---|---|---|---|---|
+| **R1 只读探测 + 保留 5555（推荐）** | 加 `probeTransport()`；保留已写入的 `persist.adb.tcp.port`，但把 `adb tcpip` 收窄到「用户在场显式操作」 | **可靠** | **可靠**（日常自启不碰 adbd；首次配置窗口与 Shizuku 错开即可） | 需改 `ensureTransport` 与 4 个调用点；已部署设备的 5555 属性不清除（清除本身也会重启 adbd） |
+| **R2 持久 TLS 开关 + mDNS** | 首次配置写 `persist.adb.tls_server.enable=1`（不固定端口），开机靠 mDNS 探动态端口 | **取决于 ROM**：值持久 ≠ 服务自启，主流 OEM 实测不自启 | 好（不写 `adb.tcp.port`，不会把 `adb_wifi_enabled` 清 0） | 属性非公开 API、写入仍会改变 adbd 状态一次、小米/ColorOS 上可能完全无效；**需真机验证** |
+| **R3 完全不写任何属性** | 只靠 mDNS + 端口探测 | **不可靠**：本项目实机与 ColorOS 上开机无监听 | 最好 | 每次开机需用户手动拨一次无线调试开关；与「免 root 自启」的产品定位冲突 |
+
+**推荐 R1**：它把用户真正想要的东西（自动化激活 + 不与 Shizuku 抢 adbd）都拿到了，而且不必放弃已经生效的固定端口。R2 作为增强实验项，在真机验证 `persist.adb.tls_server.enable` 确实能让 adbd 开机自启之后再考虑；R3 不建议。
+
+一句更直白的总结：**该改的不是「要不要固定端口」，而是「谁有资格触发 `adb tcpip`」。** 把写操作从开机链路里摘出去，冲突窗口就从「每次开机」缩小到「首次配对那一次」。
+
+## 4.6 验收要点（补充）
+
+- [ ] 冷启动探测总耗时 ≤ 15s，平台主线程无阻塞（冷启动时间不回退到秒级）
+- [ ] 探测全程 `logcat -b events | grep -i adbd` **无重启事件**；`getprop persist.adb.tcp.port` 前后不变
+- [ ] 三档设备状态矩阵各跑 3 次：5555 已设 / 无线调试已开但端口动态 / 无线调试关闭；记录各自能否自启与耗时
+- [ ] Shizuku 活跃 + 无线调试已开：探测连上后 `settings get global adb_wifi_enabled` 仍为 1（没被清 0），Shizuku 服务不掉线
+- [ ] 开机路径（`AutostartJobService`）**任何情况下都不产生 `adb tcpip` 调用**（代码审查 + 日志断言）
+- [ ] 10s / 30s / 90s 退避重试生效；无线调试开关在第一次探测之后才打开时，第二次能救回
+- [ ] 缓存端口命中路径：构造「端口复用」场景，确认跳过 mDNS
+- [ ] 探测失败时 UI 给出三条恢复路径且 `coexistMode` 标记正确
+- [ ] 回归：首次配对 → `PairingReceiver` → `ensureFixedPort(true)` 链路仍能把 5555 固定下来
+- [ ] 回归：现有 `isPortFixed()` 只读属性、不建连的性能修复不被破坏
+
+## 4.7 仍未确认
+
+- 小米 22011211C 上 `persist.adb.tls_server.enable` 是否存在、写入后开机是否真的自启 TLS 服务
+- App 进程能否读 `/proc/net/tcp` 并看到 adbd 的 LISTEN 条目
+- `NsdManager` 在开机后多久开始稳定广播 `_adb-tls-connect._tcp`（决定退避窗口取值）
+- Shizuku 具体版本在无线调试开启时是否也会重启 adbd（影响共存判据）
+
+以上四项决定 R2 是否可选、以及退避参数怎么定；R1 不依赖这些结论，可先落地。
+
+---
+
 ## 附：本文未做的事
 
 - 未修改任何运行代码（Python / Kotlin / Dart / Manifest 均未动）
@@ -305,4 +445,5 @@ logcat -d -b events | grep -i adbd    # adbd 重启时间点
 - 未验证 `/data/local/tmp` 对 `untrusted_app` 的读/执行权限
 - 未核对 Shizuku `starter.cpp` 的 `foreach_proc()` 精确匹配条件
 
-以上四项是落地前的阻塞项，尤其 3.2 的复现结果会决定"共存方案"选 A 还是 D。
+以上四项是落地前的阻塞项，尤其 3.2 的复现结果会决定「共存方案」选 A 还是 D；
+第 4.7 的四项只影响 R2 与退避参数，不阻塞 R1。
