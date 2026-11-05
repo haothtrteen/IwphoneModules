@@ -53,6 +53,9 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   /// 是否固定 adb 端口（默认 true，关掉后重启需重新配对）。
   bool _pinPort = true;
 
+  /// 高级选项：不固定端口，靠无线调试自启 + mDNS 发现动态端口。
+  bool _discoverMode = false;
+
   /// 设备上已部署框架的 versionCode：-1 无法判定，0 无标记。
   int _deployedVer = -1;
 
@@ -335,12 +338,16 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     log(AppStrings.t('log.paired'), LogKind.ok);
 
     log(AppStrings.t('log.stepPort'), LogKind.info);
-    await AutostartService.instance.setPinPort(_pinPort);
+    // 偏好在勾选时已即时写入，这里再同步一次，避免用户从别的入口进来时状态不一致
+    await AutostartService.instance.setDiscoverMode(_discoverMode);
+    await AutostartService.instance.setPinPort(_discoverMode ? true : _pinPort);
     log(
-      _pinPort
-          ? AppStrings.t('log.portPinned')
-          : AppStrings.t('log.portSkipped'),
-      _pinPort ? LogKind.ok : LogKind.warn,
+      _discoverMode
+          ? AppStrings.t('log.discoverModeOn')
+          : (_pinPort
+              ? AppStrings.t('log.portPinned')
+              : AppStrings.t('log.portSkipped')),
+      _discoverMode || !_pinPort ? LogKind.warn : LogKind.ok,
     );
 
     log(AppStrings.t('log.stepDeploy'), LogKind.info);
@@ -597,11 +604,32 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                 ),
                 _OptRow(
                   title: AppStrings.t('missing.optPinPort'),
-                  desc: AppStrings.t('missing.optPinPortDesc'),
+                  desc: _discoverMode
+                      ? AppStrings.t('missing.optPinPortBlocked')
+                      : AppStrings.t('missing.optPinPortDesc'),
                   value: _pinPort,
-                  warn: !_pinPort,
-                  onChanged: (v) => setState(() => _pinPort = v),
+                  warn: !_pinPort && !_discoverMode,
+                  onChanged: (v) {
+                    if (_discoverMode) return;
+                    setState(() => _pinPort = v);
+                    AutostartService.instance.setPinPort(v);
+                  },
+                ),
+                _OptRow(
+                  title: AppStrings.t('missing.optDiscover'),
+                  desc: AppStrings.t('missing.optDiscoverDesc'),
+                  value: _discoverMode,
+                  warn: _discoverMode,
                   last: true,
+                  onChanged: (v) {
+                    setState(() {
+                      _discoverMode = v;
+                      if (v) _pinPort = true;
+                    });
+                    // ★ 立即落盘：配对成功时 PairingReceiver 会马上读这个偏好
+                    AutostartService.instance.setDiscoverMode(v);
+                    AutostartService.instance.setPinPort(v ? true : _pinPort);
+                  },
                 ),
               ],
             ),

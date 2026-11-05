@@ -124,6 +124,20 @@ object AdbBootstrap {
 
     private const val TARGET = "127.0.0.1:$CONNECT_PORT"
 
+    /**
+     * 本次进程正在使用的 adb transport 目标。
+     *
+     * 固定端口模式下恒为 [TARGET]；「无线发现」模式下是 mDNS 找到的动态端口。
+     * 所有 -s 与 withDeviceSelector 都从这里取 —— 否则会出现
+     * 「连上的是动态端口、后续命令却打到不存在的 5555」。
+     * 进程重启后回到 [TARGET]，由探测链重新赋值。
+     */
+    @Volatile
+    private var activeTarget: String = TARGET
+
+    /** 发现模式下 mDNS 的等待上限（开机路径要短，不能像首次配对那样等 12s）。 */
+    private const val DISCOVER_TIMEOUT_MS = 8_000L
+
     /** 访问密钥最小长度。 */
     const val MIN_TOKEN_LEN = 8
 
@@ -186,12 +200,17 @@ object AdbBootstrap {
      * 连上后再确认一次。代价是多一条命令（几十毫秒），换来不会在半死的连接上操作。
      */
     private fun ensureConnected(ctx: Context): Boolean {
+        // 发现模式下 activeTarget 需先由 mDNS 赋值，否则读状态类调用会打向 5555
+        if (UiPrefs.discoverMode(ctx) && !transportAlive(ctx)) {
+            if (!ensureTransportDiscover(ctx).ok) return false
+            return true
+        }
         // 1) 探活
         if (transportAlive(ctx)) return true
 
         // 2) 清掉 adb server 里的死条目再重连
-        run(ctx, listOf("disconnect", TARGET), timeoutMs = 10_000)
-        val c = run(ctx, listOf("connect", TARGET), timeoutMs = 20_000)
+        run(ctx, listOf("disconnect", activeTarget), timeoutMs = 10_000)
+        val c = run(ctx, listOf("connect", activeTarget), timeoutMs = 20_000)
         if (!c.message.contains("connected to", ignoreCase = true)) {
             android.util.Log.d(
                 "AdbBootstrap",
@@ -208,7 +227,7 @@ object AdbBootstrap {
 
     /** `adb -s <target> get-state` 是否返回 device。 */
     private fun transportAlive(ctx: Context): Boolean {
-        val r = run(ctx, listOf("-s", TARGET, "get-state"), timeoutMs = 10_000)
+        val r = run(ctx, listOf("-s", activeTarget, "get-state"), timeoutMs = 10_000)
         return r.ok && r.message.trim().equals("device", ignoreCase = true)
     }
 
@@ -229,10 +248,10 @@ object AdbBootstrap {
      * no devices/emulators found —— 这不是 ROM 的问题，任何设备首次配置都会这样。
      */
     fun ensureTransport(ctx: Context): Result {
-        if (transportAlive(ctx)) return Result(true, "已连接 $TARGET")
+        if (transportAlive(ctx)) return Result(true, "已连接 $activeTarget")
 
         // 1) 先试固定端口（可能之前已经固定过）
-        val fixed = connectAndVerify(ctx, TARGET)
+        val fixed = connectAndVerify(ctx, activeTarget)
         if (fixed.ok) return fixed
 
         // 2) 发现无线调试的动态连接端口
@@ -249,7 +268,7 @@ object AdbBootstrap {
 
         // 3) 已经有 transport，才能把端口固定到 5555（写 persist 属性）
         // ★ 这里必须显式指定**刚刚验证过的动态端口**：此刻 5555 还没起来，
-        //   run() 的兜底若补成 -s TARGET 反而会连到不存在的设备。
+        //   run() 的兜底若补成 -s activeTarget 反而会连到不存在的设备。
         val tcpip = run(
             ctx,
             listOf("-s", "127.0.0.1:$port", "tcpip", CONNECT_PORT.toString()),
@@ -264,11 +283,131 @@ object AdbBootstrap {
         var last = ""
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(1_000)
-            val r = connectAndVerify(ctx, TARGET)
-            if (r.ok) return Result(true, "已连接 $TARGET（端口已固定为 $CONNECT_PORT）")
+            val r = connectAndVerify(ctx, activeTarget)
+            if (r.ok) return Result(true, "已连接 $activeTarget（端口已固定为 $CONNECT_PORT）")
             last = r.message
         }
-        return Result(false, "端口已切到 TCP 模式，但未能连接到 $TARGET：$last")
+        return Result(false, "端口已切到 TCP 模式，但未能连接到 $activeTarget：$last")
+    }
+
+    /**
+     * 按当前模式挑一条建连路径。
+     *
+     * 默认（固定端口）走原来的 [ensureTransport]，一行逻辑都不改；
+     * 用户在安装页勾选「无线发现」时走 [ensureTransportDiscover]。
+     */
+    private fun ensureTransportSmart(ctx: Context): Result =
+        if (UiPrefs.discoverMode(ctx)) ensureTransportDiscover(ctx) else ensureTransport(ctx)
+
+    /**
+     * 无线发现模式：只读探测，绝不执行 adb tcpip / setprop / 关端口。
+     *
+     * 依赖首次激活时 [enableWirelessAutostart] 让系统开机自动开启无线调试，
+     * 以及 adbd 里跨重启保持的配对公钥 —— 所以这里只需要找到端口并连上，
+     * 不需要重新配对，也不会重启 adbd（不会打断 Shizuku）。
+     */
+    private fun ensureTransportDiscover(ctx: Context): Result {
+        if (transportAlive(ctx)) return Result(true, "已连接 $activeTarget")
+
+        // 1) 上次成功的动态端口：很多 ROM 会复用，命中就省掉整段 mDNS
+        val cached = AutostartPrefs.lastConnectPort(ctx)
+        if (cached in 1..65535) {
+            val s = "127.0.0.1:$cached"
+            val r = connectAndVerify(ctx, s)
+            if (r.ok) {
+                adoptTarget(ctx, s, cached)
+                return Result(true, "已连接 $s（缓存端口，复用配对密钥）")
+            }
+        }
+
+        // 2) mDNS 发现 _adb-tls-connect._tcp
+        val port = discoverConnectPort(ctx, timeoutMs = DISCOVER_TIMEOUT_MS)
+            ?: return Result(
+                false,
+                "未发现无线调试连接端口：请确认无线调试已开启、WiFi 已连接且屏幕解锁（未改动 adbd 状态）",
+            )
+        val s = "127.0.0.1:$port"
+        val r = connectAndVerify(ctx, s)
+        if (!r.ok) return r
+        adoptTarget(ctx, s, port)
+        return Result(true, "已连接 $s（mDNS 发现，复用配对密钥）")
+    }
+
+    private fun adoptTarget(ctx: Context, serial: String, port: Int) {
+        activeTarget = serial
+        if (port > 0) AutostartPrefs.setLastConnectPort(ctx, port)
+    }
+
+    /**
+     * 首次激活（发现模式）时打开「开机自动开启无线调试」。
+     *
+     * ★ 不直接 setprop：shell(uid 2000) 写不了 adbd_config_prop 这类系统属性
+     *   （项目里写 persist.adb.tcp.port 只能靠 adb 协议指令就是这个原因）。
+     *   这里用 settings 让 system_server 代写：
+     *     settings put global adb_wifi_enabled 1
+     *       → AdbSettingsObserver → AdbService.setAdbEnabled(WIFI)
+     *       → SystemProperties.set(persist.adb.tls_server.enable, "1")
+     *   开机时 AdbService.systemReady() 读它、bootCompleted() 据此拉起 wifi adb。
+     *
+     * 注意：AdbDebuggingManager 会在 WiFi 未连接/不可信时把值改回 0，
+     * 所以读回校验是必须的，失败要如实告诉用户而不是假装成功。
+     */
+    fun enableWirelessAutostart(ctx: Context): Result {
+        val t = ensureTransportDiscover(ctx)
+        if (!t.ok) return Result(false, "开启无线调试自启失败：${t.message}")
+
+        // 两者互斥：已固定 5555 时 adbd 常驻 legacy TCP 模式，无线调试会被压掉。
+        // 这里不自动清除（清属性会重启 adbd 并杀掉框架），只如实报错。
+        val pinned = run(
+            ctx,
+            listOf("-s", activeTarget, "shell", "getprop persist.adb.tcp.port"),
+            timeoutMs = 10_000,
+        )
+        if (pinned.ok && pinned.message.trim() == CONNECT_PORT.toString()) {
+            return Result(
+                false,
+                "检测到 persist.adb.tcp.port 已固定为 $CONNECT_PORT，与无线发现模式互斥。"
+                    + "该选项需要在首次配对前开启；已固定的设备请先清除该属性再重试",
+            )
+        }
+
+        run(
+            ctx,
+            listOf("-s", activeTarget, "shell", "settings put global adb_wifi_enabled 1"),
+            timeoutMs = 15_000,
+        )
+        Thread.sleep(1_200)
+        var v = readTlsProp(ctx)
+        if (!v.ok || v.message.trim() != "1") {
+            // 少数 ROM 允许 shell 直接写；失败也不致命，后面还有一次读回
+            run(
+                ctx,
+                listOf("-s", activeTarget, "shell", "setprop persist.adb.tls_server.enable 1"),
+                timeoutMs = 10_000,
+            )
+            Thread.sleep(600)
+            v = readTlsProp(ctx)
+        }
+        return if (v.ok && v.message.trim() == "1") {
+            Result(true, "已开启无线调试开机自启（persist.adb.tls_server.enable=1），未固定 TCP 端口")
+        } else {
+            Result(
+                false,
+                "该设备未接受开机自启设置（当前 persist.adb.tls_server.enable=[${v.message.trim()}]）。"
+                    + "可能是 WiFi 未连接/不可信被系统重置，或 ROM 改写了 AdbService；"
+                    + "建议改用默认的「固定 ADB 端口」模式",
+            )
+        }
+    }
+
+    private fun readTlsProp(ctx: Context): Result {
+        // settings put 可能触发 adbd 状态变化，先确保 transport 还活着
+        if (!transportAlive(ctx)) ensureTransportDiscover(ctx)
+        return run(
+            ctx,
+            listOf("-s", activeTarget, "shell", "getprop persist.adb.tls_server.enable"),
+            timeoutMs = 10_000,
+        )
     }
 
     /** 用 mDNS 发现无线调试的动态连接端口（阻塞等待结果）。 */
@@ -320,7 +459,7 @@ object AdbBootstrap {
         }
         val r = run(
             ctx,
-            listOf("-s", TARGET, "shell", "test -f $UNINSTALL_SH && sh $UNINSTALL_SH y"),
+            listOf("-s", activeTarget, "shell", "test -f $UNINSTALL_SH && sh $UNINSTALL_SH y"),
             timeoutMs = 60_000,
         )
         if (r.ok) return Result(true, "卸载完成")
@@ -329,7 +468,7 @@ object AdbBootstrap {
         val fallback = run(
             ctx,
             listOf(
-                "-s", TARGET, "shell",
+                "-s", activeTarget, "shell",
                 "rm -rf $IWPHONE_ROOT /sdcard/iwphone/logs /sdcard/iwphone/state",
             ),
             timeoutMs = 20_000,
@@ -361,7 +500,7 @@ object AdbBootstrap {
         }
         val r = run(
             ctx,
-            listOf("-s", TARGET, "shell", "test -f $MAIN_SH && echo yes"),
+            listOf("-s", activeTarget, "shell", "test -f $MAIN_SH && echo yes"),
             timeoutMs = 10_000,
         )
         // ★ 严格判定：必须「命令成功」且「输出恰好是 yes」。
@@ -393,12 +532,14 @@ object AdbBootstrap {
      */
     fun isPortFixed(ctx: Context): Boolean {
         if (!isProvisioned(ctx)) return false
+        // 发现模式下从不固定端口，别白等一次 3s 的 getprop 超时
+        if (UiPrefs.discoverMode(ctx)) return false
         // ★ 只读一个属性，不该为了它去建立 transport：ensureConnected 里的
         //   get-state / connect 最长各 10s，会把调用方拖死。连不上就如实
         //   返回 false，需要建连的动作交给 startFramework / deployFramework。
         val r = run(
             ctx,
-            listOf("-s", TARGET, "shell", "getprop persist.adb.tcp.port"),
+            listOf("-s", activeTarget, "shell", "getprop persist.adb.tcp.port"),
             timeoutMs = 3_000,
         )
         android.util.Log.d(
@@ -414,7 +555,7 @@ object AdbBootstrap {
         if (!ensureConnected(ctx)) return false
         val r = run(
             ctx,
-            listOf("-s", TARGET, "shell", "test -s $WEBUI_TOKEN_FILE && echo yes"),
+            listOf("-s", activeTarget, "shell", "test -s $WEBUI_TOKEN_FILE && echo yes"),
             timeoutMs = 10_000,
         )
         return r.ok && r.message.contains("yes")
@@ -436,12 +577,12 @@ object AdbBootstrap {
         // 刚部署完时 state/ 可能还没被框架建出来，push 到不存在的目录会失败
         run(
             ctx,
-            listOf("-s", TARGET, "shell", "mkdir -p ${'$'}IWPHONE_ROOT/state"),
+            listOf("-s", activeTarget, "shell", "mkdir -p ${'$'}IWPHONE_ROOT/state"),
             timeoutMs = 10_000,
         )
         val pushed = run(
             ctx,
-            listOf("-s", TARGET, "push", cachePath, WEBUI_TOKEN_FILE),
+            listOf("-s", activeTarget, "push", cachePath, WEBUI_TOKEN_FILE),
             timeoutMs = 30_000,
         )
         if (!pushed.ok) {
@@ -450,7 +591,7 @@ object AdbBootstrap {
         run(
             ctx,
             listOf(
-                "-s", TARGET, "shell",
+                "-s", activeTarget, "shell",
                 "chmod 600 $WEBUI_TOKEN_FILE && echo ok",
             ),
             timeoutMs = 15_000,
@@ -510,7 +651,7 @@ object AdbBootstrap {
 
         val pushed = run(
             ctx,
-            listOf("-s", TARGET, "push", cachePath, "$FRAME_DIR/module/$safe"),
+            listOf("-s", activeTarget, "push", cachePath, "$FRAME_DIR/module/$safe"),
             timeoutMs = 120_000,
         )
         if (!pushed.ok) {
@@ -521,7 +662,7 @@ object AdbBootstrap {
         run(
             ctx,
             listOf(
-                "-s", TARGET, "shell",
+                "-s", activeTarget, "shell",
                 "chmod 777 '$FRAME_DIR/module/$safe' && echo ok",
             ),
             timeoutMs = 15_000,
@@ -615,7 +756,7 @@ object AdbBootstrap {
 
         // 配对 ≠ 已连接：首次部署前必须先建 transport（发现动态端口 → 固定 5555），
         // 否则 push / shell 都会报 no devices/emulators found。
-        val transport = ensureTransport(ctx)
+        val transport = ensureTransportSmart(ctx)
         if (!transport.ok) {
             return Result(false, "未连接到设备：${transport.message}")
         }
@@ -652,7 +793,7 @@ object AdbBootstrap {
         // 2) push 到设备（12MB 走 localhost，通常几秒）
         val pushed = run(
             ctx,
-            listOf("-s", TARGET, "push", staged.absolutePath, FW_TAR_ON_DEVICE),
+            listOf("-s", activeTarget, "push", staged.absolutePath, FW_TAR_ON_DEVICE),
             timeoutMs = 120_000,
         )
         if (!pushed.ok) {
@@ -680,7 +821,7 @@ object AdbBootstrap {
             "rm -f $FW_TAR_ON_DEVICE && echo deployed"
         val extract = run(
             ctx,
-            listOf("-s", TARGET, "shell", extractCmd),
+            listOf("-s", activeTarget, "shell", extractCmd),
             timeoutMs = 180_000,
         )
         // 用户选的文件不能删 —— 那是他自己的文件
@@ -701,7 +842,7 @@ object AdbBootstrap {
             run(
                 ctx,
                 listOf(
-                    "-s", TARGET, "shell",
+                    "-s", activeTarget, "shell",
                     "echo $vc > $FRAME_DIR/.deployed && chmod 666 $FRAME_DIR/.deployed",
                 ),
                 timeoutMs = 10_000,
@@ -732,7 +873,7 @@ object AdbBootstrap {
         if (!ensureConnected(ctx)) return -1
         val r = run(
             ctx,
-            listOf("-s", TARGET, "shell", "cat $FRAME_DIR/.deployed 2>/dev/null"),
+            listOf("-s", activeTarget, "shell", "cat $FRAME_DIR/.deployed 2>/dev/null"),
             timeoutMs = 8_000,
         )
         if (!r.ok) return -1
@@ -768,7 +909,7 @@ object AdbBootstrap {
      *
      *   只给三处已知的 push 补 `-s` 治标不治本，以后新增一个又会漏。
      *   所以凡是 device-scoped 子命令且调用方没显式给 `-s/-d/-e`，一律补上
-     *   `-s TARGET`。`connect`/`pair`/`devices`/`kill-server` 这类全局命令不在表内。
+     *   `-s activeTarget`。`connect`/`pair`/`devices`/`kill-server` 这类全局命令不在表内。
      */
     private val DEVICE_SCOPED_COMMANDS = setOf(
         "push", "pull", "sync", "shell", "install", "install-multiple",
@@ -783,7 +924,7 @@ object AdbBootstrap {
         // 调用方已经显式指定目标（例如 tcpip 阶段要用动态端口，不能改成 5555）
         if (args[0] in setOf("-s", "-d", "-e", "-t")) return args
         if (args[0] !in DEVICE_SCOPED_COMMANDS) return args
-        return listOf("-s", TARGET) + args
+        return listOf("-s", activeTarget) + args
     }
 
     /**
@@ -886,6 +1027,9 @@ object AdbBootstrap {
     fun ensureFixedPort(ctx: Context): Result {
         // 用户可在安装页「高级选项」里选择不固定端口。
         // 这是有意的取舍：不让调试端口长期常开，代价是重启后要重新配对。
+        if (UiPrefs.discoverMode(ctx)) {
+            return enableWirelessAutostart(ctx)
+        }
         if (!UiPrefs.pinPort(ctx)) {
             return Result(true, "已按设置跳过固定端口（重启后需重新配对）")
         }
@@ -897,7 +1041,7 @@ object AdbBootstrap {
         // 已连上 5555：先确认 persist 真的写入了（跨重启才有效）
         val current = run(
             ctx,
-            listOf("-s", TARGET, "shell", "getprop persist.adb.tcp.port"),
+            listOf("-s", activeTarget, "shell", "getprop persist.adb.tcp.port"),
             timeoutMs = 10_000,
         )
         if (current.ok && current.message.trim() == CONNECT_PORT.toString()) {
@@ -910,7 +1054,7 @@ object AdbBootstrap {
         // 属性没写 → 用现有 transport 再下发一次 tcpip
         val r = run(
             ctx,
-            listOf("-s", TARGET, "tcpip", CONNECT_PORT.toString()),
+            listOf("-s", activeTarget, "tcpip", CONNECT_PORT.toString()),
             timeoutMs = 30_000,
         )
         if (!r.ok) {
@@ -927,11 +1071,11 @@ object AdbBootstrap {
         var value = ""
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(1_000)
-            val conn = connectAndVerify(ctx, TARGET)
+            val conn = connectAndVerify(ctx, activeTarget)
             if (!conn.ok) continue
             val v = run(
                 ctx,
-                listOf("-s", TARGET, "shell", "getprop persist.adb.tcp.port"),
+                listOf("-s", activeTarget, "shell", "getprop persist.adb.tcp.port"),
                 timeoutMs = 10_000,
             )
             if (v.ok) {
@@ -984,7 +1128,7 @@ object AdbBootstrap {
         val r = run(
             ctx,
             listOf(
-                "-s", TARGET, "shell",
+                "-s", activeTarget, "shell",
                 "ps -A -o ARGS | grep -c '[M]ain.sh'",
             ),
         )
@@ -1007,7 +1151,7 @@ object AdbBootstrap {
         run(
             ctx,
             listOf(
-                "-s", TARGET, "shell",
+                "-s", activeTarget, "shell",
                 "nohup setsid -d sh $WEBUI_START >/dev/null 2>&1 </dev/null &",
             ),
         )
@@ -1035,7 +1179,7 @@ object AdbBootstrap {
         }
 
         // 首次使用 / 5555 尚未监听时，这里会先连无线调试动态端口再固定 5555
-        val c = ensureTransport(ctx)
+        val c = ensureTransportSmart(ctx)
         if (!c.ok) return c
 
         if (frameworkRunning(ctx)) {
@@ -1051,7 +1195,7 @@ object AdbBootstrap {
         val startMain = run(
             ctx,
             listOf(
-                "-s", TARGET, "shell",
+                "-s", activeTarget, "shell",
                 "nohup setsid -d sh $MAIN_SH >/dev/null 2>&1 </dev/null &",
             ),
         )

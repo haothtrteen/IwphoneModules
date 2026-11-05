@@ -72,10 +72,19 @@ class PairingReceiver : BroadcastReceiver() {
                     if (ok) {
                         val fixed = AdbBootstrap.ensureFixedPort(ctx)
                         msg = if (fixed.ok) {
-                            "配对成功，并已固定 ADB 端口 ${AdbBootstrap.CONNECT_PORT}。" +
-                                "之后每次开机 App 都会自动重连。"
+                            if (UiPrefs.discoverMode(ctx)) {
+                                "配对成功，已开启无线调试开机自启（未固定端口）。" +
+                                    "之后每次开机 App 会自动发现端口并重连。"
+                            } else {
+                                "配对成功，并已固定 ADB 端口 ${AdbBootstrap.CONNECT_PORT}。" +
+                                    "之后每次开机 App 都会自动重连。"
+                            }
                         } else {
-                            "配对成功，但固定端口失败：${fixed.message}"
+                            if (UiPrefs.discoverMode(ctx)) {
+                                "配对成功，但开启无线调试自启失败：${fixed.message}"
+                            } else {
+                                "配对成功，但固定端口失败：${fixed.message}"
+                            }
                         }
                     }
                 }

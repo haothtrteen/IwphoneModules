@@ -18,6 +18,7 @@ object UiPrefs {
     private const val KEY_ONBOARDING = "onboarding_done"
     private const val KEY_TOKEN_PROMPT = "token_prompt_dismissed"
     private const val KEY_PIN_PORT = "pin_adb_port"
+    private const val KEY_DISCOVER_MODE = "discover_mode"
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -62,8 +63,24 @@ object UiPrefs {
         sp(ctx).edit().putBoolean(KEY_PIN_PORT, value).apply()
     }
 
+    /**
+     * 「无线调试自动发现」模式（安装页高级选项，默认关闭）。
+     *
+     * 开启后**不写** persist.adb.tcp.port，首次激活只打开无线调试开机自启，
+     * 每次开机靠 mDNS 发现动态端口 + 复用跨重启的配对公钥建连。
+     * 好处是不占用 5555、不会把 adb_wifi_enabled 清 0（对 Shizuku 友好）；
+     * 代价是自启依赖开机时 WiFi 已连接且被系统判定为可信。
+     */
+    fun discoverMode(ctx: Context): Boolean =
+        sp(ctx).getBoolean(KEY_DISCOVER_MODE, false)
+
+    fun setDiscoverMode(ctx: Context, value: Boolean) {
+        sp(ctx).edit().putBoolean(KEY_DISCOVER_MODE, value).apply()
+    }
+
     fun snapshot(ctx: Context): Map<String, Any> = mapOf(
         "pinPort" to pinPort(ctx),
+        "discoverMode" to discoverMode(ctx),
         "themeMode" to themeMode(ctx),
         "locale" to locale(ctx),
         "onboardingDone" to onboardingDone(ctx),

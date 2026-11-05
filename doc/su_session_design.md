@@ -605,9 +605,50 @@ adbd 可能只设运行时 `service.adb.tcp.port` 而不写 persist，结果是�
 
 ---
 
+# 六、v1.3.16 已实现：无线发现模式（安装页高级选项）
+
+**默认行为完全不变**：不勾选时仍走原来的 `adb tcpip 5555` 固定端口链路，
+`ensureTransport()` 一行未改。
+
+勾选「无线调试自动发现（不固定端口）」后：
+
+| 阶段 | 行为 |
+|---|---|
+| 首次激活 / 配对成功 | `enableWirelessAutostart()`：`settings put global adb_wifi_enabled 1` → 由 `AdbSettingsObserver` / `AdbService` **让 system_server 写** `persist.adb.tls_server.enable=1`，绕开 shell 写不了 `adbd_config_prop` 的限制；随后读回校验。**不执行 `adb tcpip`，不写 `persist.adb.tcp.port`** |
+| 每次开机 | `BootReceiver` → JobService → `startFramework()` → `ensureTransportDiscover()`：缓存端口 → mDNS `_adb-tls-connect._tcp`（8s）→ `connectAndVerify()` 复用跨重启的配对公钥 → 拉起框架。全程只读，不重启 adbd |
+| 失败 | 30s / 90s 退避重试 2 次（mDNS 广播常晚于 BOOT_COMPLETED）；成功清零 |
+
+关键实现点：
+
+- **transport target 参数化**：`activeTarget: String`（默认 `TARGET=127.0.0.1:5555`），
+  `withDeviceSelector()` 与所有显式 `-s` 都取它。否则会出现「连的是动态端口、
+  后续 push/shell 却打到不存在的 5555」。这同时修掉了 4.4.1 的前提。
+- **偏好即时落盘**：`setDiscoverMode` / `setPinPort` 在勾选时立刻写原生 prefs，
+  不等点「部署框架」——因为 `PairingReceiver` 配对成功会**立刻**调 `ensureFixedPort()`。
+- **互斥与冲突检测**：`ensureFixedPort()` 在发现模式下转调 `enableWirelessAutostart()`；
+  后者若检测到 `persist.adb.tcp.port=5555` 已存在，直接报错并提示「需在首次配对前开启」，
+  **不自动清除**（清属性会重启 adbd 并杀掉框架）。
+- **两个开关互斥**：打开无线发现会自动把「固定 ADB 端口」置回开并禁用其交互。
+- `isPortFixed()` 在发现模式下直接返回 false，避免白等一次 3s 的 getprop 超时。
+- 文案与日志：安装页高级选项说明代价与前置，安装日志新增 `log.discoverModeOn`。
+
+**仍需真机验证（设备未连接，未做任何端到端验证）**：
+
+1. `settings put global adb_wifi_enabled 1` 在小米 22011211C 上是否真的让
+   `AdbService` 写出 `persist.adb.tls_server.enable=1`，且重启后值仍为 1；
+2. 开机时 `AdbDebuggingManager` 的 WiFi 可信检查会不会把它改回 0（AOSP/Android 13
+   实机有此现象）——这是本模式最大的不确定项，也是高级选项文案里明示的风险；
+3. `NsdManager` 在开机后多久稳定广播 `_adb-tls-connect._tcp`（决定 8s 超时与退避窗口）；
+4. 与 Shizuku 同时启用时是否真的不再互相打断。
+
+若 1 或 2 不成立，模式会在安装日志里如实报错并建议切回默认的固定端口模式，
+不会静默假装成功。
+
+---
+
 ## 附：本文未做的事
 
-- 未修改任何运行代码（Python / Kotlin / Dart / Manifest 均未动）
+- 第一至五章为评估；**第六章所述无线发现模式已在 v1.3.16 落地**（Kotlin / Dart / i18n / 安装页）
 - 未在真机复现 Shizuku 冲突（设备未连接）
 - 未验证 `/data/local/tmp` 对 `untrusted_app` 的读/执行权限
 - 未核对 Shizuku `starter.cpp` 的 `foreach_proc()` 精确匹配条件

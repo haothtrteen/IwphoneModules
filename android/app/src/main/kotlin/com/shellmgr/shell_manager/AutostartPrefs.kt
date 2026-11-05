@@ -27,6 +27,8 @@ object AutostartPrefs {
     private const val KEY_LAST_MSG = "last_msg"
     private const val KEY_WEBUI_TOKEN = "webui_token"
     private const val KEY_DEPLOY_STAMP = "fw_deploy_stamp"
+    private const val KEY_LAST_CONNECT_PORT = "last_connect_port"
+    private const val KEY_DISCOVER_RETRY = "discover_retry"
 
     /**
      * 上次部署框架时本 App 的安装时间戳（毫秒）。
@@ -40,6 +42,22 @@ object AutostartPrefs {
     }
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+    /** 上次 mDNS 发现并成功连上的无线调试端口；0 表示没有。 */
+    fun lastConnectPort(ctx: Context): Int =
+        sp(ctx).getInt(KEY_LAST_CONNECT_PORT, 0)
+
+    fun setLastConnectPort(ctx: Context, value: Int) {
+        sp(ctx).edit().putInt(KEY_LAST_CONNECT_PORT, value).apply()
+    }
+
+    /** 发现模式下本次开机的探测重试次数（成功后清零）。 */
+    fun discoverRetryCount(ctx: Context): Int =
+        sp(ctx).getInt(KEY_DISCOVER_RETRY, 0)
+
+    fun setDiscoverRetryCount(ctx: Context, value: Int) {
+        sp(ctx).edit().putInt(KEY_DISCOVER_RETRY, value).apply()
+    }
 
     /**
      * WebUI 访问密钥（用户自己设的那把）。

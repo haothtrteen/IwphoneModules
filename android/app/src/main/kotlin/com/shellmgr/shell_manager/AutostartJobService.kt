@@ -90,6 +90,20 @@ class AutostartJobService : JobService() {
                 msg = "未预期异常：${e.javaClass.simpleName}: ${e.message}"
             }
 
+            // 发现模式：mDNS 广播可能晚于 BOOT_COMPLETED，一次判死会误报。
+            // 失败时重新排两次（30s / 90s），成功则清零。
+            if (ok) {
+                AutostartPrefs.setDiscoverRetryCount(ctx, 0)
+            } else if (!skipped && UiPrefs.discoverMode(ctx) &&
+                (msg.contains("未发现无线调试") || msg.contains("未连接到设备"))
+            ) {
+                val n = AutostartPrefs.discoverRetryCount(ctx)
+                if (n < 2) {
+                    AutostartPrefs.setDiscoverRetryCount(ctx, n + 1)
+                    AutostartScheduler.schedule(ctx, delayMs = if (n == 0) 30_000L else 90_000L)
+                }
+            }
+
             if (!skipped) {
                 AutostartPrefs.recordResult(ctx, ok, msg)
                 AutostartNotify.post(ctx, ok, msg)

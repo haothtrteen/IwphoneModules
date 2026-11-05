@@ -179,6 +179,12 @@ class AutostartChannel(private val activity: FlutterActivity) {
                     result.success(true)
                 }
 
+                // 安装页高级选项：无线调试自动发现（不固定 TCP 端口）
+                "setDiscoverMode" -> {
+                    UiPrefs.setDiscoverMode(activity, call.argument<Boolean>("value") ?: false)
+                    result.success(true)
+                }
+
                 "saveUiPrefs" -> {
                     call.argument<String>("themeMode")?.let { UiPrefs.setThemeMode(activity, it) }
                     call.argument<String>("locale")?.let { UiPrefs.setLocale(activity, it) }

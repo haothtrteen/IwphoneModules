@@ -356,6 +356,18 @@ class AutostartService {
     }
   }
 
+  /// 安装页高级选项：是否启用「无线调试自动发现」模式。
+  ///
+  /// ★ 必须在配对之前写入：通知栏配对成功会立刻触发 PairingReceiver →
+  ///   ensureFixedPort()，那时才会读这个偏好。等到点「部署框架」再写就晚了。
+  Future<void> setDiscoverMode(bool value) async {
+    try {
+      await _channel.invokeMethod<bool>('setDiscoverMode', {'value': value});
+    } catch (_) {
+      // 写失败保持默认（固定端口），不影响安装流程
+    }
+  }
+
   /// 重启本 App（安装日志页完成后调用）。
   ///
   /// 会杀掉当前进程并重新拉起入口 Activity，让 main() 重新探测框架状态。

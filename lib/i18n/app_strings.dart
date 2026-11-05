@@ -806,6 +806,11 @@ abstract final class AppStrings {
       'missing.advanced': '高级选项',
       'missing.optNoToken': '不设置 IWPhone 密钥',
       'missing.optNoTokenDesc': '不设密钥时，本机任意应用都能以 shell 权限调用 /api/shell，且没有二次确认。',
+      'missing.optDiscover': '无线调试自动发现（不固定端口）',
+      'missing.optDiscoverDesc': '只开启无线调试的开机自启，不写 5555 端口属性；每次开机用 mDNS 找动态端口并复用配对密钥。'
+          '不会占用 5555、不影响 Shizuku，但要求开机时 WiFi 已连接且被系统判定为可信，部分设备可能重置该设置。'
+          '须在配对前开启；已固定过 5555 的设备会提示冲突。',
+      'missing.optPinPortBlocked': '无线发现模式已开启，此选项不再生效',
       'missing.optPinPort': '固定 ADB 端口',
       'missing.optPinPortDesc': '开启后重启无需重新配对。关闭后每次重启都要重新配对，开机自启也会失效。',
 
@@ -836,6 +841,7 @@ abstract final class AppStrings {
       'log.stepPort': '应用端口策略…',
       'log.portPinned': '已固定 ADB 端口（重启免配对）',
       'log.portSkipped': '按设置跳过固定端口（重启需重新配对）',
+      'log.discoverModeOn': '已启用无线调试自动发现（未固定端口，开机 mDNS 探测）',
       'log.stepDeploy': '推送并解压框架包，补权限与运行时…',
       'log.deployed': '框架已部署',
       'log.stepKey': '下发 IWPhone 密钥…',
@@ -1676,6 +1682,12 @@ abstract final class AppStrings {
       'missing.advanced': 'Advanced options',
       'missing.optNoToken': 'Do not set an IWPhone key',
       'missing.optNoTokenDesc': 'Without a key, any app on this device can call /api/shell with shell privileges, without confirmation.',
+      'missing.optDiscover': 'Wireless discovery (no fixed port)',
+      'missing.optDiscoverDesc': 'Only enables wireless debugging autostart; does not pin port 5555. '
+          'Each boot finds the dynamic port via mDNS and reuses the pairing key. Shizuku-friendly, '
+          'but requires WiFi to be connected and trusted at boot; some ROMs reset the setting. '
+          'Enable before pairing; devices with 5555 already pinned will report a conflict.',
+      'missing.optPinPortBlocked': 'Disabled while wireless discovery is on',
       'missing.optPinPort': 'Pin the ADB port',
       'missing.optPinPortDesc': 'On: no re-pairing after reboot. Off: you must re-pair on every reboot and autostart stops working.',
 
@@ -1706,6 +1718,7 @@ abstract final class AppStrings {
       'log.stepPort': 'Applying port policy…',
       'log.portPinned': 'ADB port pinned (no re-pairing after reboot)',
       'log.portSkipped': 'Port pinning skipped as requested (re-pair after reboot)',
+      'log.discoverModeOn': 'Wireless discovery enabled (no pinned port, mDNS probe on boot)',
       'log.stepDeploy': 'Pushing and unpacking the framework, fixing permissions…',
       'log.deployed': 'Framework deployed',
       'log.stepKey': 'Applying the IWPhone key…',
