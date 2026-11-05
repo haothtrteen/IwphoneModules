@@ -1,7 +1,8 @@
 package com.shellmgr.shell_manager
 
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
@@ -49,6 +50,30 @@ class AppAuthChannel(private val ctx: android.content.Context) {
                     }
                     mapOf("ok" to true, "items" to arr.toString())
                 }
+
+                "listDenied" -> runAsync(result) {
+                    val arr = JSONArray()
+                    BrokerStore.deniedList(ctx).sortedByDescending { it.at }.forEach { d ->
+                        arr.put(entryOf(d.pkg, d.uid, d.sigHash, mapOf(
+                            "grantedAt" to d.at,
+                        )))
+                    }
+                    mapOf("ok" to true, "items" to arr.toString())
+                }
+
+                "clearDenied" -> {
+                    val pkg = call.argument<String>("pkg")
+                    BrokerStore.clearDenied(ctx, pkg)
+                    result.success(mapOf("ok" to true))
+                }
+
+                /** 悬浮窗权限是否已开 —— 决定「请求即确认」能不能用。 */
+                "overlayState" -> result.success(
+                    mapOf("ok" to true, "enabled" to BrokerPrompt.canOverlay(ctx))
+                )
+
+                /** 跳系统「显示在其他应用上层」设置页。 */
+                "openOverlaySettings" -> result.success(openOverlaySettings())
 
                 "grant" -> {
                     val pkg = call.argument<String>("pkg") ?: ""
@@ -105,6 +130,17 @@ class AppAuthChannel(private val ctx: android.content.Context) {
     }
 
     // ------------------------------------------------------------------
+
+    private fun openOverlaySettings(): Map<String, Any?> = try {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:${ctx.packageName}"),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ctx.startActivity(intent)
+        mapOf("ok" to true)
+    } catch (e: Exception) {
+        mapOf("ok" to false, "msg" to "无法打开悬浮窗设置：${e.message}")
+    }
 
     private fun grant(pkg: String): Map<String, Any?> {
         if (pkg.isEmpty()) return mapOf("ok" to false, "msg" to "包名为空")

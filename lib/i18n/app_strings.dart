@@ -735,6 +735,19 @@ abstract final class AppStrings {
       'auth.copied': '已复制到剪贴板',
       'auth.loadFail': '读取授权信息失败',
       'auth.frameworkNote': '执行依赖 iwphone 框架运行中；框架停止时本通道会直接返回 FRAMEWORK_DOWN。',
+      'auth.promptOnTitle': '即时授权弹窗已开启',
+      'auth.promptOnBody': '未授权应用发起调用时会当场弹出「允许 / 拒绝」对话框，用户点完才继续执行。'
+          '勾选「记住此选择」可长期生效；45 秒无人处理自动按拒绝处理。',
+      'auth.promptOffTitle': '即时授权弹窗未开启',
+      'auth.promptOffBody': '需要「显示在其他应用上层」权限才能在后台弹出授权框。'
+          '未开启时自动降级为待授权列表：调用先登记、用户回本页点允许。',
+      'auth.promptEnable': '去开启',
+      'auth.promptOpenFail': '无法打开悬浮窗设置页',
+      'auth.sectionDenied': '已拒绝的应用',
+      'auth.deniedHint': '这些应用被「记住并拒绝」，不会再弹窗。解除后可重新请求。',
+      'auth.clearDenied': '解除全部拒绝',
+      'auth.clearedDenied': '已解除拒绝',
+      'auth.undeny': '解除',
 
       // ---- 框架未安装门禁页 ----
       'missing.notInstalled': '未安装',
@@ -1592,6 +1605,19 @@ abstract final class AppStrings {
       'auth.copied': 'Copied to clipboard',
       'auth.loadFail': 'Failed to load authorization data',
       'auth.frameworkNote': 'Commands need the iwphone framework running; otherwise the channel returns FRAMEWORK_DOWN.',
+      'auth.promptOnTitle': 'Instant authorization prompt is on',
+      'auth.promptOnBody': 'An unauthorized app triggers an in-place Allow / Deny dialog; '
+          'nothing runs until the user decides. "Remember this choice" makes it permanent; no response within 45s is auto-denied.',
+      'auth.promptOffTitle': 'Instant authorization prompt is off',
+      'auth.promptOffBody': 'The "display over other apps" permission is needed to show a prompt from the background. '
+          'Without it, requests fall back to the pending list: the call is logged and the user approves here later.',
+      'auth.promptEnable': 'Enable',
+      'auth.promptOpenFail': 'Could not open the overlay settings page',
+      'auth.sectionDenied': 'Permanently denied apps',
+      'auth.deniedHint': 'These apps were denied with "remember"; no further prompts will appear until you unblock them.',
+      'auth.clearDenied': 'Unblock all',
+      'auth.clearedDenied': 'Denials removed',
+      'auth.undeny': 'Unblock',
 
       // ---- framework-missing gate ----
       'missing.notInstalled': 'Not installed',

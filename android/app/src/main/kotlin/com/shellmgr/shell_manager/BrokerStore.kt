@@ -34,6 +34,7 @@ object BrokerStore {
     private const val KEY_GRANTS = "grants"
     private const val KEY_PENDING = "pending"
     private const val KEY_AUDIT = "audit"
+    private const val KEY_DENIED = "denied"
 
     /** 调用记录上限。够回溯最近几十次，又不会把 prefs 撑大。 */
     private const val AUDIT_MAX = 300
@@ -61,6 +62,14 @@ object BrokerStore {
         val firstAt: Long,
         val lastAt: Long,
         val tries: Int,
+    )
+
+    /** 用户在弹窗里勾了「记住此选择」并点拒绝 —— 以后不再打扰。 */
+    data class Denied(
+        val pkg: String,
+        val uid: Int,
+        val sigHash: String,
+        val at: Long,
     )
 
     // ---------------- 授权清单 ----------------
@@ -98,8 +107,9 @@ object BrokerStore {
             grantedAt = now, lastUsed = 0L, calls = 0,
         )
         writeArray(ctx, KEY_GRANTS, list.map { it.toJson() })
-        // 授权后从待审批里移除
+        // 授权后从待审批里移除；之前若被「永久拒绝」也一并解除
         writeArray(ctx, KEY_PENDING, pending(ctx).filterNot { it.pkg == pkg }.map { it.toJson() })
+        clearDenied(ctx, pkg)
     }
 
     fun revoke(ctx: Context, pkg: String) {
@@ -108,6 +118,51 @@ object BrokerStore {
 
     fun revokeAll(ctx: Context) {
         sp(ctx).edit().remove(KEY_GRANTS).apply()
+    }
+
+    // ---------------- 永久拒绝 ----------------
+
+    fun deniedList(ctx: Context): List<Denied> = readArray(ctx, KEY_DENIED).mapNotNull { o ->
+        val pkg = o.optString("pkg")
+        if (pkg.isEmpty()) return@mapNotNull null
+        Denied(pkg, o.optInt("uid", -1), o.optString("sig"), o.optLong("at", 0L))
+    }
+
+    /**
+     * 是否被永久拒绝。
+     *
+     * 和授权一样按三元组核对：换签名或 uid 被回收后自动清除记录，
+     * 免得新装的应用莫名其妙继承上一任的「拒绝」。
+     */
+    fun isDenied(ctx: Context, pkg: String, uid: Int, sigHash: String): Boolean {
+        val hit = deniedList(ctx).firstOrNull { it.pkg == pkg } ?: return false
+        if (hit.uid != uid || hit.sigHash != sigHash) {
+            clearDenied(ctx, pkg)
+            return false
+        }
+        return true
+    }
+
+    fun deny(ctx: Context, pkg: String, uid: Int, sigHash: String) {
+        val list = deniedList(ctx).filterNot { it.pkg == pkg } +
+            Denied(pkg, uid, sigHash, System.currentTimeMillis())
+        writeArray(ctx, KEY_DENIED, list.map {
+            JSONObject().put("pkg", it.pkg).put("uid", it.uid)
+                .put("sig", it.sigHash).put("at", it.at)
+        })
+        // 持久拒绝时也清掉待授权记录，界面上不再重复出现
+        clearPending(ctx, pkg)
+    }
+
+    fun clearDenied(ctx: Context, pkg: String? = null) {
+        if (pkg == null) {
+            sp(ctx).edit().remove(KEY_DENIED).apply()
+            return
+        }
+        writeArray(ctx, KEY_DENIED, deniedList(ctx).filterNot { it.pkg == pkg }.map {
+            JSONObject().put("pkg", it.pkg).put("uid", it.uid)
+                .put("sig", it.sigHash).put("at", it.at)
+        })
     }
 
     // ---------------- 待审批 ----------------

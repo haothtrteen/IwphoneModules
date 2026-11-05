@@ -10,15 +10,15 @@ import '../widgets/settings_rows.dart';
 
 /// 应用授权页 —— 决定「哪些应用可以通过本应用执行 shell 命令」。
 ///
-/// ## 为什么是「列表批准」而不是「弹窗询问」
+/// ## 请求即确认（v2）
 ///
-/// Android 10 起禁止后台进程启动 Activity。调用方来请求权限时，本应用
-/// 十有八九在后台（用户正用着那个客户端应用），这时候弹窗**根本弹不出来**
-/// —— `startActivity` 会被系统静默丢弃。
+/// 未授权应用发起调用时，原生侧用悬浮窗当场弹出「允许 / 拒绝」对话框，
+/// 用户点完才继续执行命令 —— 与 Magisk 的 su 弹窗同一体验。
+/// 悬浮窗不是 Activity，所以不受 Android 10+ 后台启动限制。
 ///
-/// 所以设计成和 Shizuku 一样：未授权的调用只返回 NEED_APPROVAL 并落一条
-/// 「待授权」记录，用户自己回到本页点「允许」。这样既不依赖后台启动 Activity，
-/// 也不依赖通知权限。
+/// 悬浮窗权限需要用户手动开，没开时**自动降级**为 v1 的「待授权列表 +
+/// NEED_APPROVAL」：调用只登记、不执行，用户回本页点允许。本页顶部会显示
+/// 当前处于哪种模式并给出开启入口。
 class AppAuthScreen extends StatefulWidget {
   const AppAuthScreen({super.key});
 
@@ -26,12 +26,15 @@ class AppAuthScreen extends StatefulWidget {
   State<AppAuthScreen> createState() => _AppAuthScreenState();
 }
 
-class _AppAuthScreenState extends State<AppAuthScreen> {
+class _AppAuthScreenState extends State<AppAuthScreen>
+    with WidgetsBindingObserver {
   bool _loading = true;
   bool _hasToken = true;
+  bool _overlay = false;
   String _error = '';
   List<AuthorizedApp> _grants = const [];
   List<PendingApp> _pending = const [];
+  List<AuthorizedApp> _denied = const [];
   List<AuditEntry> _audit = const [];
 
   /// 正在撤销/批准的应用包名，用于禁用按钮防连点。
@@ -40,7 +43,20 @@ class _AppAuthScreenState extends State<AppAuthScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// 从系统设置页返回时立刻复查悬浮窗权限，不用手动点刷新。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
   }
 
   Future<void> _load() async {
@@ -50,14 +66,18 @@ class _AppAuthScreenState extends State<AppAuthScreen> {
     });
     try {
       final hasToken = await AppAuthService.instance.hasToken();
+      final overlay = await AppAuthService.instance.overlayEnabled();
       final grants = await AppAuthService.instance.listGrants();
       final pending = await AppAuthService.instance.listPending();
+      final denied = await AppAuthService.instance.listDenied();
       final audit = await AppAuthService.instance.listAudit();
       if (!mounted) return;
       setState(() {
         _hasToken = hasToken;
+        _overlay = overlay;
         _grants = grants;
         _pending = pending;
+        _denied = denied;
         _audit = audit;
         _loading = false;
       });
@@ -188,6 +208,8 @@ class _AppAuthScreenState extends State<AppAuthScreen> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
         _introCard(),
+        const SizedBox(height: 12),
+        _promptCard(),
         if (!_hasToken) ...[
           const SizedBox(height: 12),
           _tokenWarning(),
@@ -225,6 +247,28 @@ class _AppAuthScreenState extends State<AppAuthScreen> {
           ],
         ),
         const SizedBox(height: 16),
+
+        if (_denied.isNotEmpty) ...[
+          SettingsSection(
+            title: AppStrings.t('auth.sectionDenied'),
+            children: [
+              Text(AppStrings.t('auth.deniedHint'), style: AppText.desc12),
+              const SizedBox(height: 8),
+              for (final d in _denied) _deniedRow(d),
+              const SizedBox(height: 6),
+              NavRow(
+                label: AppStrings.t('auth.clearDenied'),
+                hint: AppStrings.t('auth.clearedDenied'),
+                onTap: () async {
+                  await AppAuthService.instance.clearDenied();
+                  _toast(AppStrings.t('auth.clearedDenied'));
+                  await _load();
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
 
         SettingsSection(
           title: AppStrings.t('auth.sectionAudit'),
@@ -330,6 +374,100 @@ class _AppAuthScreenState extends State<AppAuthScreen> {
             ),
             const SizedBox(height: 6),
             Text(AppStrings.t('auth.warnTokenBody'), style: AppText.desc12),
+          ],
+        ),
+      );
+
+  /// 即时弹窗状态卡片：开着显示绿灯，没开给出开启入口。
+  Widget _promptCard() {
+    final on = _overlay;
+    final color = on ? AppColors.accent : AppColors.iconOrange;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(on ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                  size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  on
+                      ? AppStrings.t('auth.promptOnTitle')
+                      : AppStrings.t('auth.promptOffTitle'),
+                  style: AppText.cardTitle.copyWith(color: color),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            on
+                ? AppStrings.t('auth.promptOnBody')
+                : AppStrings.t('auth.promptOffBody'),
+            style: AppText.desc12,
+          ),
+          if (!on) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () async {
+                  final ok = await AppAuthService.instance.openOverlaySettings();
+                  if (!ok && mounted) {
+                    _toast(AppStrings.t('auth.promptOpenFail'), ok: false);
+                  }
+                  // 回到前台时 didChangeAppLifecycleState 会自动复查
+                },
+                child: Text(AppStrings.t('auth.promptEnable')),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _deniedRow(AuthorizedApp d) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            _icon(d.icon),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(d.label.isEmpty ? d.pkg : d.label,
+                      style: AppText.rowLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  Text(d.pkg, style: AppText.desc12,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: _busy == d.pkg
+                  ? null
+                  : () async {
+                      setState(() => _busy = d.pkg);
+                      await AppAuthService.instance.clearDenied(d.pkg);
+                      if (!mounted) return;
+                      setState(() => _busy = null);
+                      _toast(AppStrings.t('auth.clearedDenied'));
+                      await _load();
+                    },
+              child: Text(AppStrings.t('auth.undeny')),
+            ),
           ],
         ),
       );

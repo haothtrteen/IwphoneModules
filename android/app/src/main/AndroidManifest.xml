@@ -14,6 +14,12 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 设置页「开机自启」开关：接收开机广播后拉起模块挂载 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 即时授权弹窗：悬浮窗权限。
+         Android 10+ 禁止后台进程启动 Activity，broker 被动被调起时本 App 在后台，
+         只有 TYPE_APPLICATION_OVERLAY 能合法弹出「允许/拒绝」对话框（Magisk 同样做法）。
+         不能运行时弹窗授予，需用户到系统设置页开启；未开启时自动降级为列表批准。 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <!-- Android 13+ 发送更新/授权提醒通知（需配合运行时申请） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

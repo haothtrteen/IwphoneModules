@@ -31,6 +31,28 @@ class AppAuthService {
     return _parse(raw, PendingApp.fromJson);
   }
 
+  /// 被用户「记住并拒绝」的应用（不会弹窗，需在这里解除）。
+  Future<List<AuthorizedApp>> listDenied() async {
+    final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('listDenied');
+    return _parse(raw, AuthorizedApp.fromJson);
+  }
+
+  /// 解除永久拒绝；[pkg] 为空时清空全部。
+  Future<void> clearDenied([String? pkg]) =>
+      _ch.invokeMethod<void>('clearDenied', {'pkg': pkg});
+
+  /// 是否已获得「显示在其他应用上层」权限 —— 决定即时弹窗能否工作。
+  Future<bool> overlayEnabled() async {
+    final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('overlayState');
+    return raw?['enabled'] == true;
+  }
+
+  /// 跳系统悬浮窗设置页。返回是否成功打开。
+  Future<bool> openOverlaySettings() async {
+    final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('openOverlaySettings');
+    return raw?['ok'] == true;
+  }
+
   /// 批准一个应用。返回 (ok, msg)。
   Future<({bool ok, String msg})> grant(String pkg) async {
     final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('grant', {'pkg': pkg});
