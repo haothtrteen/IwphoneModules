@@ -320,7 +320,16 @@ logcat -d -b events | grep -i adbd    # adbd 重启时间点
 
 - `tcpip 5555` 与 `adb_wifi_enabled` **互斥**：启用固定端口会把无线调试标志清 0（ColorOS 实测）。这正是 App 的 `adb tcpip 5555` 打断 Shizuku 的具体机制，比上一轮的推断更实。
 - `adb_wifi_enabled` 这个 global setting 值本身是持久的，但**服务不会因此自启**：重启后全端口扫描找不到任何 ADB 监听端口，必须手动把无线调试开关拨一次。与 `AdbBootstrap.kt` 类注释的实机结论一致。
-- `service.adb.tls.port`（动态端口）、`persist.adb.tls_server.enable`（prop 才是实际生效的开关）在 AOSP/部分 ROM 上存在，提供了「不固定端口但固定自启开关」的理论路径（见 R2）。
+- **AOSP 源码确认（修正上一轮"理论路径"的措辞）**：`AdbService.WIFI_PERSISTENT_CONFIG_PROPERTY = "persist.adb.tls_server.enable"`，
+  `systemReady()` 读它决定 `mIsAdbWifiEnabled` 并回写 `ADB_WIFI_ENABLED`，`bootCompleted()` 再调
+  `mDebuggingManager.setAdbEnabled(mIsAdbWifiEnabled, WIFI)`。**原生设计上，写这一个 persist 属性确实能让开机自动开启 WiFi ADB**，
+  不需要每次执行 `adb tcpip`。所以"改一个属性就全自动"在 AOSP 层面成立（见 R2）。
+- **但真机有反例**：Android 13 实机日志显示，开机时若当前 WiFi 未连接或不被判定为可信网络，
+  `AdbDebuggingManager` 会把 `persist.adb.tls_server.enable` **改回 0** 并停掉 wifi adb
+  （日志：`changed to 0` / `adb wifi stopped`），表现正是"设了 1，开机后读回来还是 0"。
+  另外 `service.adb.tls.port` 是 `adb_wifi.cpp` 使能时写出的**结果属性**，手动设它没有意义。
+- `Settings.Global.ADB_WIFI_ENABLED` 只是 UI 状态记录，会被 `systemReady()` 用 persist 属性**覆盖**——
+  这解释了 XDA 那条"值持久但服务不自启"：单独改 settings 值没用。
 - 有资料称 Android 12+ 的 `_adb-tls-connect._tcp` 自动发现可在无线调试关闭时广播，但与主流 OEM 实测相反，**以本项目真机为准，不作为设计前提**。
 
 ## 4.3 设计：只读探测链 `probeTransport()`
@@ -407,10 +416,23 @@ fun ensureTransport(ctx: Context, allowReprovision: Boolean = false): Result {
 | 路线 | 做法 | 开机自启 | 与 Shizuku 共存 | 代价 / 风险 |
 |---|---|---|---|---|
 | **R1 只读探测 + 保留 5555（推荐）** | 加 `probeTransport()`；保留已写入的 `persist.adb.tcp.port`，但把 `adb tcpip` 收窄到「用户在场显式操作」 | **可靠** | **可靠**（日常自启不碰 adbd；首次配置窗口与 Shizuku 错开即可） | 需改 `ensureTransport` 与 4 个调用点；已部署设备的 5555 属性不清除（清除本身也会重启 adbd） |
-| **R2 持久 TLS 开关 + mDNS** | 首次配置写 `persist.adb.tls_server.enable=1`（不固定端口），开机靠 mDNS 探动态端口 | **取决于 ROM**：值持久 ≠ 服务自启，主流 OEM 实测不自启 | 好（不写 `adb.tcp.port`，不会把 `adb_wifi_enabled` 清 0） | 属性非公开 API、写入仍会改变 adbd 状态一次、小米/ColorOS 上可能完全无效；**需真机验证** |
+| **R2 持久 TLS 开关 + mDNS** | 首次配置写 `persist.adb.tls_server.enable=1`（不固定端口），开机靠 mDNS 探动态端口 | **AOSP 源码支持开机自启，但真机需过"WiFi 可信"门槛**；开机时 WiFi 未连/不可信会被重置回 0 | 好（不写 `adb.tcp.port`，不会把 `adb_wifi_enabled` 清 0） | 依赖开机时 WiFi 已连接且可信、依赖 mDNS 广播时机、动态端口仍需探测；小米 22011211C 上**未验证**；写入仍会改变 adbd 状态一次 |
 | **R3 完全不写任何属性** | 只靠 mDNS + 端口探测 | **不可靠**：本项目实机与 ColorOS 上开机无监听 | 最好 | 每次开机需用户手动拨一次无线调试开关；与「免 root 自启」的产品定位冲突 |
 
-**推荐 R1**：它把用户真正想要的东西（自动化激活 + 不与 Shizuku 抢 adbd）都拿到了，而且不必放弃已经生效的固定端口。R2 作为增强实验项，在真机验证 `persist.adb.tls_server.enable` 确实能让 adbd 开机自启之后再考虑；R3 不建议。
+### 4.5.1 三个「属性」不是一回事（最容易被混淆的点）
+
+| 名称 | 类型 | 谁读它 | 写一次能否开机全自动 |
+|---|---|---|---|
+| `persist.adb.tcp.port` | persist prop | **init / adbd 启动脚本** | **能**（本项目实机已验证）：开机 adbd 直接监听 5555，不依赖 WiFi、不依赖解锁后服务、不需要 mDNS |
+| `persist.adb.tls_server.enable` | persist prop | `AdbService.systemReady()` / `bootCompleted()` | AOSP 源码上能，但受开机时 WiFi 可信检查制约，可能被重置为 0；小米未验证 |
+| `Settings.Global.adb_wifi_enabled` | Settings | UI + `AdbSettingsObserver` | **不能单独成立**：只是状态记录，会被上面的 persist 属性覆盖 |
+
+**关键**：现行方案里的 `persist.adb.tcp.port=5555` **本来就是「改一个属性就全自动」**，而且是三者中唯一不需要
+WiFi、不需要 mDNS、不需要等系统服务回调的。R2 想换的那一个属性，价值不在于"更自动"，而在于
+**不占用 5555、不会把 `adb_wifi_enabled` 清 0，因而对 Shizuku 更友好**；代价是把自动化建立在一串
+开机时序条件（WiFi 已连接且可信 → AdbService.bootCompleted → adb_wifi 启动 → mDNS 广播 → App 探测）之上。
+
+**推荐 R1**：它把用户真正想要的东西（自动化激活 + 不与 Shizuku 抢 adbd）都拿到了，而且不必放弃已经生效的固定端口。R2 作为增强实验项，在真机验证 `persist.adb.tls_server.enable` 确实能跨重启保持且开机自启 TLS 服务之后再考虑；R3 不建议。
 
 一句更直白的总结：**该改的不是「要不要固定端口」，而是「谁有资格触发 `adb tcpip`」。** 把写操作从开机链路里摘出去，冲突窗口就从「每次开机」缩小到「首次配对那一次」。
 
@@ -429,7 +451,7 @@ fun ensureTransport(ctx: Context, allowReprovision: Boolean = false): Result {
 
 ## 4.7 仍未确认
 
-- 小米 22011211C 上 `persist.adb.tls_server.enable` 是否存在、写入后开机是否真的自启 TLS 服务
+- 小米 22011211C 上 `persist.adb.tls_server.enable=1` 写入后，**开机解锁并连上 WiFi 时该值是否仍为 1**（会不会被可信网络检查重置为 0）
 - App 进程能否读 `/proc/net/tcp` 并看到 adbd 的 LISTEN 条目
 - `NsdManager` 在开机后多久开始稳定广播 `_adb-tls-connect._tcp`（决定退避窗口取值）
 - Shizuku 具体版本在无线调试开启时是否也会重启 adbd（影响共存判据）
