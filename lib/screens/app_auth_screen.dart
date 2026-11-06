@@ -707,36 +707,57 @@ String err   = r.getString("stderr");
 
     const shellSample = r'''#!/system/bin/sh
 # ============================================================
-# iwphone 应用授权 · 终端请求权限示例
-# 用法： sh iwphone_request_permission.sh [要执行的命令]
-# 依赖： 系统自带 content 命令；从应用内 Java 调用时还需在
-#        AndroidManifest.xml 声明 <queries> 可见性
+# iwphone · 终端 shell 接入示例
+# 用法： sh iwphone_terminal.sh [要执行的命令]
+#
+# 重要：两种终端环境的可用通道不同，脚本按 uid 自动选择。
+#   adb shell / root (uid 2000 / 0) → content CLI，可触发应用授权弹窗
+#   第三方 app 的终端 (uid 10xxx)  → 回环 HTTP + 访问密钥
 # ============================================================
-AUTH='content://com.shellmgr.shell_manager.broker'
 CMD="${1:-id}"
+AUTH='content://com.shellmgr.shell_manager.broker'
+WEBUI='http://127.0.0.1:8537'
 
-echo '== 1. 查看状态（不执行命令，不需要授权） =='
-content call --uri "$AUTH" --method ping --arg ''
+# 第三方 app 终端必填：Shell Manager → 设置 → 访问密钥
+TOKEN=''
 
-echo '== 2. 请求授权 =='
-# 未授权时弹出「允许 / 拒绝」对话框，本条调用会阻塞到用户点完。
-# 勾选「记住此选择」→ 长期授权；不勾 → 仅本次。
-content call --uri "$AUTH" --method request --arg ''
+case "$(id -u)" in
+  0|2000)
+    echo '== adb shell / root：content CLI（可触发授权弹窗） =='
+    # 注意：version / ping / request 一律省略 --arg。
+    # 传空的 --arg 会让 content 打印整份 usage（No value for argument）。
+    content call --uri "$AUTH" --method version
+    content call --uri "$AUTH" --method ping
 
-echo '== 3. 执行命令 =='
-# 拒绝时看返回 Bundle 里的 code：
-#   NEED_APPROVAL / DENIED / DENIED_ONCE / PROMPT_TIMEOUT
-#   PROMPT_BUSY / FRAMEWORK_DOWN / NO_TOKEN / REJECTED
-content call --uri "$AUTH" --method exec --arg "$CMD"
+    # 未授权时弹「允许 / 拒绝」对话框，本条调用阻塞到用户点完。
+    # 勾选「记住此选择」→ 长期授权；不勾 → 仅本次。
+    content call --uri "$AUTH" --method request
 
-# 带超时： --extra 'timeout:i:30'
-# 其它方法： version / ping / request / exec''';
+    # 授权通过后执行；只有 exec 需要 --arg
+    content call --uri "$AUTH" --method exec --arg "$CMD"
+    ;;
+  *)
+    echo '== 第三方 app 终端：回环 HTTP =='
+    # content CLI 内部调 getContentProviderExternal()，需要签名级权限
+    # ACCESS_CONTENT_PROVIDERS_EXTERNALLY，普通 app 拿不到，必定抛
+    # SecurityException。所以这里改走框架 WebUI 的回环接口。
+    # 注意：这条路径不经「应用授权」表，权限由访问密钥承担。
+    if [ -z "$TOKEN" ]; then
+      echo '请先填入 TOKEN（设置 → 访问密钥）后重试' >&2
+      exit 1
+    fi
+    # 框架的 POST 参数走 query string、不读请求体：
+    # 必须用 -G --data-urlencode；用 -d 会得到「命令为空」。
+    curl -sS --max-time 20 -G -X POST -H "X-Token: $TOKEN" \
+         --data-urlencode "cmd=$CMD" "$WEBUI/api/shell"
+    ;;
+esac''';
 
     var tab = 0; // 0 = Java, 1 = Shell
 
     Future<void> doExport() async {
       final path = await AppAuthService.instance.exportScript(
-        name: 'iwphone_request_permission.sh',
+        name: 'iwphone_terminal.sh',
         text: shellSample,
       );
       if (!mounted) return;

@@ -147,6 +147,9 @@ class AppAuthChannel(private val ctx: android.content.Context) {
         if (text.isEmpty()) return mapOf("ok" to false, "path" to "")
         return try {
             val dir = ctx.getExternalFilesDir(null) ?: ctx.filesDir
+            // 部分 ROM 上 App 专属外部 files/ 目录尚未创建，writeText 会直接抛
+            // FileNotFoundException；实测设备里该目录就是缺失的。
+            if (!dir.exists()) dir.mkdirs()
             val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
             val f = java.io.File(dir, safe)
             f.writeText(text)

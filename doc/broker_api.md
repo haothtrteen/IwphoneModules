@@ -95,42 +95,52 @@ if (r != null && r.getBoolean("ok")) {
 }
 ```
 
-### 4.3 纯终端 shell（用户要求示例）
+### 4.3 纯终端 shell（真机实测结论，v1.3.17 修订）
 
-终端类应用（Termux 之类）不需要集成任何库，用系统自带的 `content` 命令行工具即可。
-它继承终端应用的 uid，所以身份识别、弹窗、授权表与 Java 调用完全一致。
+**先说结论：`content` CLI 只在 adb shell / root shell 下可用，第三方 app 的终端
+（Termux、MT 等）用不了。** 这不是脚本写错，是系统限制——小米 22011211C 实测：
 
-```sh
-# ① 只请求授权，不执行命令 —— 未授权时当场弹窗，允许后返回 granted=true
-content call --uri content://com.shellmgr.shell_manager.broker \
-             --method request --arg ""
-
-# ② 直接执行命令 —— 未授权时同一条调用先弹窗，允许后立刻执行并回显结果
-content call --uri content://com.shellmgr.shell_manager.broker \
-             --method exec --arg "id"
-
-# ③ 查状态：granted / denied / promptReady / frameworkUp
-content call --uri content://com.shellmgr.shell_manager.broker \
-             --method ping --arg ""
-
-# ④ 带超时参数（extras 用 --extra 传）
-content call --uri content://com.shellmgr.shell_manager.broker \
-             --method exec --arg "getprop ro.build.version.release" \
-             --extra "timeout:i:30"
+```
+su 10350 -c 'content call --uri ... --method ping'
+→ java.lang.SecurityException: Permission Denial: Do not have permission in call
+  getContentProviderExternal() ... requires
+  android.permission.ACCESS_CONTENT_PROVIDERS_EXTERNALLY
 ```
 
-要点：
+`content` 是 `app_process` 启动的系统工具，走 `getContentProviderExternal()`，
+该权限是签名级的，普通 app 拿不到。所以"纯 shell 触发按应用授权弹窗"只在
+shell/root 身份下成立；第三方 app 要触发授权，必须集成 `ContentResolver`（见 4.2）。
 
-- `request` 和 `exec` 都会**同步阻塞**到用户点按钮或 45 秒超时，这是预期行为，
-  不要在 UI 线程上调用；
-- `content call` 的返回以 Bundle 文本形式打印（不同系统版本格式略有差异），
-  `ok=false` 时重点看 `code` 与 `msg`；
-- 前提是 Shell Manager 已开启「显示在其他应用上层」权限，否则不会弹窗，
-  只会返回 `NEED_APPROVAL` 并登记到「待授权」列表；
-- **待真机验证**：Android 11+ 的包可见性过滤对 `app_process` 启动的 `content`
-  二进制如何归属尚未实测。若被拦（报 Unknown URL / 返回 null），改用应用内
-  `ContentResolver.call()` 并在 manifest 声明上面的 `<queries>`；
-  从 `adb shell`（uid 2000）发起会因反查不到普通应用包名而被拒。
+另一个实测坑：**`--arg` 不能传空字符串**。`--arg ''` 会被判为
+`No value for argument` 并打印整份 usage（看起来像一堆报错）。
+`version` / `ping` / `request` 一律省略该参数，只有 `exec` 需要 `--arg "<命令>"`。
+
+**adb shell / root 下（可触发授权弹窗）：**
+
+```sh
+content call --uri content://com.shellmgr.shell_manager.broker --method version
+content call --uri content://com.shellmgr.shell_manager.broker --method ping
+content call --uri content://com.shellmgr.shell_manager.broker --method request
+content call --uri content://com.shellmgr.shell_manager.broker \
+             --method exec --arg "id"
+```
+
+**第三方 app 终端（Termux / MT 等，不能走授权表）：**
+
+改走框架 WebUI 的回环接口，**权限由访问密钥承担，不经应用授权表**。
+设备实测 `uid=10350` 用下面写法能以 `uid=2000(shell)` 执行命令：
+
+```sh
+TOKEN='<设置 → 访问密钥>'
+CMD='id'
+curl -sS --max-time 20 -G -X POST -H "X-Token: $TOKEN" \
+     --data-urlencode "cmd=$CMD" "http://127.0.0.1:8537/api/shell"
+```
+
+★ 框架的 POST 参数走 query string、**不读请求体**，所以必须用
+`-G --data-urlencode`；用 `-d "cmd=..."` 只会得到 `{"ok":false,"msg":"命令为空"}`。
+无 token 时返回 403。App「接入说明」里的 Shell 脚本页签可一键导出上面两分支的
+完整脚本，按 `id -u` 自动选择通道。
 
 ## 5. 方法
 
