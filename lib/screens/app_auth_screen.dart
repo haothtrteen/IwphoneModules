@@ -6,6 +6,7 @@ import '../services/app_auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/back_icon_button.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/screen_app_bar.dart';
 import '../widgets/settings_rows.dart';
 
 /// 应用授权页 —— 决定「哪些应用可以通过本应用执行 shell 命令」。
@@ -20,7 +21,18 @@ import '../widgets/settings_rows.dart';
 /// NEED_APPROVAL」：调用只登记、不执行，用户回本页点允许。本页顶部会显示
 /// 当前处于哪种模式并给出开启入口。
 class AppAuthScreen extends StatefulWidget {
-  const AppAuthScreen({super.key});
+  const AppAuthScreen({
+    super.key,
+    this.embedded = false,
+    this.reloadToken = 0,
+  });
+
+  /// 底栏 tab 内嵌时为 true：不包 Scaffold、不显示返回按钮，
+  /// 与其它 tab 页一样由 main.dart 的 Scaffold 统一包裹。
+  final bool embedded;
+
+  /// 宿主切回本页时递增，触发重新读取授权数据。
+  final int reloadToken;
 
   @override
   State<AppAuthScreen> createState() => _AppAuthScreenState();
@@ -45,6 +57,12 @@ class _AppAuthScreenState extends State<AppAuthScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant AppAuthScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.reloadToken != oldWidget.reloadToken) _load();
   }
 
   @override
@@ -152,6 +170,44 @@ class _AppAuthScreenState extends State<AppAuthScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ScreenAppBar(
+              title: AppStrings.t('auth.title'),
+              actions: [
+                AppBarActionIcon(
+                  icon: Icons.refresh_rounded,
+                  onTap: _loading ? null : _load,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_loading)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 80),
+                child: Center(
+                  child: CircularProgressIndicator(color: AppColors.accent),
+                ),
+              )
+            else if (_error.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  '${AppStrings.t('auth.loadFail')}\n$_error',
+                  textAlign: TextAlign.center,
+                  style: AppText.desc12,
+                ),
+              )
+            else
+              ..._cards(),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
@@ -206,7 +262,12 @@ class _AppAuthScreenState extends State<AppAuthScreen>
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      children: [
+      children: _cards(),
+    );
+  }
+
+  /// 卡片列表：底栏 tab（embedded）与独立页面共用同一份内容。
+  List<Widget> _cards() => [
         _introCard(),
         const SizedBox(height: 12),
         _promptCard(),
@@ -317,9 +378,7 @@ class _AppAuthScreenState extends State<AppAuthScreen>
         ),
         const SizedBox(height: 16),
         Text(AppStrings.t('auth.frameworkNote'), style: AppText.footer),
-      ],
-    );
-  }
+  ];
 
   Widget _introCard() => Container(
         padding: const EdgeInsets.all(14),
@@ -624,7 +683,7 @@ class _AppAuthScreenState extends State<AppAuthScreen>
   // ---------------- 接入说明 ----------------
 
   void _showUsage(BuildContext context) {
-    const sample = '''
+    const javaSample = '''
 // AndroidManifest.xml（Android 11+ 需要声明可见性）
 <queries>
   <provider android:authorities="com.shellmgr.shell_manager.broker" />
@@ -636,27 +695,65 @@ Bundle r = getContentResolver().call(uri, "exec", "id", null);
 
 if (r == null) return;
 if (!r.getBoolean("ok")) {
-    // code 取值：
-    //   NEED_APPROVAL  用户尚未在本应用里授权（记进了「待授权」列表）
-    //   FRAMEWORK_DOWN 框架没在运行
-    //   NO_TOKEN       本应用没配置访问密钥
-    //   REJECTED       框架侧拒绝（命中黑名单 / 超时）
     Log.w(TAG, r.getString("code") + ": " + r.getString("msg"));
     return;
 }
-int exitCode = r.getInt("exitCode");   // 命令退出码
-String out   = r.getString("stdout");  // 已截断到 20000 字符
+int exitCode = r.getInt("exitCode");
+String out   = r.getString("stdout");
 String err   = r.getString("stderr");
 
-// 可选：传 extras 控制超时与工作目录
-Bundle ex = new Bundle();
-ex.putInt("timeout", 30);              // 1~60 秒，默认 15
-ex.putString("cwd", "/data/local/tmp");
-getContentResolver().call(uri, "exec", cmd, ex);
+// 其它方法：version / ping / request / exec
+// 可传 extras：timeout(Int 1~60)、cwd(String)''';
 
-// 其它方法
-//   "version" → {version: 1}
-//   "ping"    → {granted, package, uid, frameworkUp}''';
+    const shellSample = r'''#!/system/bin/sh
+# ============================================================
+# iwphone 应用授权 · 终端请求权限示例
+# 用法： sh iwphone_request_permission.sh [要执行的命令]
+# 依赖： 系统自带 content 命令；从应用内 Java 调用时还需在
+#        AndroidManifest.xml 声明 <queries> 可见性
+# ============================================================
+AUTH='content://com.shellmgr.shell_manager.broker'
+CMD="${1:-id}"
+
+echo '== 1. 查看状态（不执行命令，不需要授权） =='
+content call --uri "$AUTH" --method ping --arg ''
+
+echo '== 2. 请求授权 =='
+# 未授权时弹出「允许 / 拒绝」对话框，本条调用会阻塞到用户点完。
+# 勾选「记住此选择」→ 长期授权；不勾 → 仅本次。
+content call --uri "$AUTH" --method request --arg ''
+
+echo '== 3. 执行命令 =='
+# 拒绝时看返回 Bundle 里的 code：
+#   NEED_APPROVAL / DENIED / DENIED_ONCE / PROMPT_TIMEOUT
+#   PROMPT_BUSY / FRAMEWORK_DOWN / NO_TOKEN / REJECTED
+content call --uri "$AUTH" --method exec --arg "$CMD"
+
+# 带超时： --extra 'timeout:i:30'
+# 其它方法： version / ping / request / exec''';
+
+    var tab = 0; // 0 = Java, 1 = Shell
+
+    Future<void> doExport() async {
+      final path = await AppAuthService.instance.exportScript(
+        name: 'iwphone_request_permission.sh',
+        text: shellSample,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      if (path == null || path.isEmpty) {
+        _toast(AppStrings.t('auth.exportFail'), ok: false);
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: path));
+      _toast('${AppStrings.t('auth.exportedScript')}$path');
+    }
+
+    void doCopy(String text) {
+      Clipboard.setData(ClipboardData(text: text));
+      Navigator.of(context).pop();
+      _toast(AppStrings.t('auth.copied'));
+    }
 
     showModalBottomSheet<void>(
       context: context,
@@ -665,42 +762,73 @@ getContentResolver().call(uri, "exec", cmd, ex);
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.7,
-        maxChildSize: 0.92,
-        builder: (_, controller) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(AppStrings.t('auth.usageTitle'),
-                        style: AppText.cardTitle),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Clipboard.setData(const ClipboardData(text: sample));
-                      Navigator.of(ctx).pop();
-                      _toast(AppStrings.t('auth.copied'));
-                    },
-                    child: Text(AppStrings.t('auth.copy')),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: controller,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: Text(
-                  sample,
-                  style: AppText.monoValue14.copyWith(fontSize: 11.5, height: 1.45),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (_, setSheet) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.75,
+          maxChildSize: 0.92,
+          builder: (_, controller) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(AppStrings.t('auth.usageTitle'),
+                          style: AppText.cardTitle),
+                    ),
+                    if (tab == 1)
+                      TextButton(
+                        onPressed: doExport,
+                        child: Text(AppStrings.t('auth.exportScript')),
+                      ),
+                    TextButton(
+                      onPressed: () =>
+                          doCopy(tab == 0 ? javaSample : shellSample),
+                      child: Text(AppStrings.t('auth.copy')),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: tab == 0
+                            ? AppColors.accent.withValues(alpha: 0.12)
+                            : null,
+                      ),
+                      onPressed: () => setSheet(() => tab = 0),
+                      child: Text(AppStrings.t('auth.usageJava')),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: tab == 1
+                            ? AppColors.accent.withValues(alpha: 0.12)
+                            : null,
+                      ),
+                      onPressed: () => setSheet(() => tab = 1),
+                      child: Text(AppStrings.t('auth.usageShell')),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: controller,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  child: Text(
+                    tab == 0 ? javaSample : shellSample,
+                    style: AppText.monoValue14
+                        .copyWith(fontSize: 11.5, height: 1.45),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

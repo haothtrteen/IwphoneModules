@@ -601,26 +601,12 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                   value: _skipToken,
                   warn: _skipToken,
                   onChanged: (v) => setState(() => _skipToken = v),
-                ),
-                _OptRow(
-                  title: AppStrings.t('missing.optPinPort'),
-                  desc: _discoverMode
-                      ? AppStrings.t('missing.optPinPortBlocked')
-                      : AppStrings.t('missing.optPinPortDesc'),
-                  value: _pinPort,
-                  warn: !_pinPort && !_discoverMode,
-                  onChanged: (v) {
-                    if (_discoverMode) return;
-                    setState(() => _pinPort = v);
-                    AutostartService.instance.setPinPort(v);
-                  },
-                ),
-                _OptRow(
-                  title: AppStrings.t('missing.optDiscover'),
-                  desc: AppStrings.t('missing.optDiscoverDesc'),
-                  value: _discoverMode,
-                  warn: _discoverMode,
                   last: true,
+                ),
+                // 「核心兼容模式」二选一：把原来两个容易误会的底层开关
+                // （固定端口 / 无线发现）换成语义明确的模式名。
+                _CoreCompatCard(
+                  coexist: _discoverMode,
                   onChanged: (v) {
                     setState(() {
                       _discoverMode = v;
@@ -1059,6 +1045,117 @@ class _SourceRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+/// 核心兼容模式选择卡。
+///
+/// 原来用两个开关（「固定 ADB 端口」/「无线调试自动发现」）表达同一件事，
+/// 用户容易以为可以同时关或同时开，也看不出这是为兼容其它 shell 框架准备的。
+/// 改成单选：两个模式互斥，标题直接说明用途。
+class _CoreCompatCard extends StatelessWidget {
+  const _CoreCompatCard({required this.coexist, required this.onChanged});
+
+  /// true = 协同共存（无线发现），false = 独占端口（固定 5555）。
+  final bool coexist;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.hub_outlined, size: 16, color: AppColors.accent),
+              const SizedBox(width: 8),
+              Text(AppStrings.t('missing.coreCompatTitle'),
+                  style: AppText.cardTitle),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(AppStrings.t('missing.coreCompatDesc'), style: AppText.desc12),
+          const SizedBox(height: 10),
+          _ModeRow(
+            title: AppStrings.t('missing.coreCompatExclusive'),
+            desc: AppStrings.t('missing.coreCompatExclusiveDesc'),
+            selected: !coexist,
+            onTap: () => onChanged(false),
+          ),
+          const SizedBox(height: 8),
+          _ModeRow(
+            title: AppStrings.t('missing.coreCompatCoexist'),
+            desc: AppStrings.t('missing.coreCompatCoexistDesc'),
+            selected: coexist,
+            warn: coexist,
+            onTap: () => onChanged(true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeRow extends StatelessWidget {
+  const _ModeRow({
+    required this.title,
+    required this.desc,
+    required this.selected,
+    required this.onTap,
+    this.warn = false,
+  });
+
+  final String title;
+  final String desc;
+  final bool selected;
+  final bool warn;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = warn ? AppColors.iconOrange : AppColors.accent;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.08) : AppColors.bg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? accent : AppColors.divider,
+            width: selected ? 1.2 : 0.6,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 18,
+              color: selected ? accent : AppColors.textInactive,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: AppText.rowLabel.copyWith(
+                        color: selected ? accent : null,
+                      )),
+                  const SizedBox(height: 3),
+                  Text(desc, style: AppText.desc12),
                 ],
               ),
             ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'screens/app_auth_screen.dart';
 import 'screens/framework_missing_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/logs_screen.dart';
@@ -147,6 +148,7 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
   int _homeReloadToken = 0;
   int _modulesReloadToken = 0;
   int _logsReloadToken = 0;
+  int _authReloadToken = 0;
 
   /// 框架是否「确定没装」。为 true 时整个四页界面都不渲染 ——
   /// 只留 [FrameworkMissingScreen]，避免在没有数据来源的界面上点出各种错。
@@ -234,7 +236,8 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
       _pageIndex = index;
       if (index == 0) _homeReloadToken++;
       if (index == 1) _modulesReloadToken++;
-      if (index == 2) _logsReloadToken++;
+      if (index == 2) _authReloadToken++;
+      if (index == 3) _logsReloadToken++;
     });
   }
 
@@ -294,6 +297,7 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
                     },
                   ),
                   ModulesScreen(reloadToken: _modulesReloadToken),
+                  AppAuthScreen(embedded: true, reloadToken: _authReloadToken),
                   LogsScreen(reloadToken: _logsReloadToken),
                   SettingsScreen(
                     autoStart: _autoStart,

@@ -6,7 +6,7 @@ import '../i18n/app_strings.dart';
 /// 底部导航栏 —— 1:1 还原设计稿
 ///
 /// 高度 80，背景 #16161A，上内边距 8 / 下内边距 12，
-/// 四个等宽 Tab（图标 22 + 间距 4 + 标签 10）。
+/// 五个等宽 Tab（图标 22 + 间距 4 + 标签 10）。
 /// 选中态：强调绿 + 实心图标；未选中态：#606068 + 描边图标。
 class BottomNavBar extends StatelessWidget {
   const BottomNavBar({
@@ -23,7 +23,11 @@ class BottomNavBar extends StatelessWidget {
   static List<(IconData, IconData, String)> get _tabs => [
         (Icons.home, Icons.home_outlined, AppStrings.t('nav.home')),
         (Icons.extension, Icons.extension_outlined, AppStrings.t('nav.modules')),
-        // 第 3 个 tab 的内容是 LogsScreen（见 main.dart 的 IndexedStack）。
+        // Magisk 式「超级用户」位：应用授权页（AppAuthScreen, embedded=true）。
+        // 放在模块与日志之间，与 IndexedStack 的 index 2 对应。
+        (Icons.verified_user, Icons.verified_user_outlined,
+            AppStrings.t('nav.auth')),
+        // 第 4 个 tab 的内容是 LogsScreen（见 main.dart 的 IndexedStack）。
         // 这里曾长期写着「权限」+ security 图标 —— 那是设计稿早期的「权限/超级用户」页，
         // 后来该位置改成日志页，标签忘了跟着改：点「权限」出来的是日志，很误导。
         (Icons.article, Icons.article_outlined, AppStrings.t('nav.logs')),

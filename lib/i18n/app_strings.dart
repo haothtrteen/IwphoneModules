@@ -42,6 +42,7 @@ abstract final class AppStrings {
       'nav.modules': '模块',
       'nav.logs': '日志',
       'nav.settings': '设置',
+      'nav.auth': '授权',
 
       // ---- 通用 ----
       'common.cancel': '取消',
@@ -735,6 +736,17 @@ abstract final class AppStrings {
       'auth.copied': '已复制到剪贴板',
       'auth.loadFail': '读取授权信息失败',
       'auth.frameworkNote': '执行依赖 iwphone 框架运行中；框架停止时本通道会直接返回 FRAMEWORK_DOWN。',
+      'auth.usageJava': 'Java 接入',
+      'auth.usageShell': 'Shell 脚本',
+      'auth.exportScript': '导出脚本',
+      'auth.exportedScript': '脚本已导出：',
+      'auth.exportFail': '导出脚本失败',
+      'missing.coreCompatTitle': '核心兼容模式',
+      'missing.coreCompatDesc': '决定框架如何建立 shell 通道，影响与 Shizuku 等其它 shell 框架的共存。',
+      'missing.coreCompatExclusive': '独占端口',
+      'missing.coreCompatExclusiveDesc': '默认。固定 5555 并开机自动重连，自启最可靠；会占用 adb 通道，可能与 Shizuku 互斥。',
+      'missing.coreCompatCoexist': '协同共存',
+      'missing.coreCompatCoexistDesc': '不固定端口，开机自动发现无线调试端口并复用配对密钥；可与 Shizuku 等并存，但依赖开机时 WiFi 已连接且可信，须在配对前选择。',
       'auth.promptOnTitle': '即时授权弹窗已开启',
       'auth.promptOnBody': '未授权应用发起调用时会当场弹出「允许 / 拒绝」对话框，用户点完才继续执行。'
           '勾选「记住此选择」可长期生效；45 秒无人处理自动按拒绝处理。',
@@ -864,6 +876,7 @@ abstract final class AppStrings {
       'nav.modules': 'Modules',
       'nav.logs': 'Logs',
       'nav.settings': 'Settings',
+      'nav.auth': 'Auth',
 
       // ---- common ----
       'common.cancel': 'Cancel',
@@ -1611,6 +1624,17 @@ abstract final class AppStrings {
       'auth.copied': 'Copied to clipboard',
       'auth.loadFail': 'Failed to load authorization data',
       'auth.frameworkNote': 'Commands need the iwphone framework running; otherwise the channel returns FRAMEWORK_DOWN.',
+      'auth.usageJava': 'Java client',
+      'auth.usageShell': 'Shell script',
+      'auth.exportScript': 'Export script',
+      'auth.exportedScript': 'Script exported: ',
+      'auth.exportFail': 'Failed to export script',
+      'missing.coreCompatTitle': 'Core compatibility mode',
+      'missing.coreCompatDesc': 'Decides how the framework establishes its shell channel and whether it can coexist with Shizuku and similar shells.',
+      'missing.coreCompatExclusive': 'Exclusive port',
+      'missing.coreCompatExclusiveDesc': 'Default. Pins 5555 for the most reliable autostart; occupies the adb channel and may conflict with Shizuku.',
+      'missing.coreCompatCoexist': 'Cooperative coexistence',
+      'missing.coreCompatCoexistDesc': 'No pinned port: discovers the wireless debugging port at boot and reuses the pairing key. Coexists with Shizuku, but requires WiFi to be connected and trusted at boot; choose before pairing.',
       'auth.promptOnTitle': 'Instant authorization prompt is on',
       'auth.promptOnBody': 'An unauthorized app triggers an in-place Allow / Deny dialog; '
           'nothing runs until the user decides. "Remember this choice" makes it permanent; no response within 45s is auto-denied.',

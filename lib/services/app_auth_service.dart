@@ -81,6 +81,23 @@ class AppAuthService {
     return _parse(raw, PickableApp.fromJson);
   }
 
+  /// 把接入示例脚本导出到 App 外部私有目录；成功返回绝对路径。
+  Future<String?> exportScript({
+    required String name,
+    required String text,
+  }) async {
+    try {
+      final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>(
+        'exportScript',
+        {'name': name, 'text': text},
+      );
+      if (raw?['ok'] == true) return raw?['path'] as String?;
+    } catch (_) {
+      // 导出失败由界面提示，不抛异常
+    }
+    return null;
+  }
+
   /// 当前是否已配置访问密钥。
   ///
   /// 没有密钥时框架的 `/api/shell` 对**同设备所有应用**开放，

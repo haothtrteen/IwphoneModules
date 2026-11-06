@@ -118,6 +118,14 @@ class AppAuthChannel(private val ctx: android.content.Context) {
                  */
                 "installedApps" -> runAsync(result) { installedApps() }
 
+                /** 把接入示例脚本导出到 App 外部私有目录，返回绝对路径。 */
+                "exportScript" -> {
+                    val name = call.argument<String>("name")
+                        ?: "iwphone_request_permission.sh"
+                    val text = call.argument<String>("text") ?: ""
+                    result.success(exportScript(name, text))
+                }
+
                 /** 当前是否有可用的访问密钥 —— 没有的话授权页要提示用户先设置。 */
                 "tokenState" -> {
                     val t = AutostartPrefs.webuiToken(ctx)
@@ -130,6 +138,24 @@ class AppAuthChannel(private val ctx: android.content.Context) {
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * 导出脚本到 getExternalFilesDir —— App 专属外部目录，
+     * 分区存储下无需任何权限即可写，用户用文件管理器/adb 都能取到。
+     */
+    private fun exportScript(name: String, text: String): Map<String, Any?> {
+        if (text.isEmpty()) return mapOf("ok" to false, "path" to "")
+        return try {
+            val dir = ctx.getExternalFilesDir(null) ?: ctx.filesDir
+            val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val f = java.io.File(dir, safe)
+            f.writeText(text)
+            f.setReadable(true, false)
+            mapOf("ok" to true, "path" to f.absolutePath)
+        } catch (e: Exception) {
+            mapOf("ok" to false, "path" to "", "msg" to (e.message ?: ""))
+        }
+    }
 
     private fun openOverlaySettings(): Map<String, Any?> = try {
         val intent = Intent(
