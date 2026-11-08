@@ -126,11 +126,8 @@ class AppAuthChannel(private val ctx: android.content.Context) {
                  */
                 "installedApps" -> runAsync(result) { installedApps() }
 
-                /** 导出 iwsh 工具包，并把选定的终端应用包名写进启动脚本。 */
-                "exportIwsh" -> {
-                    val pkg = call.argument<String>("pkg") ?: "com.termux"
-                    result.success(exportIwsh(pkg))
-                }
+                /** 直接导出 iwsh 工具包；包名由用户改 iwsh.env，不必预先指定。 */
+                "exportIwsh" -> result.success(exportIwsh())
 
                 /** 已授权的终端应用列表 / 撤销（整个应用粒度）。 */
                 "listIwshGrants" -> runAsync(result) {
@@ -172,8 +169,7 @@ class AppAuthChannel(private val ctx: android.content.Context) {
     // ------------------------------------------------------------------
 
     /** 导出 iwsh 工具包：终端 app 把这两个文件放进自己的私有目录即可使用。 */
-    private fun exportIwsh(pkg: String): Map<String, Any?> = try {
-        val safe = if (pkg.matches(Regex("[A-Za-z0-9_.]+"))) pkg else "com.termux"
+    private fun exportIwsh(): Map<String, Any?> = try {
         val dir = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "iwsh")
         if (!dir.exists()) dir.mkdirs()
         ctx.assets.open("iwsh.dex").use { input ->
@@ -184,8 +180,14 @@ class AppAuthChannel(private val ctx: android.content.Context) {
         ctx.assets.open("iwsh.sh").use { input ->
             File(dir, "iwsh.sh").outputStream().use { out -> input.copyTo(out) }
         }
-        File(dir, "iwsh.env").writeText("IWPHONE_APPLICATION_ID=$safe\n")
-        mapOf("ok" to true, "path" to dir.absolutePath, "pkg" to safe)
+        // 不预先绑定应用：给一个带说明的模板，用户按自己的终端 App 改包名即可
+        File(dir, "iwsh.env").writeText(
+            "# iwsh 终端应用包名：改成你使用的终端 App 包名\n" +
+                "# 例：com.termux / bin.mt.termex。授权按「整个应用」生效。\n" +
+                "# 不修改则默认 com.termux；也可用同名环境变量覆盖。\n" +
+                "IWPHONE_APPLICATION_ID=com.termux\n"
+        )
+        mapOf("ok" to true, "path" to dir.absolutePath)
     } catch (e: Exception) {
         mapOf("ok" to false, "path" to "", "msg" to (e.message ?: ""))
     }

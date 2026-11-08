@@ -92,14 +92,10 @@ class AppAuthService {
     return _parse(raw, PickableApp.fromJson);
   }
 
-  /// 导出 iwsh 工具包；[pkg] 是终端应用包名，会被写进启动脚本
-  /// （对齐 Shizuku 的 application id 做法），授权时按整个应用生效。
-  Future<String?> exportIwsh(String pkg) async {
+  /// 直接导出 iwsh 工具包。包名不预先指定，用户改同目录的 iwsh.env 即可。
+  Future<String?> exportIwsh() async {
     try {
-      final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>(
-        'exportIwsh',
-        {'pkg': pkg},
-      );
+      final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('exportIwsh');
       if (raw?['ok'] == true) return raw?['path'] as String?;
     } catch (_) {
       // 失败由界面提示

@@ -47,11 +47,20 @@ public final class ShellLoader {
             // 2) 请求授权：广播里带终端应用包名
             String nonce = "iw" + Long.toString(System.currentTimeMillis(), 36)
                     + Integer.toString(new java.security.SecureRandom().nextInt(9000) + 1000);
+            // ★ 必须显式指定组件：真机（MIUI）会拦截隐式自定义广播，
+            //   receiver 收不到 → 不弹窗、终端干等超时。
             Process p = Runtime.getRuntime().exec(new String[]{
                 "/system/bin/am", "broadcast", "--user", "0",
+                "-n", "com.shellmgr.shell_manager/.BrokerShellReceiver",
                 "-a", ACTION, "--es", "nonce", nonce,
                 "--es", "pkg", pkg});
-            p.waitFor();
+            // am broadcast 会等待接收器 goAsync 结束（最长到弹窗 45s）。
+            // 只等很短一瞬，随后立刻进入 token 轮询，避免用户未操作时卡死。
+            try {
+                p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
             System.err.println("[iwsh] 已请求授权（" + pkg + "），请在弹窗中允许…");
 
             // 3) 轮询一次性下发的 token 文件

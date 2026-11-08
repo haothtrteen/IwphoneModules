@@ -820,21 +820,8 @@ case "$(id -u)" in
 esac''';
 
     Future<void> doExportKit() async {
-      // 先选终端应用：包名会被写进 iwsh.sh，授权按整个应用生效
-      final picked = await showModalBottomSheet<PickableApp>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: AppColors.surface,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        builder: (_) => const _AppPickerSheet(
-          titleKey: 'auth.iwshPick',
-          allowGranted: true,
-        ),
-      );
-      if (picked == null || !mounted) return;
-      final path = await AppAuthService.instance.exportIwsh(picked.pkg);
+      // 直接导出，不预先绑定应用：包名写在 iwsh.env 里由用户自己改
+      final path = await AppAuthService.instance.exportIwsh();
       if (!mounted) return;
       if (path == null || path.isEmpty) {
         _toast(AppStrings.t('auth.exportKitFail'), ok: false);
@@ -842,7 +829,8 @@ esac''';
       }
       await Clipboard.setData(ClipboardData(text: path));
       Navigator.of(context).pop();
-      _toast('${AppStrings.t('auth.exportedKit')}$path\n${picked.pkg}');
+      _toast('${AppStrings.t('auth.exportedKit')}$path\n'
+          '${AppStrings.t('auth.iwshEditEnv')}');
     }
 
     var tab = 0; // 0 = Java, 1 = Shell
@@ -962,15 +950,7 @@ esac''';
 /// 懒加载图标由原生侧统一编码（一次 channel 往返拿全部），
 /// 这里只管过滤与选中。
 class _AppPickerSheet extends StatefulWidget {
-  const _AppPickerSheet({
-    this.titleKey = 'auth.pickTitle',
-    this.allowGranted = false,
-  });
-
-  final String titleKey;
-
-  /// 导出工具包时允许选择任何应用（含已授权的），因为只是把包名写进脚本。
-  final bool allowGranted;
+  const _AppPickerSheet();
 
   @override
   State<_AppPickerSheet> createState() => _AppPickerSheetState();
@@ -1020,7 +1000,7 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(AppStrings.t(widget.titleKey),
+                    child: Text(AppStrings.t('auth.pickTitle'),
                         style: AppText.cardTitle),
                   ),
                   IconButton(
@@ -1068,7 +1048,7 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
                           itemBuilder: (_, i) {
                             final a = list[i];
                             return InkWell(
-                              onTap: (a.granted && !widget.allowGranted)
+                              onTap: a.granted
                                   ? null
                                   : () => Navigator.of(context).pop(a),
                               borderRadius: BorderRadius.circular(10),

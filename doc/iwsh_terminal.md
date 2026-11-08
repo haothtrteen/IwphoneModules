@@ -1,4 +1,4 @@
-# iwsh 终端接入 · 落地说明（v1.3.19）
+# iwsh 终端接入 · 落地说明（v1.3.20）
 
 对应设计稿：`iwphone_iwsh_design.html`（工作区根目录）。
 参考素材：`shizuku_ref/rish.sh` + `rish_shizuku.dex`（用户提供的 Shizuku 终端工具包，
@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 命名统一（v1.3.19）
+## 1. 命名统一（v1.3.19，v1.3.20 沿用）
 
 导出目录统一为 **`iwsh`**，项目内所有自有命名同步替换。下表是替换后的覆盖清单：
 
@@ -27,7 +27,7 @@
 `rikka.shizuku.shell.ShizukuShellLoader`、`/data/local/tmp/rish-shizuku-*`）。
 构建产物、`libadb.so`、Python 运行时的 "Irish" 等无关内容未触碰。
 
-## 2. 权限获取逻辑（v1.3.19 改造）
+## 2. 权限获取逻辑（v1.3.19 改造，v1.3.20 沿用）
 
 ### 选定方案：传递应用包名，为**整个应用**授权
 
@@ -43,7 +43,7 @@
 ### 链路
 
 ```
-导出工具包时：用户在授权页选择终端 App → 包名写进 iwsh.env
+导出工具包时：直接导出，iwsh.env 里是带注释的默认包名（用户自己改）
 终端：sh iwsh.sh id
   → iwsh.sh source iwsh.env，导出 IWPHONE_APPLICATION_ID / IWPHONE_DIR
   → app_process + iwsh.dex（纯 Java 标准库，零 hidden API）
@@ -93,10 +93,10 @@
 
 ## 4. 使用方法（调用方式未变）
 
-1. 安装 v1.3.19，打开 **授权 → 接入说明 → 导出工具包**，选择终端应用
-   （Termux / MT 等），得到 `.../files/iwsh/` 下的 `iwsh.sh`、`iwsh.dex`、`iwsh.env`。
-2. 三个文件一起放进终端 App 自己的私有目录。换终端应用只需改 `iwsh.env` 里的
-   `IWPHONE_APPLICATION_ID`，或设置同名环境变量覆盖。
+1. 安装 v1.3.20，打开 **授权 → 接入说明 → 导出工具包**：**直接导出，不需要
+   预先指定应用**。得到 `.../files/iwsh/` 下的 `iwsh.sh`、`iwsh.dex`、`iwsh.env`。
+2. 三个文件一起放进终端 App 自己的私有目录；按 `iwsh.env` 里的注释把
+   `IWPHONE_APPLICATION_ID` 改成该终端 App 的包名（不填默认 `com.termux`）。
 3. 确保即时授权弹窗已开启（授权页顶部卡片，可一键由 adb 自授权）。
 4. 终端里 `sh iwsh.sh id`。首次弹出确认框，允许后返回结果；之后调用直接复用缓存。
 5. 撤销：授权页「已授权的终端应用」→ 撤销，该应用下次调用会重新请求授权。
@@ -105,12 +105,12 @@
 
 | 位置 | 内容 |
 |---|---|
-| `assets/iwsh.sh` | 启动脚本；source `iwsh.env`；Android 14+ 自动 `chmod 400` dex |
+| `assets/iwsh.sh` | 启动脚本；绝对路径定位 dex、dex 完整性预检、无条件 `chmod 400`；source `iwsh.env` |
 | `assets/iwsh.dex` | 客户端；源码 `tools/iwsh/src/.../ShellLoader.java`，`tools/iwsh/build.sh` 重编 |
 | `BrokerShell.kt` | `BrokerShellReceiver` + `127.0.0.1:8539` + `IwshGrantStore`（持久授权表） |
 | `BrokerPrompt.askTerminal(ctx,label,detail)` | 参数化确认弹窗，显示应用名与包名 |
 | `AppAuthChannel` | `exportIwsh(pkg)` / `listIwshGrants` / `revokeIwshGrant` / `grantOverlayViaAdb` |
-| `app_auth_screen.dart` | 导出时先选终端应用；新增「已授权的终端应用」列表与撤销 |
+| `app_auth_screen.dart` | 导出按钮直接导出（提示用户改 `iwsh.env`）；新增「已授权的终端应用」列表与撤销 |
 | `lib/services/app_auth_service.dart` | `IwshGrant` 模型与三个通道方法 |
 
 ## 6. 验证结果
@@ -150,7 +150,7 @@
 ## 7. 真机验收清单
 
 - [ ] `content call ... --method version` 正常；确认 8539 端口 LISTEN。
-- [ ] 导出时选 Termux（或 MT），检查 `iwsh.env` 内容为对应包名。
+- [ ] 导出工具包（无需选应用），按注释把 `iwsh.env` 里的包名改成自己的终端 App。
 - [ ] 三个文件放进终端私有目录，`sh iwsh.sh id` → 弹窗显示正确应用名/包名
       → 允许 → 输出 `uid=2000(shell)`；同目录生成 `.iwsh_token`。
 - [ ] 再执行一次 `sh iwsh.sh id -u`：**不再弹窗**，直接输出 `2000`。
@@ -169,3 +169,52 @@
   若真机发现失败，需改为「用户在 App 内复制 token」的手动模式。
 - `BrokerShell` 的 HTTP 服务单端口、每连接一线程、无 TLS（仅绑 127.0.0.1）。
   token 持久后更应确保公共目录只被目标终端 app 读到；真机验收时优先确认这一点。
+
+
+---
+
+## 9. v1.3.20 修订（导出简化 + 启动健壮性）
+
+### 9.1 澄清一次误判
+
+排查过程中我在**未点击弹窗「允许」**的状态下测试，把 `am broadcast` 等待
+`goAsync` 结束误读成「没弹窗」。实际上弹窗与授权流程本来是通的：用户点允许后
+token 正常签发。因此**回退**了基于该误判加入的「接收器里临时用 adb 补悬浮窗权限」
+逻辑；悬浮窗权限仍由授权页「去开启」按钮（adb 自授权）负责。
+
+### 9.2 `Aborted` 的真实原因与修复
+
+用户看到的 `line: N Aborted bash "$@"` 来自 ART 中止（`app_process` 加载 dex 失败），
+不是授权逻辑。真机复现确认：把 dex 传成 1044 字节（截断版）会异常，完整的 dex 文件
+在终端 App 私有目录、app uid 下可正常运行。三个加固：
+
+- **绝对路径**：`BASEDIR=$(cd "$(dirname "$0")" && pwd)`，避免终端 App 的包装脚本
+  改了 cwd 后按相对路径找不到 dex（`ClassNotFoundException` → Aborted）。
+- **完整性预检**：`wc -c` 小于 1000 字节直接给中文错误「iwsh.dex 不完整，请重新
+  导出工具包」，不再让 ART 吐一堆栈。
+- **无条件 `chmod 400`**：不再依赖 `getprop`（部分终端环境取不到值）；FUSE 路径上
+  改不动时明确提示「Android 14+ 会拒绝加载，请放到终端 App 私有目录」。
+
+### 9.3 广播与回执
+
+- 广播改为**显式指定组件** `-n com.shellmgr.shell_manager/.BrokerShellReceiver`，
+  避免系统对隐式自定义广播的拦截（真机显式广播能触发接收器）。
+- 客户端不再无限 `waitFor()`：`am broadcast` 会等接收器 `goAsync` 结束（最长 45s），
+  改成 `waitFor(2, TimeUnit.SECONDS)` 后立刻进入 token 轮询，用户不点允许时也不会
+  卡在广播回执上。
+
+### 9.4 导出简化
+
+按使用者要求，「导出工具包」**不再要求先选终端应用**，直接导出三件套；
+`iwsh.env` 带注释说明如何改包名，用户自己按终端 App 修改即可。
+
+### 9.5 真机验证（2026-11-08，`22011211C`）
+
+- 从 `/` 目录用绝对路径调用 `sh <绝对路径>/iwsh.sh id` → 正常输出
+  `[iwsh] 已请求授权（com.termux）…`，不再 Aborted。
+- 把 dex 换成 4 字节损坏文件 → 输出
+  `[iwsh] iwsh.dex 不完整（4 字节），请重新导出工具包`，无 ART 崩溃。
+- 用不存在的包名走拒绝分支：请求提示**立刻**出现（不卡 `waitFor`），不签发 token；
+  用户设备的悬浮窗权限保持原状（未被探测改动）。
+- 探测用的临时目录已清理。
+- 弹窗确认 → 持久 token → 二次调用免弹窗，仍按使用者习惯留其自行验收。

@@ -306,8 +306,9 @@ class BrokerShellReceiver : BroadcastReceiver() {
                     System.err.println("[iwsh] 包名不存在，拒绝授权：$pkg")
                 } else {
                     val label = pm.getApplicationLabel(info).toString()
-                    // 无悬浮窗权限时 askTerminal 返回 false → 不签发，
-                    // 终端会超时并提示用户先开启（可由 adb 自授权完成）。
+                    // 悬浮窗权限由授权页「去开启」按钮（adb 自授权）负责；
+                    // 这里只管确认，避免在请求回调里再跑一遍 adb 通道。
+                    // 无权限时 askTerminal 返回 false → 不签发，终端会明确超时。
                     val ok = BrokerPrompt.askTerminal(
                         ctx, label, "$pkg · 授权后该应用的所有终端调用免确认",
                     )
