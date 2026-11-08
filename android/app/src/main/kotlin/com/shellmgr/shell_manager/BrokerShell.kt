@@ -129,7 +129,9 @@ object BrokerShell {
                 return
             }
 
-            val body = callFramework(ctx, cmd,
+            // cwd 由交互式客户端维护：cd 后每条命令带上工作目录
+            val cwd = params["cwd"] ?: ""
+            val body = callFramework(ctx, cmd, cwd,
                 (params["timeout"]?.toIntOrNull() ?: 15).coerceIn(1, 60))
             reply(s, 200, body)
         } catch (_: Exception) {
@@ -139,15 +141,24 @@ object BrokerShell {
     }
 
     /** App 内部持有 WebUI 密钥，终端永远拿不到。 */
-    private fun callFramework(ctx: Context, cmd: String, timeout: Int): String {
+    private fun callFramework(
+        ctx: Context,
+        cmd: String,
+        cwd: String,
+        timeout: Int,
+    ): String {
         val token = AutostartPrefs.webuiToken(ctx)
         if (token.isEmpty()) return """{"ok":false,"code":"NO_TOKEN"}"""
         var c: HttpURLConnection? = null
         return try {
-            val url = URL(
-                "http://127.0.0.1:8537/api/shell?cmd=" +
-                    URLEncoder.encode(cmd, "UTF-8") + "&timeout=" + timeout
-            )
+            val q = buildString {
+                append("/api/shell?cmd=").append(URLEncoder.encode(cmd, "UTF-8"))
+                append("&timeout=").append(timeout)
+                if (cwd.isNotEmpty()) {
+                    append("&cwd=").append(URLEncoder.encode(cwd, "UTF-8"))
+                }
+            }
+            val url = URL("http://127.0.0.1:8537$q")
             c = url.openConnection() as HttpURLConnection
             c.requestMethod = "POST"
             c.connectTimeout = 3000

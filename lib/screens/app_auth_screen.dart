@@ -830,7 +830,7 @@ esac''';
       await Clipboard.setData(ClipboardData(text: path));
       Navigator.of(context).pop();
       _toast('${AppStrings.t('auth.exportedKit')}$path\n'
-          '${AppStrings.t('auth.iwshEditEnv')}');
+          '${AppStrings.t('auth.iwshEditPkg')}');
     }
 
     var tab = 0; // 0 = Java, 1 = Shell

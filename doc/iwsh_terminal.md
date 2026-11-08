@@ -1,4 +1,4 @@
-# iwsh 终端接入 · 落地说明（v1.3.20）
+# iwsh 终端接入 · 落地说明（v1.3.21）
 
 对应设计稿：`iwphone_iwsh_design.html`（工作区根目录）。
 参考素材：`shizuku_ref/rish.sh` + `rish_shizuku.dex`（用户提供的 Shizuku 终端工具包，
@@ -93,24 +93,26 @@
 
 ## 4. 使用方法（调用方式未变）
 
-1. 安装 v1.3.20，打开 **授权 → 接入说明 → 导出工具包**：**直接导出，不需要
-   预先指定应用**。得到 `.../files/iwsh/` 下的 `iwsh.sh`、`iwsh.dex`、`iwsh.env`。
-2. 三个文件一起放进终端 App 自己的私有目录；按 `iwsh.env` 里的注释把
-   `IWPHONE_APPLICATION_ID` 改成该终端 App 的包名（不填默认 `com.termux`）。
+1. 安装 v1.3.21，打开 **授权 → 接入说明 → 导出工具包**：**直接导出，不需要
+   预先指定应用**。得到 `.../files/iwsh/` 下的 `iwsh.sh` 与 `iwsh.dex` 两个文件。
+2. 两个文件放进终端 App 自己的私有目录；按 `iwsh.sh` 顶部注释把
+   `IWPHONE_APPLICATION_ID` 改成该终端 App 的包名（默认 `com.termux`），
+   也可用同名环境变量覆盖，无需改脚本。
 3. 确保即时授权弹窗已开启（授权页顶部卡片，可一键由 adb 自授权）。
-4. 终端里 `sh iwsh.sh id`。首次弹出确认框，允许后返回结果；之后调用直接复用缓存。
+4. 终端里 **`sh iwsh.sh` 进入交互模式**（连续敲命令，`exit` / Ctrl-D 退出），
+   或 `sh iwsh.sh id` 执行单条后退出。首次弹出确认框，允许后长期免确认。
 5. 撤销：授权页「已授权的终端应用」→ 撤销，该应用下次调用会重新请求授权。
 
 ## 5. 落地文件
 
 | 位置 | 内容 |
 |---|---|
-| `assets/iwsh.sh` | 启动脚本；绝对路径定位 dex、dex 完整性预检、无条件 `chmod 400`；source `iwsh.env` |
+| `assets/iwsh.sh` | 启动脚本；包名写在顶部（env 已合并）、绝对路径定位 dex、完整性预检、无条件 `chmod 400` |
 | `assets/iwsh.dex` | 客户端；源码 `tools/iwsh/src/.../ShellLoader.java`，`tools/iwsh/build.sh` 重编 |
 | `BrokerShell.kt` | `BrokerShellReceiver` + `127.0.0.1:8539` + `IwshGrantStore`（持久授权表） |
 | `BrokerPrompt.askTerminal(ctx,label,detail)` | 参数化确认弹窗，显示应用名与包名 |
 | `AppAuthChannel` | `exportIwsh(pkg)` / `listIwshGrants` / `revokeIwshGrant` / `grantOverlayViaAdb` |
-| `app_auth_screen.dart` | 导出按钮直接导出（提示用户改 `iwsh.env`）；新增「已授权的终端应用」列表与撤销 |
+| `app_auth_screen.dart` | 导出按钮直接导出（提示改 `iwsh.sh` 顶部包名）；新增「已授权的终端应用」列表与撤销 |
 | `lib/services/app_auth_service.dart` | `IwshGrant` 模型与三个通道方法 |
 
 ## 6. 验证结果
@@ -150,7 +152,7 @@
 ## 7. 真机验收清单
 
 - [ ] `content call ... --method version` 正常；确认 8539 端口 LISTEN。
-- [ ] 导出工具包（无需选应用），按注释把 `iwsh.env` 里的包名改成自己的终端 App。
+- [ ] 导出工具包（无需选应用），按注释把 `iwsh.sh` 顶部的包名改成自己的终端 App。
 - [ ] 三个文件放进终端私有目录，`sh iwsh.sh id` → 弹窗显示正确应用名/包名
       → 允许 → 输出 `uid=2000(shell)`；同目录生成 `.iwsh_token`。
 - [ ] 再执行一次 `sh iwsh.sh id -u`：**不再弹窗**，直接输出 `2000`。
@@ -163,7 +165,8 @@
 
 ## 8. 已知取舍
 
-- 会话仍是「一次调用一条命令」，不是交互式 REPL，也不跨调用保持 cwd/env。
+- v1.3.21 起提供交互式 REPL（`sh iwsh.sh` 无参数），`cd` 工作目录可在会话内保持；
+  但每条命令仍是独立的 `sh -c`，**环境变量 / alias / shell 函数不保持**。
 - 公共目录 `/sdcard/iwphone/broker/` 的可读性未在真机验证；App 侧另有
   App 外部私有目录兜底，但 Android 11+ 分区存储下其它 app 通常读不到，
   若真机发现失败，需改为「用户在 App 内复制 token」的手动模式。
@@ -218,3 +221,57 @@ token 正常签发。因此**回退**了基于该误判加入的「接收器里�
   用户设备的悬浮窗权限保持原状（未被探测改动）。
 - 探测用的临时目录已清理。
 - 弹窗确认 → 持久 token → 二次调用免弹窗，仍按使用者习惯留其自行验收。
+
+
+---
+
+## 10. v1.3.21 修订（env 合并 + 交互式 REPL + 输出修复）
+
+### 10.1 `.env` 合并进脚本
+
+`iwsh.env` 取消，导出只剩 **`iwsh.sh` + `iwsh.dex` 两个文件**。包名写在
+`iwsh.sh` 顶部（`: "${IWPHONE_APPLICATION_ID:=com.termux}"`），带注释说明
+改成自己的终端 App 包名；同名环境变量仍可覆盖。`exportIwsh()` 不再生成 env 文件。
+
+### 10.2 交互式 REPL（对齐 rish 的持续对话）
+
+- `sh iwsh.sh`（无参数）→ 进入 `iwsh>` 提示符，连续读 stdin 执行，
+  `exit` / `quit` / Ctrl-D 退出；`sh iwsh.sh <cmd>` 保持原来的单次执行。
+- REPL 内每条命令复用**同一个持久 token**，不会重复弹窗。
+- **`cd` 可保持**：客户端维护 cwd，`cd X` 时让框架执行 `cd X && pwd` 回读真实
+  路径（能处理 `..` 与软链接），后续命令通过 `/exec?cwd=...` 带上工作目录。
+  服务端 `BrokerShell.kt` 已把 `cwd` 透传到框架 `/api/shell`。
+- 限制：每条命令仍是独立 `sh -c`，**环境变量、alias、shell 函数不跨命令保持**。
+
+### 10.3 「执行完什么都没输出」的真实根因
+
+框架返回的是 **带空格** 的 JSON：`{"ok": true, "stdout": "2000\n", ...}`，
+而客户端的极简解析器只匹配 `"stdout":"..."`（无空格）→ 取不到 stdout，
+旧 `print()` 又没有 stdout/stderr/msg 可显示 → 静默退出，看起来就是
+「授权完输出几行日志就没了」。修复：
+
+- `jsonField()` 跳过冒号后的空白再解析；
+- `print()` 在无 stdout/stderr 时兜底打印 `code` / `msg` / 原始响应，
+  不再出现「什么都不输出」。
+
+用户贴出的 `[okhttp]` / `[com.mediatek.cta.CtaAdapter]` /
+`ClassNotFoundException: com.mediatek.cta.CtaUtils` 是联发科 ROM 网络栈
+在每次 HTTP 请求时注入的日志，**与 iwsh 无关、无害**，无需处理。
+
+另外 `iwsh.sh` 的「仍可写」提示现在只在 SDK ≥ 34 且 getprop 取到值时输出，
+避免 Android 13 上出现误导性警告。
+
+### 10.4 真机验证（`22011211C`，用户已授权的 token 复用）
+
+用 `printf 'id -u\npwd\ncd /sdcard\npwd\nexit\n' | sh iwsh.sh`：
+
+```
+iwsh · 交互模式   exit / Ctrl-D 退出   cd 可保持工作目录
+2000
+/
+/storage/emulated/0
+bye
+```
+
+`cd` 后 `pwd` 正确变为 `/storage/emulated/0`；单次调用 `sh iwsh.sh id -u`
+仍输出 `2000`。测试用的是临时目录副本，未改动用户原始工具包与 token。

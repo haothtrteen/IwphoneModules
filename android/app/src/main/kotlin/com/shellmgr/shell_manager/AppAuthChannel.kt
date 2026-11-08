@@ -175,18 +175,10 @@ class AppAuthChannel(private val ctx: android.content.Context) {
         ctx.assets.open("iwsh.dex").use { input ->
             File(dir, "iwsh.dex").outputStream().use { out -> input.copyTo(out) }
         }
-        // 脚本原样导出；包名写入独立的 env 文件，由脚本 source。
-        // 这样避免在 Kotlin 字符串里处理 shell 的 ${...} 转义，也方便用户手改。
+        // 脚本原样导出：包名已在 iwsh.sh 顶部，带注释，用户自己改即可。
         ctx.assets.open("iwsh.sh").use { input ->
             File(dir, "iwsh.sh").outputStream().use { out -> input.copyTo(out) }
         }
-        // 不预先绑定应用：给一个带说明的模板，用户按自己的终端 App 改包名即可
-        File(dir, "iwsh.env").writeText(
-            "# iwsh 终端应用包名：改成你使用的终端 App 包名\n" +
-                "# 例：com.termux / bin.mt.termex。授权按「整个应用」生效。\n" +
-                "# 不修改则默认 com.termux；也可用同名环境变量覆盖。\n" +
-                "IWPHONE_APPLICATION_ID=com.termux\n"
-        )
         mapOf("ok" to true, "path" to dir.absolutePath)
     } catch (e: Exception) {
         mapOf("ok" to false, "path" to "", "msg" to (e.message ?: ""))
