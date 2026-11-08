@@ -50,3 +50,17 @@ dist/
 # 变量未展开的畸形目录 —— 曾把 %SystemDrive%/ProgramData/... 下的
 # Windows 缓存 db 用 git add -A 扫进仓库（约 965 KB）。这里直接挡住。
 %*/
+
+# Kotlin 增量编译缓存（本机生成，不入库）
+.kotlin/
+android/.kotlin/
+
+# rish dex 构建中间产物
+tools/rish/classes/
+tools/rish/classes2/
+tools/rish/dex/
+tools/rish/dex2/
+tools/rish/out/
+tools/rish/Probe.java
+build/*.b64
+build/probe.dex

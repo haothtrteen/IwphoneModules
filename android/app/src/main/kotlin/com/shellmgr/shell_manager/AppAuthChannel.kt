@@ -7,6 +7,7 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * 「应用授权」的 Flutter ↔ 原生桥（`shellmgr/appauth`）。
@@ -72,6 +73,13 @@ class AppAuthChannel(private val ctx: android.content.Context) {
                     mapOf("ok" to true, "enabled" to BrokerPrompt.canOverlay(ctx))
                 )
 
+                /** 优先用自持 adb 自授权悬浮窗，失败由 UI 再跳系统设置。 */
+                "grantOverlayViaAdb" -> runAsync(result) {
+                    val r = AdbBootstrap.grantOverlayViaAdb(ctx)
+                    mapOf("ok" to r.ok, "msg" to r.message,
+                        "enabled" to BrokerPrompt.canOverlay(ctx))
+                }
+
                 /** 跳系统「显示在其他应用上层」设置页。 */
                 "openOverlaySettings" -> result.success(openOverlaySettings())
 
@@ -118,6 +126,9 @@ class AppAuthChannel(private val ctx: android.content.Context) {
                  */
                 "installedApps" -> runAsync(result) { installedApps() }
 
+                /** 导出 rish 工具包（iwsh.sh + iwsh.dex）到 App 外部私有目录。 */
+                "exportRish" -> result.success(exportRish())
+
                 /** 把接入示例脚本导出到 App 外部私有目录，返回绝对路径。 */
                 "exportScript" -> {
                     val name = call.argument<String>("name")
@@ -138,6 +149,20 @@ class AppAuthChannel(private val ctx: android.content.Context) {
     }
 
     // ------------------------------------------------------------------
+
+    /** 导出 rish 工具包：终端 app 把这两个文件放进自己的私有目录即可使用。 */
+    private fun exportRish(): Map<String, Any?> = try {
+        val dir = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "rish")
+        if (!dir.exists()) dir.mkdirs()
+        for (name in listOf("iwsh.sh", "iwsh.dex")) {
+            ctx.assets.open(name).use { input ->
+                File(dir, name).outputStream().use { out -> input.copyTo(out) }
+            }
+        }
+        mapOf("ok" to true, "path" to dir.absolutePath)
+    } catch (e: Exception) {
+        mapOf("ok" to false, "path" to "", "msg" to (e.message ?: ""))
+    }
 
     /**
      * 导出脚本到 getExternalFilesDir —— App 专属外部目录，

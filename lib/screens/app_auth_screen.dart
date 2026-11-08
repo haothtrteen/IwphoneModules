@@ -479,11 +479,19 @@ class _AppAuthScreenState extends State<AppAuthScreen>
               alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: () async {
-                  final ok = await AppAuthService.instance.openOverlaySettings();
-                  if (!ok && mounted) {
-                    _toast(AppStrings.t('auth.promptOpenFail'), ok: false);
+                  // 既然 App 已经拿到 shell，优先用 adb 给自己授权；
+                  // 只有该 ROM 拦 appops 时才退回系统设置页。
+                  final r = await AppAuthService.instance.grantOverlayViaAdb();
+                  if (!mounted) return;
+                  if (r.enabled) {
+                    await _load();
+                    _toast(AppStrings.t('auth.overlaySelfGranted'));
+                  } else {
+                    final ok = await AppAuthService.instance.openOverlaySettings();
+                    if (!ok && mounted) {
+                      _toast(AppStrings.t('auth.promptOpenFail'), ok: false);
+                    }
                   }
-                  // 回到前台时 didChangeAppLifecycleState 会自动复查
                 },
                 child: Text(AppStrings.t('auth.promptEnable')),
               ),
@@ -753,6 +761,18 @@ case "$(id -u)" in
     ;;
 esac''';
 
+    Future<void> doExportKit() async {
+      final path = await AppAuthService.instance.exportRish();
+      if (!mounted) return;
+      if (path == null || path.isEmpty) {
+        _toast(AppStrings.t('auth.exportKitFail'), ok: false);
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: path));
+      Navigator.of(context).pop();
+      _toast('${AppStrings.t('auth.exportedKit')}$path');
+    }
+
     var tab = 0; // 0 = Java, 1 = Shell
 
     Future<void> doExport() async {
@@ -798,6 +818,10 @@ esac''';
                       child: Text(AppStrings.t('auth.usageTitle'),
                           style: AppText.cardTitle),
                     ),
+                    TextButton(
+                      onPressed: doExportKit,
+                      child: Text(AppStrings.t('auth.exportKit')),
+                    ),
                     if (tab == 1)
                       TextButton(
                         onPressed: doExport,
@@ -836,6 +860,11 @@ esac''';
                     ),
                   ],
                 ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                child: Text(AppStrings.t('auth.rishHint'),
+                    style: AppText.desc12),
               ),
               Expanded(
                 child: SingleChildScrollView(

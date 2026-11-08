@@ -80,6 +80,8 @@ object BrokerPrompt {
         val sig: String,
         val latch: CountDownLatch = CountDownLatch(1),
         @Volatile var decision: Decision = Decision.TIMEOUT,
+        /** 终端请求：广播拿不到调用方 uid，文案改为「用户确认的会话」。 */
+        val generic: Boolean = false,
         @Volatile var view: View? = null,
         @Volatile var wm: WindowManager? = null,
     )
@@ -128,6 +130,27 @@ object BrokerPrompt {
             recentDeny[pkg] = System.currentTimeMillis()
         }
         return d
+    }
+
+    /**
+     * 终端类请求（rish 式入口）用：广播无法提供调用方 uid，
+     * 因此这里只问「是否允许本次终端会话」，不做按应用授权。
+     * 语义与 Shizuku 的「用户确认一次会话」一致，界面上也如实写明。
+     */
+    fun askTerminal(ctx: Context): Boolean {
+        if (!canOverlay(ctx)) return false
+        val p = Pending("terminal", -1, "", generic = true)
+        val key = "terminal"
+        synchronized(lock) {
+            if (pending.containsKey(key)) return false
+            pending[key] = p
+        }
+        show(ctx, p)
+        val done = p.latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        if (!done) resolve(p, Decision.TIMEOUT)
+        synchronized(lock) { pending.remove(key) }
+        return done && (p.decision == Decision.ALLOW_ALWAYS ||
+            p.decision == Decision.ALLOW_ONCE)
     }
 
     /** 用户点了按钮（或添加悬浮窗失败）时回填决定并关掉弹窗。 */
@@ -222,10 +245,15 @@ object BrokerPrompt {
         card.addView(space(ctx, dp(12)))
 
         val label = BrokerStore.labelOf(ctx, p.pkg)
-        card.addView(line(ctx, c.requester, label, primary = true))
-        card.addView(line(ctx, c.pkgLabel, p.pkg))
-        card.addView(line(ctx, c.uidLabel, p.uid.toString()))
-        card.addView(line(ctx, c.sigLabel, p.sig.take(16)))
+        if (p.generic) {
+            card.addView(line(ctx, c.requester, c.terminalLabel, primary = true))
+            card.addView(line(ctx, c.pkgLabel, c.terminalDetail))
+        } else {
+            card.addView(line(ctx, c.requester, label, primary = true))
+            card.addView(line(ctx, c.pkgLabel, p.pkg))
+            card.addView(line(ctx, c.uidLabel, p.uid.toString()))
+            card.addView(line(ctx, c.sigLabel, p.sig.take(16)))
+        }
 
         card.addView(space(ctx, dp(10)))
         card.addView(TextView(ctx).apply {
@@ -343,6 +371,8 @@ object BrokerPrompt {
         val allow: String,
         val deny: String,
         val timeoutHint: String,
+        val terminalLabel: String,
+        val terminalDetail: String,
     )
 
     private fun copy(ctx: Context): Copy {
@@ -363,6 +393,8 @@ object BrokerPrompt {
             allow = "Allow",
             deny = "Deny",
             timeoutHint = "Auto-denied after 45 seconds without a response",
+            terminalLabel = "Terminal session",
+            terminalDetail = "Caller identity unavailable (broadcast)",
         ) else Copy(
             title = "Shell 权限请求",
             requester = "应用",
@@ -374,6 +406,8 @@ object BrokerPrompt {
             allow = "允许",
             deny = "拒绝",
             timeoutHint = "45 秒内未处理将自动拒绝",
+            terminalLabel = "终端会话请求",
+            terminalDetail = "广播通道无法校验调用方身份，请确认是你本人发起",
         )
     }
 }

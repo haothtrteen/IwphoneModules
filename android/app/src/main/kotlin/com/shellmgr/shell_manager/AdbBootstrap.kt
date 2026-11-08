@@ -1095,6 +1095,41 @@ object AdbBootstrap {
         )
     }
 
+    /**
+     * 通过自持 adb 给自己授予「显示在其他应用上层」权限。
+     *
+     * 实测（22011211C / Android 13）：adb shell(uid 2000) 可执行
+     *   appops set <pkg> SYSTEM_ALERT_WINDOW allow
+     * 且 Settings.canDrawOverlays 立即变 true。这样即时授权弹窗不必再让用户
+     * 手动进系统设置 —— 既然已经拿到 shell，这一步可以自服务完成。
+     *
+     * 少数 ROM（如部分 ColorOS）不给 shell MANAGE_APP_OPS_MODES，会失败；
+     * 调用方需保留「跳系统设置」兜底。
+     */
+    fun grantOverlayViaAdb(ctx: Context): Result {
+        if (!isProvisioned(ctx)) return Result(false, "尚未配对，无法自授权")
+        val t = ensureTransportSmart(ctx)
+        if (!t.ok) return Result(false, "adb 未连接：${t.message}")
+        val pkg = ctx.packageName
+        run(
+            ctx,
+            listOf("-s", activeTarget, "shell",
+                "appops set $pkg SYSTEM_ALERT_WINDOW allow"),
+            timeoutMs = 10_000,
+        )
+        val check = run(
+            ctx,
+            listOf("-s", activeTarget, "shell",
+                "appops get $pkg SYSTEM_ALERT_WINDOW"),
+            timeoutMs = 10_000,
+        )
+        return if (check.ok && check.message.contains("allow")) {
+            Result(true, "已通过 adb 自授权悬浮窗")
+        } else {
+            Result(false, "自授权未生效（该 ROM 可能限制 shell 写 appops）：${check.message}")
+        }
+    }
+
     // ---------------- 每次开机执行 ----------------
 
     /**
@@ -1181,6 +1216,9 @@ object AdbBootstrap {
         // 首次使用 / 5555 尚未监听时，这里会先连无线调试动态端口再固定 5555
         val c = ensureTransportSmart(ctx)
         if (!c.ok) return c
+
+        // 开机自启后顺手补齐悬浮窗权限：没有它即时授权弹窗会降级成待授权列表
+        if (!BrokerPrompt.canOverlay(ctx)) grantOverlayViaAdb(ctx)
 
         if (frameworkRunning(ctx)) {
             // ★ 守护进程活着 ≠ WebUI 活着。WebUI 是 App 读取一切状态的唯一通道

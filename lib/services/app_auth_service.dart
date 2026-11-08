@@ -47,6 +47,17 @@ class AppAuthService {
     return raw?['enabled'] == true;
   }
 
+  /// 通过已获取的 adb 自授权悬浮窗；成功返回 enabled=true。
+  Future<({bool ok, String msg, bool enabled})> grantOverlayViaAdb() async {
+    final raw =
+        await _ch.invokeMethod<Map<dynamic, dynamic>>('grantOverlayViaAdb');
+    return (
+      ok: raw?['ok'] == true,
+      msg: (raw?['msg'] as String?) ?? '',
+      enabled: raw?['enabled'] == true,
+    );
+  }
+
   /// 跳系统悬浮窗设置页。返回是否成功打开。
   Future<bool> openOverlaySettings() async {
     final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('openOverlaySettings');
@@ -79,6 +90,17 @@ class AppAuthService {
   Future<List<PickableApp>> installedApps() async {
     final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('installedApps');
     return _parse(raw, PickableApp.fromJson);
+  }
+
+  /// 导出 rish 工具包（iwsh.sh + iwsh.dex）；成功返回目录绝对路径。
+  Future<String?> exportRish() async {
+    try {
+      final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('exportRish');
+      if (raw?['ok'] == true) return raw?['path'] as String?;
+    } catch (_) {
+      // 失败由界面提示
+    }
+    return null;
   }
 
   /// 把接入示例脚本导出到 App 外部私有目录；成功返回绝对路径。
