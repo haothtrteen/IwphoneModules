@@ -150,7 +150,7 @@
             android:name=".PairingReceiver"
             android:exported="false" />
 
-        <!-- rish 式终端入口：第三方 app 的终端发广播请求一次性会话令牌。
+        <!-- iwsh 式终端入口：第三方 app 的终端发广播请求一次性会话令牌。
              导出但无权限保护：接收器只负责触发用户确认弹窗，不据此放行任何命令。 -->
         <receiver
             android:name=".BrokerShellReceiver"

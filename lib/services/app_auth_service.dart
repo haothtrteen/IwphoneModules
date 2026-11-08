@@ -92,16 +92,31 @@ class AppAuthService {
     return _parse(raw, PickableApp.fromJson);
   }
 
-  /// 导出 rish 工具包（iwsh.sh + iwsh.dex）；成功返回目录绝对路径。
-  Future<String?> exportRish() async {
+  /// 导出 iwsh 工具包；[pkg] 是终端应用包名，会被写进启动脚本
+  /// （对齐 Shizuku 的 application id 做法），授权时按整个应用生效。
+  Future<String?> exportIwsh(String pkg) async {
     try {
-      final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>('exportRish');
+      final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>(
+        'exportIwsh',
+        {'pkg': pkg},
+      );
       if (raw?['ok'] == true) return raw?['path'] as String?;
     } catch (_) {
       // 失败由界面提示
     }
     return null;
   }
+
+  /// 已按「整个应用」授权的终端应用列表。
+  Future<List<IwshGrant>> listIwshGrants() async {
+    final raw =
+        await _ch.invokeMethod<Map<dynamic, dynamic>>('listIwshGrants');
+    return _parse(raw, IwshGrant.fromJson);
+  }
+
+  /// 撤销某个终端应用的授权（其缓存 token 立即失效）。
+  Future<void> revokeIwshGrant(String pkg) =>
+      _ch.invokeMethod<void>('revokeIwshGrant', {'pkg': pkg});
 
   /// 把接入示例脚本导出到 App 外部私有目录；成功返回绝对路径。
   Future<String?> exportScript({
@@ -283,4 +298,27 @@ DateTime? _time(dynamic v) {
   final ms = (v as num?)?.toInt() ?? 0;
   if (ms <= 0) return null;
   return DateTime.fromMillisecondsSinceEpoch(ms);
+}
+
+
+/// 一个「整个应用」粒度的终端授权记录。
+class IwshGrant {
+  const IwshGrant({
+    required this.pkg,
+    required this.label,
+    required this.uid,
+    required this.grantedAt,
+  });
+
+  final String pkg;
+  final String label;
+  final int uid;
+  final DateTime? grantedAt;
+
+  factory IwshGrant.fromJson(Map<String, dynamic> j) => IwshGrant(
+        pkg: j['pkg'] as String? ?? '',
+        label: j['label'] as String? ?? '',
+        uid: (j['uid'] as num?)?.toInt() ?? -1,
+        grantedAt: _time(j['at']),
+      );
 }

@@ -126,8 +126,29 @@ class AppAuthChannel(private val ctx: android.content.Context) {
                  */
                 "installedApps" -> runAsync(result) { installedApps() }
 
-                /** 导出 rish 工具包（iwsh.sh + iwsh.dex）到 App 外部私有目录。 */
-                "exportRish" -> result.success(exportRish())
+                /** 导出 iwsh 工具包，并把选定的终端应用包名写进启动脚本。 */
+                "exportIwsh" -> {
+                    val pkg = call.argument<String>("pkg") ?: "com.termux"
+                    result.success(exportIwsh(pkg))
+                }
+
+                /** 已授权的终端应用列表 / 撤销（整个应用粒度）。 */
+                "listIwshGrants" -> runAsync(result) {
+                    val arr = org.json.JSONArray()
+                    IwshGrantStore.list(ctx).forEach { g ->
+                        arr.put(org.json.JSONObject()
+                            .put("pkg", g.pkg)
+                            .put("label", BrokerStore.labelOf(ctx, g.pkg))
+                            .put("uid", g.uid)
+                            .put("at", g.at))
+                    }
+                    mapOf("ok" to true, "items" to arr.toString())
+                }
+
+                "revokeIwshGrant" -> {
+                    IwshGrantStore.revoke(ctx, call.argument<String>("pkg") ?: "")
+                    result.success(mapOf("ok" to true))
+                }
 
                 /** 把接入示例脚本导出到 App 外部私有目录，返回绝对路径。 */
                 "exportScript" -> {
@@ -150,16 +171,21 @@ class AppAuthChannel(private val ctx: android.content.Context) {
 
     // ------------------------------------------------------------------
 
-    /** 导出 rish 工具包：终端 app 把这两个文件放进自己的私有目录即可使用。 */
-    private fun exportRish(): Map<String, Any?> = try {
-        val dir = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "rish")
+    /** 导出 iwsh 工具包：终端 app 把这两个文件放进自己的私有目录即可使用。 */
+    private fun exportIwsh(pkg: String): Map<String, Any?> = try {
+        val safe = if (pkg.matches(Regex("[A-Za-z0-9_.]+"))) pkg else "com.termux"
+        val dir = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "iwsh")
         if (!dir.exists()) dir.mkdirs()
-        for (name in listOf("iwsh.sh", "iwsh.dex")) {
-            ctx.assets.open(name).use { input ->
-                File(dir, name).outputStream().use { out -> input.copyTo(out) }
-            }
+        ctx.assets.open("iwsh.dex").use { input ->
+            File(dir, "iwsh.dex").outputStream().use { out -> input.copyTo(out) }
         }
-        mapOf("ok" to true, "path" to dir.absolutePath)
+        // 脚本原样导出；包名写入独立的 env 文件，由脚本 source。
+        // 这样避免在 Kotlin 字符串里处理 shell 的 ${...} 转义，也方便用户手改。
+        ctx.assets.open("iwsh.sh").use { input ->
+            File(dir, "iwsh.sh").outputStream().use { out -> input.copyTo(out) }
+        }
+        File(dir, "iwsh.env").writeText("IWPHONE_APPLICATION_ID=$safe\n")
+        mapOf("ok" to true, "path" to dir.absolutePath, "pkg" to safe)
     } catch (e: Exception) {
         mapOf("ok" to false, "path" to "", "msg" to (e.message ?: ""))
     }

@@ -80,8 +80,11 @@ object BrokerPrompt {
         val sig: String,
         val latch: CountDownLatch = CountDownLatch(1),
         @Volatile var decision: Decision = Decision.TIMEOUT,
-        /** 终端请求：广播拿不到调用方 uid，文案改为「用户确认的会话」。 */
+        /** 终端请求：广播拿不到调用方 uid，文案改为「用户确认的整个应用授权」。 */
         val generic: Boolean = false,
+        /** 通用弹窗要显示的应用名 / 说明，由接收器传入。 */
+        val termLabel: String = "",
+        val termDetail: String = "",
         @Volatile var view: View? = null,
         @Volatile var wm: WindowManager? = null,
     )
@@ -133,13 +136,14 @@ object BrokerPrompt {
     }
 
     /**
-     * 终端类请求（rish 式入口）用：广播无法提供调用方 uid，
+     * 终端类请求（iwsh 式入口）用：广播无法提供调用方 uid，
      * 因此这里只问「是否允许本次终端会话」，不做按应用授权。
      * 语义与 Shizuku 的「用户确认一次会话」一致，界面上也如实写明。
      */
-    fun askTerminal(ctx: Context): Boolean {
+    fun askTerminal(ctx: Context, label: String, detail: String): Boolean {
         if (!canOverlay(ctx)) return false
-        val p = Pending("terminal", -1, "", generic = true)
+        val p = Pending("terminal", -1, "", generic = true,
+            termLabel = label, termDetail = detail)
         val key = "terminal"
         synchronized(lock) {
             if (pending.containsKey(key)) return false
@@ -246,8 +250,8 @@ object BrokerPrompt {
 
         val label = BrokerStore.labelOf(ctx, p.pkg)
         if (p.generic) {
-            card.addView(line(ctx, c.requester, c.terminalLabel, primary = true))
-            card.addView(line(ctx, c.pkgLabel, c.terminalDetail))
+            card.addView(line(ctx, c.requester, p.termLabel, primary = true))
+            card.addView(line(ctx, c.pkgLabel, p.termDetail))
         } else {
             card.addView(line(ctx, c.requester, label, primary = true))
             card.addView(line(ctx, c.pkgLabel, p.pkg))

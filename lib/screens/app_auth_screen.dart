@@ -48,6 +48,7 @@ class _AppAuthScreenState extends State<AppAuthScreen>
   List<PendingApp> _pending = const [];
   List<AuthorizedApp> _denied = const [];
   List<AuditEntry> _audit = const [];
+  List<IwshGrant> _iwshGrants = const [];
 
   /// 正在撤销/批准的应用包名，用于禁用按钮防连点。
   String? _busy;
@@ -89,6 +90,7 @@ class _AppAuthScreenState extends State<AppAuthScreen>
       final pending = await AppAuthService.instance.listPending();
       final denied = await AppAuthService.instance.listDenied();
       final audit = await AppAuthService.instance.listAudit();
+      final iwshGrants = await AppAuthService.instance.listIwshGrants();
       if (!mounted) return;
       setState(() {
         _hasToken = hasToken;
@@ -97,6 +99,7 @@ class _AppAuthScreenState extends State<AppAuthScreen>
         _pending = pending;
         _denied = denied;
         _audit = audit;
+        _iwshGrants = iwshGrants;
         _loading = false;
       });
     } catch (e) {
@@ -309,6 +312,23 @@ class _AppAuthScreenState extends State<AppAuthScreen>
         ),
         const SizedBox(height: 16),
 
+        SettingsSection(
+          title: AppStrings.t('auth.iwshGrants'),
+          children: [
+            Text(AppStrings.t('auth.iwshGrantsHint'), style: AppText.desc12),
+            const SizedBox(height: 8),
+            if (_iwshGrants.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text(AppStrings.t('auth.iwshGrantsEmpty'),
+                    style: AppText.desc12),
+              )
+            else
+              for (final g in _iwshGrants) _iwshGrantRow(g),
+          ],
+        ),
+        const SizedBox(height: 16),
+
         if (_denied.isNotEmpty) ...[
           SettingsSection(
             title: AppStrings.t('auth.sectionDenied'),
@@ -501,6 +521,44 @@ class _AppAuthScreenState extends State<AppAuthScreen>
       ),
     );
   }
+
+  Widget _iwshGrantRow(IwshGrant g) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Icon(Icons.terminal_rounded, size: 30, color: AppColors.accent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(g.label.isEmpty ? g.pkg : g.label,
+                      style: AppText.rowLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  Text('${g.pkg} · uid ${g.uid}', style: AppText.desc12),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: _busy == g.pkg
+                  ? null
+                  : () async {
+                      setState(() => _busy = g.pkg);
+                      await AppAuthService.instance.revokeIwshGrant(g.pkg);
+                      if (!mounted) return;
+                      setState(() => _busy = null);
+                      _toast(AppStrings.t('auth.iwshRevoked'));
+                      await _load();
+                    },
+              child: Text(
+                AppStrings.t('auth.revoke'),
+                style: TextStyle(color: AppColors.iconRed),
+              ),
+            ),
+          ],
+        ),
+      );
 
   Widget _deniedRow(AuthorizedApp d) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -762,7 +820,21 @@ case "$(id -u)" in
 esac''';
 
     Future<void> doExportKit() async {
-      final path = await AppAuthService.instance.exportRish();
+      // 先选终端应用：包名会被写进 iwsh.sh，授权按整个应用生效
+      final picked = await showModalBottomSheet<PickableApp>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (_) => const _AppPickerSheet(
+          titleKey: 'auth.iwshPick',
+          allowGranted: true,
+        ),
+      );
+      if (picked == null || !mounted) return;
+      final path = await AppAuthService.instance.exportIwsh(picked.pkg);
       if (!mounted) return;
       if (path == null || path.isEmpty) {
         _toast(AppStrings.t('auth.exportKitFail'), ok: false);
@@ -770,7 +842,7 @@ esac''';
       }
       await Clipboard.setData(ClipboardData(text: path));
       Navigator.of(context).pop();
-      _toast('${AppStrings.t('auth.exportedKit')}$path');
+      _toast('${AppStrings.t('auth.exportedKit')}$path\n${picked.pkg}');
     }
 
     var tab = 0; // 0 = Java, 1 = Shell
@@ -863,7 +935,7 @@ esac''';
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-                child: Text(AppStrings.t('auth.rishHint'),
+                child: Text(AppStrings.t('auth.iwshHint'),
                     style: AppText.desc12),
               ),
               Expanded(
@@ -890,7 +962,15 @@ esac''';
 /// 懒加载图标由原生侧统一编码（一次 channel 往返拿全部），
 /// 这里只管过滤与选中。
 class _AppPickerSheet extends StatefulWidget {
-  const _AppPickerSheet();
+  const _AppPickerSheet({
+    this.titleKey = 'auth.pickTitle',
+    this.allowGranted = false,
+  });
+
+  final String titleKey;
+
+  /// 导出工具包时允许选择任何应用（含已授权的），因为只是把包名写进脚本。
+  final bool allowGranted;
 
   @override
   State<_AppPickerSheet> createState() => _AppPickerSheetState();
@@ -940,7 +1020,7 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(AppStrings.t('auth.pickTitle'),
+                    child: Text(AppStrings.t(widget.titleKey),
                         style: AppText.cardTitle),
                   ),
                   IconButton(
@@ -988,7 +1068,7 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
                           itemBuilder: (_, i) {
                             final a = list[i];
                             return InkWell(
-                              onTap: a.granted
+                              onTap: (a.granted && !widget.allowGranted)
                                   ? null
                                   : () => Navigator.of(context).pop(a),
                               borderRadius: BorderRadius.circular(10),

@@ -37,7 +37,7 @@
 | 不能放 `/sdcard` | FUSE 挂载 `noexec`，且框架自己的注释已确认该处不能承载 fd/binder 语义 |
 | `/data/local/tmp/iwphone/bin/` 的直接 exec | `untrusted_app` 对 `shell_data_file` 是否有 execute 权限**需真机验证**；即便能 exec，权限仍是 app uid，不提权 |
 
-所以入口文件的正确定位是 **client stub**：把调用方的命令经 IPC 转给已经以 shell(2000) 常驻的框架，由框架执行。这与 Shizuku `rish` 是同一形态（脚本 + 转发，不是 setuid 二进制）。
+所以入口文件的正确定位是 **client stub**：把调用方的命令经 IPC 转给已经以 shell(2000) 常驻的框架，由框架执行。这与 Shizuku 的终端工具是同一形态（脚本 + 转发，不是 setuid 二进制）。
 
 **推荐规格：**
 
@@ -68,7 +68,7 @@ G1 已经能满足"授权后连续执行多条命令"（一次授权、一段脚
 
 ## 1.3 两种会话生命周期对比
 
-| 维度 | P 持久会话（跨多次终端调用） | S 进程内会话（关闭即销毁，类 Shizuku rish） |
+| 维度 | P 持久会话（跨多次终端调用） | S 进程内会话（关闭即销毁，类 Shizuku 终端工具） |
 |---|---|---|
 | 实现 | G3：`sid` + 服务端常驻 `sh` 进程 + 会话表 | G2：TCP 长连接 = 会话，连接即进程，断开即回收 |
 | 状态载体 | 服务端内存中的 `SessionRegistry` | 客户端进程持有的 socket / 子进程 |
@@ -81,7 +81,7 @@ G1 已经能满足"授权后连续执行多条命令"（一次授权、一段脚
 | 输出边界 | 无 tty，多条命令输出易粘连；必须随机 sentinel + 非阻塞读 | 原生字节流，无粘连问题；但需处理 PTY 与 `cmd` 类命令 fd |
 | 并发模型 | `ThreadingHTTPServer` 每请求一线程 + 每会话一把 `Lock`；读写要 condition variable | 每连接一线程，无共享状态 |
 | 框架约束 | 会话 stdout 必须落 `MODIO_DIR`（E7），不能落 `/sdcard`；`exit`/`Ctrl-D` 会杀掉整个会话需拦截 | 同左；另外 8538 对全机开放，安全面比 8537 更大 |
-| 与 Shizuku 形态 | 更像"远程 shell 服务" | 更像 Shizuku `rish`（客户端进程持有一个特权 `sh`） |
+| 与 Shizuku 形态 | 更像"远程 shell 服务" | 更像 Shizuku 终端工具（客户端进程持有一个特权 `sh`） |
 
 **结论**：S 是默认形态，P 是显式开启的可选能力。理由：授权粒度不放大、无状态无孤儿、与 broker v2 的弹窗语义一致、WebUI 重启行为可预期。P 只在"确实需要跨多次独立调用保持 cwd/env"时才开，且必须以"用户显式选择 + 单独授权记录"为前置，不能默认启用。
 
@@ -198,7 +198,7 @@ sh iwsh session <id> <cmd>         # 仅 L3 启用时可用，跨调用保持状
 |---|---|---|---|
 | **A 隔离 adb 通道**（推荐默认） | 检测到 Shizuku 运行时**不再执行 `adb tcpip 5555`、不写 `persist.adb.tcp.port`**；App 改走 mDNS 发现的动态端口直连；自持 adb server 用独立 `ADB_SERVER_PORT` 避免与系统 adb 抢 5037 | 改动集中在 `ensureFixedPort()` / `ensureTransport()`；保留现有架构；不依赖第三方 | 开机自启失效（动态端口重启后变，E5 的原始理由）；需重新配对；仍需实测 Shizuku 侧是否也会重启 adbd |
 | **B 框架脱离 adbd 进程树** | 启动时把框架迁出 adbd 的 cgroup（或用 `am`/JobService/Sui 拉起），使 E4 的"清理进程树"不再命中 | 根治 adbd 重启连锁杀进程 | 免 root 下缺少可靠拉起者；改动 bootstrap/startFramework 全链路；可能与 E4 实机结论冲突，风险最高 |
-| **C 复用 Shizuku 作提权后端** | 检测到 Shizuku 时框架通过 Shizuku API 启动/执行，不再自持 adb | 单一通道，天然无冲突；可顺带用 `rish` 的会话能力 | 强依赖第三方；框架要加 Java 层与 binder 客户端；Shizuku 未启动时的降级路径要单独维护；授权模型从自己的授权表变成双套 |
+| **C 复用 Shizuku 作提权后端** | 检测到 Shizuku 时框架通过 Shizuku API 启动/执行，不再自持 adb | 单一通道，天然无冲突；可顺带用其终端会话能力 | 强依赖第三方；框架要加 Java 层与 binder 客户端；Shizuku 未启动时的降级路径要单独维护；授权模型从自己的授权表变成双套 |
 | **D 显式互斥**（推荐兜底） | 检测到对方运行时，在授权页/首页提示"两者共用 adb 通道，同时启用可能互相中断"，让用户二选一 | 零实现风险、验收最简单、不撒谎 | 能力受限，体验差；不能解决"用户就是想两个都要" |
 
 **推荐组合**：A（默认自动避让）+ D（检测到 Shizuku 时的显式提示），C 作为后续可选增强，B 不推荐（与免 root 定位冲突且风险最高）。

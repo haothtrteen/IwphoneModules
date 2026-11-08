@@ -55,12 +55,12 @@ dist/
 .kotlin/
 android/.kotlin/
 
-# rish dex 构建中间产物
-tools/rish/classes/
-tools/rish/classes2/
-tools/rish/dex/
-tools/rish/dex2/
-tools/rish/out/
-tools/rish/Probe.java
+# iwsh dex 构建中间产物
+tools/iwsh/classes/
+tools/iwsh/classes2/
+tools/iwsh/dex/
+tools/iwsh/dex2/
+tools/iwsh/out/
+tools/iwsh/Probe.java
 build/*.b64
 build/probe.dex

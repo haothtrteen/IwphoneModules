@@ -66,7 +66,7 @@ class MainActivity : FlutterActivity() {
 
         autostart.register(flutterEngine.dartExecutor.binaryMessenger)
         appAuth.register(flutterEngine.dartExecutor.binaryMessenger)
-        // rish 式终端入口：回环服务常驻，广播接收器才来得及签发会话令牌
+        // iwsh 式终端入口：回环服务常驻，广播接收器才来得及签发会话令牌
         AppGlobals.appContext = applicationContext
         BrokerShell.startServer()
     }
