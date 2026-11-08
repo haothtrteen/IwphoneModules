@@ -12,6 +12,12 @@
 : "${IWPHONE_APPLICATION_ID:=com.termux}"
 export IWPHONE_APPLICATION_ID
 
+# ★ 联发科 ROM / 部分终端 App 会在每次 HTTP 请求时把 CTA/OkHttp 日志
+#   写进 stdout（[okhttp] / com.mediatek.cta / [OkHttp] sendRequest）。
+#   默认隐藏：丢弃 stdout，把 iwsh 的输出（走 stderr）送回终端。
+#   想看原始日志时改成 1，或用同名环境变量覆盖。
+: "${IWPHONE_SHOW_ROM_LOG:=0}"
+
 # 部署建议：把工具包放进终端 App 自己的私有目录（如 /data/data/<包名>/files/）。
 # Android 14+ 的 app_process 会拒绝加载「可写」的 dex；公共 /sdcard(FUSE) 上
 # chmod 往往无效，私有目录才能成功收紧权限。
@@ -47,5 +53,11 @@ if [ "$_sdk" -ge 34 ] && [ -w "$DEX" ]; then
   echo "[iwsh] 提示：$DEX 仍可写，Android 14+ 会拒绝加载。请把工具包放到终端 App 私有目录" >&2
 fi
 
+if [ "$IWPHONE_SHOW_ROM_LOG" = "1" ]; then
+  exec /system/bin/app_process -Djava.class.path="$DEX" /system/bin \
+       --nice-name=iwsh com.shellmgr.shell.ShellLoader "$@"
+fi
+# fd 3 保存终端原始 stdout；1 丢掉 ROM 噪声；2（iwsh 输出）送回 fd 3
+exec 3>&1
 exec /system/bin/app_process -Djava.class.path="$DEX" /system/bin \
-     --nice-name=iwsh com.shellmgr.shell.ShellLoader "$@"
+     --nice-name=iwsh com.shellmgr.shell.ShellLoader "$@" 1>/dev/null 2>&3

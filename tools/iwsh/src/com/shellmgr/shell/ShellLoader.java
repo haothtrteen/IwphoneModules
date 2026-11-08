@@ -22,6 +22,10 @@ import java.util.concurrent.TimeUnit;
  * 授权按「整个应用」：包名由 iwsh.sh 通过 IWPHONE_APPLICATION_ID 传入，
  * 首次确认后 token 缓存到工具包目录，后续调用与 REPL 内每条命令复用，
  * 不再弹窗。
+ *
+ * ★ 所有输出统一写 System.err：联发科 ROM / 部分终端 App 会在每次 HTTP
+ *   请求时往 stdout 注入 CTA/OkHttp 日志，iwsh.sh 默认丢弃 stdout，
+ *   再把 stderr 送回终端，从而只留下命令结果。
  */
 public final class ShellLoader {
 
@@ -103,11 +107,11 @@ public final class ShellLoader {
     private static void runRepl(String token) throws Exception {
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         String cwd = "";
-        System.out.println("iwsh · 交互模式   exit / Ctrl-D 退出   cd 可保持工作目录");
-        System.out.flush();
+        System.err.println("iwsh · 交互模式   exit / Ctrl-D 退出   cd 可保持工作目录");
+        System.err.flush();
         while (true) {
-            System.out.print("iwsh> ");
-            System.out.flush();
+            System.err.print("iwsh> ");
+            System.err.flush();
             String line = in.readLine();
             if (line == null) break;                    // Ctrl-D
             line = line.trim();
@@ -140,8 +144,8 @@ public final class ShellLoader {
             }
             print(body);
         }
-        System.out.println("bye");
-        System.out.flush();
+        System.err.println("bye");
+        System.err.flush();
     }
 
     /** App 内部持有 WebUI 密钥，终端永远拿不到。 */
@@ -172,7 +176,7 @@ public final class ShellLoader {
         String msg = jsonField(body, "msg");
         String code = jsonField(body, "code");
         boolean printed = false;
-        if (out != null && out.length() > 0) { System.out.print(unescape(out)); printed = true; }
+        if (out != null && out.length() > 0) { System.err.print(unescape(out)); printed = true; }
         if (err != null && err.length() > 0) { System.err.print(unescape(err)); printed = true; }
         if (!printed) {
             if (msg != null && msg.length() > 0) {
@@ -183,7 +187,7 @@ public final class ShellLoader {
                 System.err.println("[iwsh] 无输出：" + body.trim());
             }
         }
-        System.out.flush();
+        System.err.flush();
         System.err.flush();
     }
 

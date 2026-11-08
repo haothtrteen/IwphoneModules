@@ -1,4 +1,4 @@
-# iwsh 终端接入 · 落地说明（v1.3.21）
+# iwsh 终端接入 · 落地说明（v1.3.22）
 
 对应设计稿：`iwphone_iwsh_design.html`（工作区根目录）。
 参考素材：`shizuku_ref/rish.sh` + `rish_shizuku.dex`（用户提供的 Shizuku 终端工具包，
@@ -275,3 +275,44 @@ bye
 
 `cd` 后 `pwd` 正确变为 `/storage/emulated/0`；单次调用 `sh iwsh.sh id -u`
 仍输出 `2000`。测试用的是临时目录副本，未改动用户原始工具包与 token。
+
+
+---
+
+## 11. v1.3.22：ROM 噪声静默开关
+
+### 11.1 噪声来自哪里（真机分离验证）
+
+把 `sh iwsh.sh` 的 stdout / stderr 分别重定向到两个文件后确认：
+`[okhttp]` / `com.mediatek.cta.CtaUtils` / `[OkHttp] sendRequest` 这些日志
+**全部在 stdout**，stderr 是空的。因此 `2>/dev/null` 无效，
+它们是联发科 ROM / 终端 App 在每次 HTTP 请求时往 fd 1 注入的，
+与 iwsh 逻辑无关，也不影响执行结果。
+
+### 11.2 方案
+
+- dex 的**所有输出统一改写 `System.err`**（提示符、命令 stdout/stderr、
+  `[iwsh]` 提示、错误兜底）。
+- `iwsh.sh` 默认 `IWPHONE_SHOW_ROM_LOG=0`：
+  ```sh
+  exec 3>&1                     # 保存终端原始 stdout
+  exec app_process ... 1>/dev/null 2>&3
+  ```
+  fd 1 的 ROM 噪声进 `/dev/null`，dex 的 stderr 经 fd 3 送回终端正常显示。
+  不用管道 / grep，因此没有缓冲延迟，REPL 提示符仍然即时出现。
+- 想看原始日志：把脚本里的 `IWPHONE_SHOW_ROM_LOG` 改成 `1`，或执行时
+  `IWPHONE_SHOW_ROM_LOG=1 sh iwsh.sh`；此时不重定向，dex 输出仍在 stderr
+  （终端照常显示），ROM 日志也会一起出现。
+
+### 11.3 真机验证（`22011211C`，复用已授权 token）
+
+默认：
+```
+iwsh · 交互模式   exit / Ctrl-D 退出   cd 可保持工作目录
+iwsh> 1
+iwsh> this-is-iwphone
+iwsh> bye
+```
+
+`IWPHONE_SHOW_ROM_LOG=1` 时 `[okhttp]` / `[OkHttp] sendRequest` 等日志恢复出现。
+两条命令输出正确、`exit` 正常退出。测试用临时副本，未改动用户工具包与 token。
