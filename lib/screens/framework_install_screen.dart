@@ -73,6 +73,20 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     _refresh();
     _detectRoot();
     _loadVersion();
+    _loadMode();
+  }
+
+  /// ★ 必须从原生读回当前模式再渲染高级选项。
+  /// 之前写死 false，覆盖更新框架时 _runInstall 会 setDiscoverMode(false)，
+  /// 把用户已选的「协同共存」悄悄重置成「独占端口」，导致之后所有 adb
+  /// 操作都去连并不存在的 127.0.0.1:5555。
+  Future<void> _loadMode() async {
+    final p = await AutostartService.instance.loadUiPrefs();
+    if (!mounted) return;
+    setState(() {
+      _discoverMode = p.discoverMode;
+      _pinPort = p.pinPort;
+    });
   }
 
   Future<void> _loadVersion() async {

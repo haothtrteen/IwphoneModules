@@ -2,6 +2,8 @@ package com.shellmgr.shell_manager
 
 import android.content.Context
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -551,6 +553,13 @@ object AdbBootstrap {
 
     /** 设备上是否已经设置过访问密钥（文件存在且非空）。 */
     fun isWebuiTokenSet(ctx: Context): Boolean {
+        // ★ 本地缓存是「用户是否设置过密钥」的权威记录：只有在下发成功后
+        //   才会写入。协同共存模式下无线调试可能暂时没起来，adb transport
+        //   完全不可用，此时若仍用 adb 去读设备侧文件，会把「已设置」
+        //   误报成「未设置」（首页反复弹「设置访问密钥」）。
+        if (AutostartPrefs.webuiToken(ctx).isNotEmpty()) return true
+
+        // 本地没记录时（首次安装 / 清过数据）才尝试从设备侧判断
         if (!isProvisioned(ctx)) return false
         if (!ensureConnected(ctx)) return false
         val r = run(
@@ -572,7 +581,13 @@ object AdbBootstrap {
             return Result(false, "尚未配对：请先完成设备配对")
         }
         if (!ensureConnected(ctx)) {
-            return Result(false, "未连接到 127.0.0.1:$CONNECT_PORT（请在「开机自启设置」里重新配对）")
+            val hint = if (UiPrefs.discoverMode(ctx)) {
+                "协同共存模式下未发现可用的无线调试端口。请打开开发者选项里的「无线调试」，" +
+                    "或到安装页切换为「独占端口」模式后重新激活"
+            } else {
+                "请在「开机自启设置」里重新配对"
+            }
+            return Result(false, "未能建立 adb 连接（当前目标 $activeTarget）：$hint")
         }
         // 刚部署完时 state/ 可能还没被框架建出来，push 到不存在的目录会失败
         run(
@@ -603,6 +618,34 @@ object AdbBootstrap {
         }
     }
 
+    /** 用 HTTP 探测 WebUI 是否接受给定的 token。不走 adb，框架在跑就可用。 */
+    private fun webuiStatus(token: String?): Boolean {
+        var c: HttpURLConnection? = null
+        return try {
+            c = URL("http://127.0.0.1:8537/api/status").openConnection() as HttpURLConnection
+            c.connectTimeout = 2000
+            c.readTimeout = 3000
+            if (token != null) c.setRequestProperty("X-Token", token)
+            if (c.responseCode != 200) return false
+            val t = c.inputStream.bufferedReader().use { it.readText() }
+            t.contains("\"ok\": true") || t.contains("\"ok\":true")
+        } catch (_: Exception) {
+            false
+        } finally {
+            try { c?.disconnect() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * 设备侧密钥是否与 [token] 一致。
+     * 不带 token 也放行 = 设备侧没有密钥（框架 _auth 空 token 放行），
+     * 这种情况必须重新下发，不能跳过。
+     */
+    private fun webuiTokenMatches(token: String): Boolean {
+        if (webuiStatus(null)) return false
+        return webuiStatus(token)
+    }
+
     /**
      * 设置 WebUI 访问密钥（APatch 式：用户自己输入）。
      *
@@ -617,6 +660,15 @@ object AdbBootstrap {
         if (t.any { it.isWhitespace() }) {
             return Result(false, "密钥不能包含空格或换行")
         }
+        // ★ 密钥没变且设备侧已生效时，无需再走 adb 下发。
+        //   协同共存模式可能暂时没有 adb transport，但 WebUI 仍在跑；
+        //   此时用户「重新输入同一个密钥并确定」应该直接成功，而不是报
+        //   「未连接到 127.0.0.1:5555」。
+        //   判据：不带 token 被拒（说明设备侧有密钥）+ 带新 token 通过（说明一致）。
+        if (webuiTokenMatches(t)) {
+            return Result(true, "密钥与设备侧一致，无需重新下发")
+        }
+
         val staged = File(ctx.cacheDir, "webui_token.tmp")
         try {
             staged.writeText(t)

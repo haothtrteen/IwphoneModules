@@ -417,7 +417,9 @@ class AutostartService {
         String themeMode,
         String locale,
         bool onboardingDone,
-        bool tokenPromptDismissed
+        bool tokenPromptDismissed,
+        bool discoverMode,
+        bool pinPort
       })> loadUiPrefs() async {
     try {
       final raw = await _channel
@@ -428,6 +430,8 @@ class AutostartService {
           locale: 'system',
           onboardingDone: false,
           tokenPromptDismissed: false,
+          discoverMode: false,
+          pinPort: true,
         );
       }
       return (
@@ -435,6 +439,8 @@ class AutostartService {
         locale: (raw['locale'] as String?) ?? 'system',
         onboardingDone: raw['onboardingDone'] == true,
         tokenPromptDismissed: raw['tokenPromptDismissed'] == true,
+        discoverMode: raw['discoverMode'] == true,
+        pinPort: raw['pinPort'] != false,
       );
     } catch (_) {
       return (
@@ -442,6 +448,8 @@ class AutostartService {
         locale: 'system',
         onboardingDone: false,
         tokenPromptDismissed: false,
+        discoverMode: false,
+        pinPort: true,
       );
     }
   }
