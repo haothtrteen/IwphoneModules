@@ -4,6 +4,8 @@ import android.content.Context
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -120,6 +122,10 @@ object AdbBootstrap {
 
     /** 部署用临时包在设备上的位置。 */
     private const val FW_TAR_ON_DEVICE = "/data/local/tmp/.iwphone_framework.tar.gz"
+
+    /** 无 adb 部署时，App 与框架都能读写的公共落包位置。 */
+    private const val SHARED_STAGE_NAME = ".iwphone_update.tar.gz"
+    private const val SHARED_SCRIPT_NAME = ".iwphone_deploy.sh"
 
     /** 固定的 ADB TCP 端口 —— 必须与 `adb tcpip` 写入的 persist 属性一致。 */
     const val CONNECT_PORT = 5555
@@ -801,48 +807,157 @@ object AdbBootstrap {
      * 文件由 shell 用户解出，属主天然是 shell —— 正合框架以 shell 身份运行的要求，
      * 不需要也不能 chown root。
      */
+    /** 准备框架包，返回 (暂存文件, 错误)。用户选的文件不复制。 */
+    private fun prepareFrameworkPackage(
+        ctx: Context,
+        localPath: String?,
+    ): Pair<File?, String?> {
+        if (!localPath.isNullOrBlank()) {
+            val src = File(localPath)
+            if (!src.exists() || !src.isFile) return null to "找不到文件：$localPath"
+            if (src.length() == 0L) return null to "选择的文件是空的"
+            if (src.length() > MAX_LOCAL_FRAMEWORK_BYTES) {
+                return null to "文件过大（超过 128 MB），不像是框架包"
+            }
+            return src to null
+        }
+        val staged = File(ctx.cacheDir, "framework.tar.gz")
+        return try {
+            ctx.assets.open(FW_ASSET).use { input ->
+                staged.outputStream().use { output -> input.copyTo(output) }
+            }
+            if (staged.length() == 0L) null to "内置框架包为空" else staged to null
+        } catch (e: Exception) {
+            null to "读取内置框架包失败：${e.message}"
+        }
+    }
+
+    /** 调框架 /api/shell，返回 (成功, stdout+stderr 或错误文本)。 */
+    private fun webuiShell(
+        ctx: Context,
+        cmd: String,
+        timeout: Int = 60,
+    ): Pair<Boolean, String> {
+        val webuiToken = AutostartPrefs.webuiToken(ctx)
+        if (webuiToken.isEmpty()) return false to "未配置访问密钥"
+        var c: HttpURLConnection? = null
+        return try {
+            val url = URL(
+                "http://127.0.0.1:8537/api/shell?cmd=" +
+                    URLEncoder.encode(cmd, "UTF-8") + "&timeout=" + timeout
+            )
+            c = url.openConnection() as HttpURLConnection
+            c.requestMethod = "POST"
+            c.connectTimeout = 3000
+            c.readTimeout = (timeout + 8) * 1000
+            c.setRequestProperty("X-Token", webuiToken)
+            if (c.responseCode != 200) return false to "HTTP ${c.responseCode}"
+            val body = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+            if (!body.optBoolean("ok", false)) {
+                return false to body.optString("msg").ifEmpty { body.toString() }
+            }
+            true to (body.optString("stdout") + body.optString("stderr"))
+        } catch (e: Exception) {
+            false to (e.message ?: "WebUI 调用异常")
+        } finally {
+            try { c?.disconnect() } catch (_: Exception) {}
+        }
+    }
+
+    /** 把框架包写到公共目录（框架 shell 身份可读），返回落包路径。 */
+    private fun copyToShared(ctx: Context, src: File): String? {
+        for (d in listOf(File("/sdcard/iwphone"), File("/sdcard/Download"),
+            File("/sdcard/Documents"))) {
+            try {
+                if (!d.exists() && !d.mkdirs()) continue
+                val f = File(d, SHARED_STAGE_NAME)
+                src.inputStream().use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+                if (f.length() != src.length()) { f.delete(); continue }
+                f.setReadable(true, false)
+                return f.absolutePath
+            } catch (_: Exception) {
+            }
+        }
+        return null
+    }
+
+    /**
+     * 无 adb 部署回退：框架 WebUI 已在跑时，把包和部署脚本放到公共目录，
+     * 再让框架通过 /api/shell 以 shell 身份自己解压覆盖 /data/local/tmp/iwphone。
+     * 不碰 adbd、不依赖 mDNS；传给 /api/shell 的只有 `sh <脚本路径>` 一条短命令，
+     * 避开 COMMAND_BLACKLIST（脚本内容本身不含 rm -rf /...）。
+     */
+    private fun deployViaWebui(ctx: Context, staged: File): Result {
+        val webuiToken = AutostartPrefs.webuiToken(ctx)
+        if (webuiToken.isEmpty()) return Result(false, "未配置访问密钥")
+        if (!webuiStatus(webuiToken)) return Result(false, "框架 WebUI 未响应")
+
+        val shared = copyToShared(ctx, staged)
+            ?: return Result(false, "无法写入框架可读的公共目录"
+                + "（请确认已授予「所有文件访问权限」）")
+        val script = File(File(shared).parentFile ?: File("/sdcard/iwphone"),
+            SHARED_SCRIPT_NAME)
+        val vc = appVersionCode(ctx)
+        val sh = """
+#!/system/bin/sh
+mkdir -p $FW_ROOT_PARENT || exit 1
+tar xzf $shared -C $FW_ROOT_PARENT || exit 2
+mkdir -p $IWPHONE_ROOT/state $IWPHONE_ROOT/modsnap
+chmod -R 755 $FRAME_DIR
+chmod 600 $IWPHONE_ROOT/state/webui_token 2>/dev/null
+if [ -x $FRAME_DIR/bin/busybox ]; then
+  cd $FRAME_DIR/bin && for a in ${'$'}(./busybox --list); do ln -sf busybox "${'$'}a"; done
+fi
+echo $vc > $FRAME_DIR/.deployed
+chmod 666 $FRAME_DIR/.deployed
+echo deployed
+""".trimIndent()
+        try {
+            script.writeText(sh)
+            script.setReadable(true, false)
+        } catch (e: Exception) {
+            return Result(false, "写部署脚本失败：${e.message}")
+        }
+
+        val (ok, out) = webuiShell(ctx, "sh ${script.absolutePath}", 60)
+        if (!ok || !out.contains("deployed")) {
+            return Result(false, "框架自解压失败：$out")
+        }
+        val (vOk, vOut) = webuiShell(ctx, "test -f $MAIN_SH && echo yes", 15)
+        if (!vOk || !vOut.contains("yes")) {
+            return Result(false, "部署命令已执行，但未检测到 $MAIN_SH")
+        }
+        AutostartPrefs.setDeployStamp(ctx, installStamp(ctx))
+        try { File(shared).delete(); script.delete() } catch (_: Exception) {}
+        return Result(true, "框架已通过 WebUI 覆盖更新（无需 adb）；重启框架后新代码生效")
+    }
+
     fun deployFramework(ctx: Context, localPath: String? = null): Result {
         if (!isProvisioned(ctx)) {
             return Result(false, "尚未配对：请先完成设备配对，拿到 shell 才能部署")
         }
 
-        // 配对 ≠ 已连接：首次部署前必须先建 transport（发现动态端口 → 固定 5555），
-        // 否则 push / shell 都会报 no devices/emulators found。
-        val transport = ensureTransportSmart(ctx)
-        if (!transport.ok) {
-            return Result(false, "未连接到设备：${transport.message}")
-        }
-
         // 1) 准备待部署的包：内置资产，或用户从本地选的框架文件
         val fromUser = !localPath.isNullOrBlank()
-        val staged: File
-        if (fromUser) {
-            val src = File(localPath!!)
-            if (!src.exists() || !src.isFile) {
-                return Result(false, "找不到文件：$localPath")
-            }
-            if (src.length() == 0L) {
-                return Result(false, "选择的文件是空的")
-            }
-            if (src.length() > MAX_LOCAL_FRAMEWORK_BYTES) {
-                return Result(false, "文件过大（超过 128 MB），不像是框架包")
-            }
-            staged = src
-        } else {
-            staged = File(ctx.cacheDir, "framework.tar.gz")
-            try {
-                ctx.assets.open(FW_ASSET).use { input ->
-                    staged.outputStream().use { output -> input.copyTo(output) }
-                }
-            } catch (e: Exception) {
-                return Result(false, "读取内置框架包失败：${e.message}")
-            }
-            if (staged.length() == 0L) {
-                return Result(false, "内置框架包为空")
+        val (prepared, prepErr) = prepareFrameworkPackage(ctx, localPath)
+        val staged = prepared ?: return Result(false, prepErr ?: "读取框架包失败")
+
+        // 2) 建立 transport。协同共存模式下无线调试可能没起来，adb 完全没有
+        //    transport；但框架 WebUI 往往仍在跑。这时改由框架自己解压覆盖，
+        //    不依赖 adb —— 正好解决「框架已运行时无法覆盖安装/更新」。
+        val transport = ensureTransportSmart(ctx)
+        if (!transport.ok) {
+            val viaWebui = deployViaWebui(ctx, staged)
+            if (!fromUser) staged.delete()
+            return if (viaWebui.ok) {
+                viaWebui
+            } else {
+                Result(false, "未连接到设备：${transport.message}；"
+                    + "框架自更新亦失败：${viaWebui.message}")
             }
         }
 
-        // 2) push 到设备（12MB 走 localhost，通常几秒）
+        // 3) push 到设备（12MB 走 localhost，通常几秒）
         val pushed = run(
             ctx,
             listOf("-s", activeTarget, "push", staged.absolutePath, FW_TAR_ON_DEVICE),
@@ -1267,7 +1382,15 @@ object AdbBootstrap {
 
         // 首次使用 / 5555 尚未监听时，这里会先连无线调试动态端口再固定 5555
         val c = ensureTransportSmart(ctx)
-        if (!c.ok) return c
+        if (!c.ok) {
+            // adb 只是用来拉起进程；框架 WebUI 已在跑就说明框架活着，
+            // 不该因为 transport 缺失把「启动」判成失败（会连累安装流程）。
+            return if (webuiStatus(AutostartPrefs.webuiToken(ctx))) {
+                Result(true, "框架已在运行（adb 不可用，跳过启动检查）", skipped = true)
+            } else {
+                c
+            }
+        }
 
         // 开机自启后顺手补齐悬浮窗权限：没有它即时授权弹窗会降级成待授权列表
         if (!BrokerPrompt.canOverlay(ctx)) grantOverlayViaAdb(ctx)
