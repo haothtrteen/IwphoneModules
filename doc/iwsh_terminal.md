@@ -1,4 +1,4 @@
-# iwsh 终端接入 · 落地说明（v1.3.25）
+# iwsh 终端接入 · 落地说明（v1.3.26）
 
 对应设计稿：`iwphone_iwsh_design.html`（工作区根目录）。
 参考素材：`shizuku_ref/rish.sh` + `rish_shizuku.dex`（用户提供的 Shizuku 终端工具包，
@@ -357,3 +357,79 @@ UI 撤销确认文案同步写明「已缓存的终端工具包凭据也会立�
 **本轮设备未连接，撤销后的端到端闭环未做真机验收**，接上设备后按：
 授权 → 撤销（两个入口各试一次）→ 再次 `sh iwsh.sh id -u` 应重新弹窗，
 不点允许则明确报授权失败；直接拿旧 token 打 8539 应返回 403。
+
+
+---
+
+## 13. v1.3.26：收紧凭据落盘 + 调用审计（L0）
+
+### 13.1 为什么「下发文件设 600」不能直接做
+
+原先的 `/sdcard/iwphone/broker/<nonce>.token` 是 **App 进程写的**（属主 App uid），
+客户端是另一个终端 App 的 uid。设 600 客户端就读不到；保持可读又会被
+有 `MANAGE_EXTERNAL_STORAGE` 的其它应用扫走。两难。
+
+**改成不落盘**：用户确认后把 token 挂在一个 256 位随机的**一次性 nonce** 上，
+存在服务端内存（`pendingTokens`），客户端通过
+`GET http://127.0.0.1:8539/token?nonce=<64hex>` 领取：
+
+- nonce 由客户端生成，随显式广播传给 App（其它应用收不到该广播）；
+- 60 秒 TTL、`remove` 一次即失效、格式 `[0-9a-f]{64}` 校验；
+- 服务启动时清理旧版本遗留的 `/sdcard/iwphone/broker/*.token` 明文文件。
+
+客户端缓存 `.iwsh_token`（**这个是客户端自己写的**）收紧到仅属主读写：
+写缓存后收紧，读旧缓存时也顺手收紧一次，覆盖历史遗留的 660 文件。
+注意 FUSE(`/sdcard`) 上 chmod 可能不生效，部署建议仍是把工具包放进
+终端 App 私有目录。
+
+### 13.2 调用审计
+
+`/exec` 每次（成功 / `INVALID_TOKEN` / `GRANT_REVOKED`）都调
+`BrokerStore.appendAudit(...)`，复用授权页已有的「调用记录」section，
+命令摘要加 `[iwsh] ` 前缀便于识别。记录含 pkg、uid、命令（截断 200）、
+结果码、退出码、耗时、输出长度；失效/伪造 token 也留痕，可据此发现扫描。
+
+### 13.3 真机验证（22011211C）
+
+- `/token?nonce=bad` → 400 `BAD_NONCE`；
+  `/token?nonce=<64hex 随机>` → 404 `NO_PENDING_TOKEN`；
+  `/exec?token=invalid` → 403 `INVALID_TOKEN`；
+- 审计落库实测：`broker_store.xml` 出现
+  `[iwsh] id -u / code=INVALID_TOKEN` 记录；
+- 安装并重启 App 后 `/sdcard/iwphone/broker/` 旧明文文件被清空（total 0）；
+- 未验证：完整"用户点允许 → /token 领到 token → .iwsh_token 变 600"
+  需人工点弹窗；旧工具包 token 属已撤销的 `bin.mt.plus`，
+  实测按预期删缓存并重新发起授权（旁证 v1.3.25 撤销联动生效）。
+
+## 14. 关于 Shizuku / L2（评估，未落地）
+
+**没有在这台设备上验证过 Shizuku 的完整链路。** 之前的「Shizuku 做法」
+是基于 Binder 机制 + 用户提供的 `rish.sh` / `rish_shizuku.dex` 字符串推断，
+不是实测结论。
+
+从附件能确认的：`rish.sh` 用 `app_process` 起
+`rikka.shizuku.shell.ShizukuShellLoader`；dex 里有
+`rikka.shizuku.intent.action.REQUEST_BINDER`、`putBinder` / `readStrongBinder` /
+`onTransact`、`RISH_APPLICATION_ID`、`getuid`、
+`moe.shizuku.manager.shell.Shell`、`DexClassLoader`、
+`/data/local/tmp/rish-shizuku-*`，以及「连接可能被电池优化阻断」的超时提示。
+
+即：**广播请求 Binder → Shizuku manager 回传 IBinder → 后续调用全走 Binder
+transact**。服务端可用 `Binder.getCallingUid()` 拿内核保证的调用方 uid，
+身份来自 IPC 通道而非随请求携带的凭据——这是与当前「回环 HTTP + bearer
+token」的本质差别。
+
+值得借鉴的是**模型**（一次握手换会话句柄、授权依据用内核身份、服务端可撤销），
+不是 API 本身。直接搬的障碍（均在本机实测过）：
+`content` CLI 从 app uid 被 `ACCESS_CONTENT_PROVIDERS_EXTERNALLY` 拦；
+`ActivityThread.systemMain()` 在 MIUI 崩于 `ThemeCompatibilityLoader`；
+客户端是 app_process 纯 Java 进程，发广播取 result / 用 IBinder 都要碰
+hidden API；且 rish 依赖已安装的 Shizuku manager 与已启动的 Shizuku 服务端，
+我们没有这个前提。
+
+**更贴近本项目的 L2 形态**是 `LocalSocket` + `SO_PEERCRED`
+（`android.net.LocalSocket#getPeerCredentials()` 是公开 API，内核返回真实 uid，
+不需要 hidden API），把 8539 换成 abstract unix socket，服务端比对
+授权记录里的 uid。但 `untrusted_app` 之间不同 MLS category 能否连接抽象
+socket 未验证，SELinux 可能拦。建议先做一个最小探针（App 起 socket + dex
+连接 + 打印 peer uid），接上设备 10 分钟即可定性，再决定 socket 还是 Binder。

@@ -50,6 +50,24 @@ object BrokerShell {
     /** 当前进程内已签发的 token → 包名，用于快速拒绝无效 token。 */
     private val liveTokens = ConcurrentHashMap<String, String>()
 
+    /** 授权握手：一次性 nonce 的有效期。 */
+    private const val NONCE_TTL_MS = 60_000L
+
+    private data class PendingToken(val token: String, val pkg: String, val at: Long)
+
+    /** nonce → 待领取的 token。不落盘、领一次即删，避免明文文件被其它应用扫走。 */
+    private val pendingTokens = ConcurrentHashMap<String, PendingToken>()
+
+    /** 清掉旧版本写在公共目录的明文 token 文件。 */
+    private fun cleanupLegacyTokenFiles() {
+        try {
+            File("/sdcard/iwphone/broker").listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".token") }
+                ?.forEach { it.delete() }
+        } catch (_: Exception) {
+        }
+    }
+
     /** 撤销后立刻清掉内存里的即时 token（findByToken 仍以持久化表为准）。 */
     fun invalidate(pkg: String) {
         val it = liveTokens.entries.iterator()
@@ -64,6 +82,8 @@ object BrokerShell {
 
     fun startServer() {
         if (server != null) return
+        // 每次服务启动都清一遍旧版本遗留的明文下发文件（不需要先走授权流程）
+        cleanupLegacyTokenFiles()
         Thread {
             try {
                 val ss = ServerSocket(PORT, 16, InetAddress.getByName("127.0.0.1"))
@@ -78,27 +98,20 @@ object BrokerShell {
         }.apply { isDaemon = true; start() }
     }
 
-    /** 用户确认后：签发持久 token 并写到双方都能读的公共目录供 dex 轮询。 */
+    /**
+     * 用户确认后：签发 token，挂在一个 256 位随机的**一次性 nonce** 上，
+     * 由客户端通过 8539 的 /token 端点领取。
+     *
+     * ★ 不再写 /sdcard 上的明文 .token 文件：那个文件是 App 写的，
+     *   收紧到 600 会让终端 App 读不到，保持可读又会被其它应用扫走。
+     *   改成内存握手后完全没有落盘泄露面，nonce 不可猜且领一次即失效。
+     */
     fun issue(ctx: Context, nonce: String, pkg: String): Boolean {
         val token = IwshGrantStore.grant(ctx, pkg) ?: return false
         liveTokens[token] = pkg
         startServer()
-
-        val dirs = listOf(
-            File("/sdcard/iwphone/broker"),
-            File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "broker"),
-        )
-        for (d in dirs) {
-            try {
-                if (!d.exists()) d.mkdirs()
-                val f = File(d, "$nonce.token")
-                f.writeText(token)
-                f.setReadable(true, false)
-                return true
-            } catch (_: Exception) {
-            }
-        }
-        return false
+        pendingTokens[nonce] = PendingToken(token, pkg, System.currentTimeMillis())
+        return true
     }
 
     private fun handle(s: Socket) {
@@ -106,12 +119,10 @@ object BrokerShell {
             s.soTimeout = 70_000
             val line = BufferedReader(InputStreamReader(s.getInputStream())).readLine() ?: return
             val parts = line.split(" ")
-            if (parts.size < 2 || !parts[1].startsWith("/exec?")) {
-                reply(s, 404, """{"ok":false,"code":"NO_METHOD"}""")
-                return
-            }
+            if (parts.size < 2) return
+            val target = parts[1]
             val params = HashMap<String, String>()
-            for (kv in parts[1].substringAfter("?").split("&")) {
+            for (kv in target.substringAfter("?", "").split("&")) {
                 val i = kv.indexOf('=')
                 if (i < 0) continue
                 try {
@@ -120,6 +131,29 @@ object BrokerShell {
                 } catch (_: Exception) {
                 }
             }
+            // 授权握手：一次性 nonce 换 token（无需 token 鉴权，但 nonce 是
+            // 256 位随机、60 秒有效、领一次即删，暴力猜不可行）。
+            if (target.startsWith("/token?")) {
+                val nonce = params["nonce"] ?: ""
+                if (!nonce.matches(Regex("[0-9a-f]{64}"))) {
+                    reply(s, 400, """{"ok":false,"code":"BAD_NONCE"}""")
+                    return
+                }
+                val now = System.currentTimeMillis()
+                val it = pendingTokens.entries.iterator()
+                while (it.hasNext()) {
+                    if (now - it.next().value.at > NONCE_TTL_MS) it.remove()
+                }
+                val p = pendingTokens.remove(nonce)
+                    ?: return reply(s, 404, """{"ok":false,"code":"NO_PENDING_TOKEN"}""")
+                reply(s, 200, """{"ok":true,"token":"${p.token}"}""")
+                return
+            }
+            if (!target.startsWith("/exec?")) {
+                reply(s, 404, """{"ok":false,"code":"NO_METHOD"}""")
+                return
+            }
+
             val token = params["token"] ?: ""
             val cmd = params["cmd"] ?: ""
             if (cmd.isBlank() || cmd.length > 4096) {
@@ -132,19 +166,40 @@ object BrokerShell {
             // ★ token 不再「用过即废」：查持久授权记录并重新校验三元组
             val g = IwshGrantStore.findByToken(ctx, token)
             if (g == null) {
+                // 失效/伪造 token 也要留痕，便于在授权页发现扫描或暴力尝试
+                BrokerStore.appendAudit(ctx, "", -1, "[iwsh] $cmd", "INVALID_TOKEN", -1, 0, 0)
                 reply(s, 403, """{"ok":false,"code":"INVALID_TOKEN"}""")
                 return
             }
             if (!IwshGrantStore.valid(ctx, g)) {
                 liveTokens.remove(token)
+                BrokerStore.appendAudit(ctx, g.pkg, g.uid, "[iwsh] $cmd", "GRANT_REVOKED", -1, 0, 0)
                 reply(s, 403, """{"ok":false,"code":"GRANT_REVOKED"}""")
                 return
             }
 
             // cwd 由交互式客户端维护：cd 后每条命令带上工作目录
             val cwd = params["cwd"] ?: ""
+            val started = System.currentTimeMillis()
             val body = callFramework(ctx, cmd, cwd,
                 (params["timeout"]?.toIntOrNull() ?: 15).coerceIn(1, 60))
+            // ★ 每次执行写审计（pkg / 命令摘要 / 时间 / 结果码），
+            //   复用 BrokerStore 的调用记录，授权页「调用记录」直接可查。
+            val result = try {
+                val j = JSONObject(body)
+                j.optString("code").ifEmpty { if (j.optBoolean("ok", false)) "OK" else "ERROR" }
+            } catch (_: Exception) {
+                "ERROR"
+            }
+            val exitCode = try {
+                JSONObject(body).optInt("exitCode", -1)
+            } catch (_: Exception) {
+                -1
+            }
+            BrokerStore.appendAudit(
+                ctx, g.pkg, g.uid, "[iwsh] $cmd", result, exitCode,
+                System.currentTimeMillis() - started, body.length,
+            )
             reply(s, 200, body)
         } catch (_: Exception) {
         } finally {

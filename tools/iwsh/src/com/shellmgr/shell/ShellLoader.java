@@ -70,8 +70,15 @@ public final class ShellLoader {
         String token = cached(cache);
         if (token != null && token.length() > 0) return token;
 
-        String nonce = "iw" + Long.toString(System.currentTimeMillis(), 36)
-                + Integer.toString(new java.security.SecureRandom().nextInt(9000) + 1000);
+        // 256 位随机 nonce：广播与 /token 端点之间的一次性关联键。
+        // 旧版本靠 /sdcard 上的明文 .token 文件传递，会被其它应用扫走；
+        // 现在 token 只在服务端内存里挂 60 秒、领一次即删。
+        byte[] rnd = new byte[32];
+        new java.security.SecureRandom().nextBytes(rnd);
+        StringBuilder nb = new StringBuilder();
+        for (byte b : rnd) nb.append(String.format("%02x", b));
+        String nonce = nb.toString();
+
         // 必须显式指定组件：部分 ROM 会拦截隐式自定义广播。
         // am broadcast 会等接收器 goAsync 结束（最长 45s），只短等一瞬。
         Process p = Runtime.getRuntime().exec(new String[]{
@@ -85,20 +92,16 @@ public final class ShellLoader {
         }
         System.err.println("[iwsh] 已请求授权（" + pkg + "），请在弹窗中允许…");
 
-        String[] dirs = {
-            "/sdcard/iwphone/broker",
-            "/sdcard/Android/data/com.shellmgr.shell_manager/files/broker",
-        };
-        for (int i = 0; i < 90 && token == null; i++) {
-            for (String d : dirs) {
-                File f = new File(d, nonce + ".token");
-                if (f.isFile()) {
-                    token = readAll(new FileInputStream(f)).trim();
-                    try { f.delete(); } catch (Exception ignored) {}
-                    break;
-                }
+        long deadline = System.currentTimeMillis() + 45000;
+        while (System.currentTimeMillis() < deadline
+                && (token == null || token.length() == 0)) {
+            try {
+                String body = httpGet("http://127.0.0.1:8539/token?nonce=" +
+                        URLEncoder.encode(nonce, "UTF-8"));
+                token = jsonField(body, "token");
+            } catch (Exception ignored) {
             }
-            if (token == null) Thread.sleep(500);
+            if (token == null || token.length() == 0) Thread.sleep(500);
         }
         if (token == null || token.length() == 0) {
             System.err.println("[iwsh] 授权未完成：超时 / 被拒绝 / 未开启悬浮窗权限");
@@ -108,8 +111,18 @@ public final class ShellLoader {
             FileOutputStream fo = new FileOutputStream(cache);
             fo.write(token.getBytes("UTF-8"));
             fo.close();
+            tighten(cache);
         } catch (Exception ignored) {}
         return token;
+    }
+
+    private static String httpGet(String url) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(3000);
+        c.setReadTimeout(8000);
+        InputStream in = c.getResponseCode() == 200
+                ? c.getInputStream() : c.getErrorStream();
+        return in == null ? "" : readAll(in);
     }
 
     /** 交互式 shell：连续读行执行，cd 由客户端维护 cwd 并回读真实路径。 */
@@ -206,10 +219,23 @@ public final class ShellLoader {
         System.err.flush();
     }
 
+    /** 只留属主读写；FUSE(/sdcard) 上可能不生效，故工具包仍建议放终端 App 私有目录。 */
+    private static void tighten(File f) {
+        try {
+            f.setReadable(false, false);
+            f.setWritable(false, false);
+            f.setReadable(true, true);
+            f.setWritable(true, true);
+        } catch (Exception ignored) {}
+    }
+
     private static String cached(File f) {
         try {
             if (!f.isFile()) return null;
-            return readAll(new FileInputStream(f)).trim();
+            // 先读再收紧：旧版本留下的 660 缓存也会在执行一次后变成 600
+            String v = readAll(new FileInputStream(f)).trim();
+            tighten(f);
+            return v;
         } catch (Exception e) {
             return null;
         }
