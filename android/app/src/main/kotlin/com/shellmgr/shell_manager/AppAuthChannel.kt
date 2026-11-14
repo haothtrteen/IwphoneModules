@@ -143,7 +143,8 @@ class AppAuthChannel(private val ctx: android.content.Context) {
                 }
 
                 "revokeIwshGrant" -> {
-                    IwshGrantStore.revoke(ctx, call.argument<String>("pkg") ?: "")
+                    // 与「已授权的应用」用同一个撤销入口，保证两张表同时失效
+                    BrokerStore.revoke(ctx, call.argument<String>("pkg") ?: "")
                     result.success(mapOf("ok" to true))
                 }
 

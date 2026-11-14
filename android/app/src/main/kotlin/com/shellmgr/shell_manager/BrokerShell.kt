@@ -50,6 +50,18 @@ object BrokerShell {
     /** 当前进程内已签发的 token → 包名，用于快速拒绝无效 token。 */
     private val liveTokens = ConcurrentHashMap<String, String>()
 
+    /** 撤销后立刻清掉内存里的即时 token（findByToken 仍以持久化表为准）。 */
+    fun invalidate(pkg: String) {
+        val it = liveTokens.entries.iterator()
+        while (it.hasNext()) {
+            if (it.next().value == pkg) it.remove()
+        }
+    }
+
+    fun invalidateAll() {
+        liveTokens.clear()
+    }
+
     fun startServer() {
         if (server != null) return
         Thread {
@@ -247,6 +259,9 @@ object IwshGrantStore {
             return null
         }
         val sig = BrokerStore.sigHashOf(ctx, pkg) ?: return null
+        // ★ 双向登记：终端工具包的授权也写进 BrokerStore，
+        //   这样授权页任一处撤销都能让 8539 立即失效。
+        BrokerStore.grant(ctx, pkg, uid, sig)
         val token = ByteArray(24).also { SecureRandom().nextBytes(it) }
             .joinToString("") { "%02x".format(it) }
         val g = Grant(pkg, uid, sig, token, System.currentTimeMillis())
@@ -272,6 +287,11 @@ object IwshGrantStore {
             revoke(ctx, g.pkg)
             return false
         }
+        // 兜底：授权页把 BrokerStore 授权撤了，这条终端授权也必须一并失效
+        if (BrokerStore.find(ctx, g.pkg, g.uid, g.sig) == null) {
+            revoke(ctx, g.pkg)
+            return false
+        }
         return true
     }
 
@@ -279,6 +299,12 @@ object IwshGrantStore {
 
     fun revoke(ctx: Context, pkg: String) {
         write(ctx, read(ctx).filterNot { it.optString("pkg") == pkg })
+        BrokerShell.invalidate(pkg)
+    }
+
+    fun clearAll(ctx: Context) {
+        write(ctx, emptyList())
+        BrokerShell.invalidateAll()
     }
 }
 

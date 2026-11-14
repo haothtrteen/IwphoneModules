@@ -715,7 +715,7 @@ abstract final class AppStrings {
       'auth.revoke': '撤销',
       'auth.revokeConfirmTitle': '撤销授权',
       'auth.revokeConfirmPrefix': '撤销后「',
-      'auth.revokeConfirmSuffix': '」将无法再通过本应用执行命令。它此前以 shell 身份做过的操作不会回滚。',
+      'auth.revokeConfirmSuffix': '」将无法再通过本应用执行命令，已缓存的终端工具包凭据也会立即失效（下次执行需重新授权）。它此前以 shell 身份做过的操作不会回滚。',
       'auth.revoked': '已撤销授权',
       'auth.grantedPrefix': '已允许「',
       'auth.grantedSuffix': '」执行命令',
@@ -1612,7 +1612,7 @@ abstract final class AppStrings {
       'auth.revoke': 'Revoke',
       'auth.revokeConfirmTitle': 'Revoke authorization',
       'auth.revokeConfirmPrefix': 'After revoking, "',
-      'auth.revokeConfirmSuffix': '" can no longer run commands through this app. '
+      'auth.revokeConfirmSuffix': '" can no longer run commands through this app; cached terminal-kit credentials are invalidated immediately (re-authorization required). '
           'Anything it already did as shell is not rolled back.',
       'auth.revoked': 'Authorization revoked',
       'auth.grantedPrefix': 'Allowed "',

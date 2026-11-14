@@ -46,9 +46,18 @@ public final class ShellLoader {
             String token = obtainToken(cache, pkg);
             if (token == null) System.exit(2);
             if (repl) {
-                runRepl(token);
+                runRepl(cache, pkg, token);
             } else {
-                print(execute(token, oneShot, ""));
+                String body = execute(token, oneShot, "");
+                if (isInvalidToken(body)) {
+                    // ★ 授权被撤销后，缓存的旧 token 必须立刻作废并重新走授权，
+                    //   否则用户会以为「撤销没生效、还能继续执行」。
+                    try { cache.delete(); } catch (Exception ignored) {}
+                    token = obtainToken(cache, pkg);
+                    if (token == null) System.exit(2);
+                    body = execute(token, oneShot, "");
+                }
+                print(body);
             }
         } catch (Exception e) {
             System.err.println("[iwsh] " + e);
@@ -104,7 +113,7 @@ public final class ShellLoader {
     }
 
     /** 交互式 shell：连续读行执行，cd 由客户端维护 cwd 并回读真实路径。 */
-    private static void runRepl(String token) throws Exception {
+    private static void runRepl(File cache, String pkg, String token) throws Exception {
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         String cwd = "";
         System.err.println("iwsh · 交互模式   exit / Ctrl-D 退出   cd 可保持工作目录");
@@ -138,9 +147,15 @@ public final class ShellLoader {
 
             String body = execute(token, line, cwd);
             if (isInvalidToken(body)) {
-                print(body);
-                System.err.println("[iwsh] 授权已失效，请撤销后重新发起授权");
-                break;
+                System.err.println("[iwsh] 授权已失效，正在重新请求授权…");
+                try { cache.delete(); } catch (Exception ignored) {}
+                String fresh = obtainToken(cache, pkg);
+                if (fresh == null) {
+                    System.err.println("[iwsh] 重新授权失败");
+                    break;
+                }
+                token = fresh;
+                body = execute(token, line, cwd);
             }
             print(body);
         }

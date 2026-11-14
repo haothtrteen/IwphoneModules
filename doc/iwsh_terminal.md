@@ -1,4 +1,4 @@
-# iwsh 终端接入 · 落地说明（v1.3.22）
+# iwsh 终端接入 · 落地说明（v1.3.25）
 
 对应设计稿：`iwphone_iwsh_design.html`（工作区根目录）。
 参考素材：`shizuku_ref/rish.sh` + `rish_shizuku.dex`（用户提供的 Shizuku 终端工具包，
@@ -316,3 +316,44 @@ iwsh> bye
 
 `IWPHONE_SHOW_ROM_LOG=1` 时 `[okhttp]` / `[OkHttp] sendRequest` 等日志恢复出现。
 两条命令输出正确、`exit` 正常退出。测试用临时副本，未改动用户工具包与 token。
+
+
+---
+
+## 12. v1.3.25：撤销授权必须让已缓存 token 立即失效
+
+### 12.1 问题
+
+授权页有两张互不相通的表：
+
+| 表 | 通道 | UI 位置 | 撤销方法 |
+|---|---|---|---|
+| `BrokerStore` | ContentProvider (`content call`) | 「已授权的应用」 | `revoke` |
+| `IwshGrantStore` | 回环 HTTP 8539 | 「已授权的终端应用」 | `revokeIwshGrant` |
+
+iwsh 首次确认后把 token 缓存在工具包目录 `.iwsh_token`。之前撤销任一张表
+都只删自己的记录，另一条通道的 token 仍有效；客户端拿着失效 token 时
+既不删缓存也不重新授权，于是「撤销后下次执行还能直接用」。
+
+### 12.2 三层联动（v1.3.25）
+
+1. **统一撤销**：`BrokerStore.revoke(ctx, pkg)` 现在同时清
+   `IwshGrantStore` 记录并 `BrokerShell.invalidate(pkg)`；
+   `revokeAll` 同理清全表。授权页两个撤销入口都走这一条。
+2. **双向登记**：`IwshGrantStore.grant()` 签发 token 时同步
+   `BrokerStore.grant(ctx, pkg, uid, sig)`；`IwshGrantStore.valid()`
+   再用 `BrokerStore.find(...)` 兜底校验，漏删也能拦住 8539 请求
+   （返回 `INVALID_TOKEN` / `GRANT_REVOKED`）。
+3. **客户端自清**：dex 收到 `INVALID_TOKEN` / `GRANT_REVOKED` 时
+   删除 `.iwsh_token`，重新发广播请求授权；单次执行与 REPL 两条路径
+   都处理，撤销后的下一次执行必须重新弹窗确认，不能静默继续。
+
+UI 撤销确认文案同步写明「已缓存的终端工具包凭据也会立即失效」。
+
+### 12.3 验证状态
+
+静态验证：`flutter analyze` 零问题、Kotlin 编译与 `javac`+`d8` 编译 dex
+通过、APK 1.3.25+155 构建通过。
+**本轮设备未连接，撤销后的端到端闭环未做真机验收**，接上设备后按：
+授权 → 撤销（两个入口各试一次）→ 再次 `sh iwsh.sh id -u` 应重新弹窗，
+不点允许则明确报授权失败；直接拿旧 token 打 8539 应返回 403。

@@ -114,10 +114,16 @@ object BrokerStore {
 
     fun revoke(ctx: Context, pkg: String) {
         writeArray(ctx, KEY_GRANTS, grants(ctx).filterNot { it.pkg == pkg }.map { it.toJson() })
+        // ★ 授权是「一个应用一份」：撤销时必须同时清掉终端工具包那张表，
+        //   否则已缓存的 .iwsh_token 仍能通过 8539 执行命令，撤销形同虚设。
+        IwshGrantStore.revoke(ctx, pkg)
+        BrokerShell.invalidate(pkg)
     }
 
     fun revokeAll(ctx: Context) {
         sp(ctx).edit().remove(KEY_GRANTS).apply()
+        IwshGrantStore.clearAll(ctx)
+        BrokerShell.invalidateAll()
     }
 
     // ---------------- 永久拒绝 ----------------
