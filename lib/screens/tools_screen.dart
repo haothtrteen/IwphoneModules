@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../widgets/back_icon_button.dart';
 import '../widgets/screen_app_bar.dart';
 import '../widgets/settings_rows.dart';
+import 'automation_screen.dart';
 import 'resources_screen.dart';
 import 'snapshot_screen.dart';
 import 'terminal_screen.dart';
@@ -45,6 +46,13 @@ class ToolsScreen extends StatelessWidget {
                     hint: AppStrings.t('settings.terminalHint'),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const TerminalScreen()),
+                    ),
+                  ),
+                  NavRow(
+                    label: AppStrings.t('auto.title'),
+                    hint: AppStrings.t('auto.hint'),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AutomationScreen()),
                     ),
                   ),
                   NavRow(

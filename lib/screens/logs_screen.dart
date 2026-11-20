@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../i18n/app_strings.dart';
 import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
+import 'event_log_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/screen_app_bar.dart';
@@ -243,6 +244,14 @@ class _LogsScreenState extends State<LogsScreen> {
             ScreenAppBar(
               title: AppStrings.t('logs.title'),
               actions: [
+                AppBarActionIcon(
+                  icon: Icons.bolt_outlined,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const EventLogScreen(),
+                    ),
+                  ),
+                ),
                 AppBarActionIcon(
                   icon: Icons.download_outlined,
                   onTap: _exportLog,

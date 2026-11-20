@@ -143,6 +143,9 @@ object AdbBootstrap {
     @Volatile
     private var activeTarget: String = TARGET
 
+    /** 供插件层只读使用：当前 adb 目标（不提供写接口，避免绕过发现逻辑）。 */
+    fun currentTarget(): String = activeTarget
+
     /** 发现模式下 mDNS 的等待上限（开机路径要短，不能像首次配对那样等 12s）。 */
     private const val DISCOVER_TIMEOUT_MS = 8_000L
 
@@ -304,7 +307,7 @@ object AdbBootstrap {
      * 默认（固定端口）走原来的 [ensureTransport]，一行逻辑都不改；
      * 用户在安装页勾选「无线发现」时走 [ensureTransportDiscover]。
      */
-    private fun ensureTransportSmart(ctx: Context): Result =
+    fun ensureTransportSmart(ctx: Context): Result =
         if (UiPrefs.discoverMode(ctx)) ensureTransportDiscover(ctx) else ensureTransport(ctx)
 
     /**
@@ -1326,6 +1329,12 @@ echo deployed
     }
 
     /** 框架是否已在运行（避免重复拉起）。 */
+    /** 供监视器只读探测：框架守护进程是否存活（不改状态、不拉起）。 */
+    fun probeFrameworkRunning(ctx: Context): Boolean = frameworkRunning(ctx)
+
+    /** 供监视器只读探测：当前 adb transport 是否可用。 */
+    fun probeTransportAlive(ctx: Context): Boolean = transportAlive(ctx)
+
     private fun frameworkRunning(ctx: Context): Boolean {
         val r = run(
             ctx,

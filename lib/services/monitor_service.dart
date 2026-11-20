@@ -1,0 +1,176 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/services.dart';
+
+import '../models/monitor_event.dart';
+
+/// 监视器状态摘要。
+class MonitorInfo {
+  const MonitorInfo({required this.id, required this.state, this.subscribers = 0});
+  final String id;
+  final String state;
+  final int subscribers;
+
+  factory MonitorInfo.fromJson(Map<String, dynamic> j) => MonitorInfo(
+        id: j['id'] as String? ?? '',
+        state: j['state'] as String? ?? 'UNKNOWN',
+        subscribers: (j['subscribers'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// 监视器 / 事件服务（P0，只读状态与即时事件流）。
+class MonitorService {
+  MonitorService._();
+  static final MonitorService instance = MonitorService._();
+
+  static const MethodChannel _method = MethodChannel('shellmgr/monitors');
+  static const EventChannel _event = EventChannel('shellmgr/events');
+
+  StreamSubscription<dynamic>? _subscription;
+  final List<PlatformEvent> _events = [];
+  static const int _maxEvents = 200;
+
+  List<PlatformEvent> get events => List.unmodifiable(_events);
+
+  Future<List<MonitorInfo>> list() async {
+    try {
+      final raw = await _method.invokeMethod<String>('list');
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((m) => MonitorInfo.fromJson(m.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<AutomationInfo>> automations() async {
+    try {
+      final raw = await _method.invokeMethod<String>('automations');
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((m) => AutomationInfo.fromJson(m.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<bool> automationLoad(String module) async {
+    try {
+      return await _method.invokeMethod<bool>('automationLoad', {'module': module}) ?? false;
+    } catch (_) { return false; }
+  }
+
+  Future<bool> automationArm(String id) async {
+    try {
+      return await _method.invokeMethod<bool>('automationArm', {'id': id}) ?? false;
+    } catch (_) { return false; }
+  }
+
+  Future<void> automationDisarm(String id) async {
+    try { await _method.invokeMethod<void>('automationDisarm', {'id': id}); } catch (_) {}
+  }
+
+  Future<bool> automationRun(String id) async {
+    try {
+      return await _method.invokeMethod<bool>('automationRun', {'id': id}) ?? false;
+    } catch (_) { return false; }
+  }
+
+  Future<List<CapabilityInfo>> capabilities() async {
+    try {
+      final raw = await _method.invokeMethod<String>('capabilities');
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((m) => CapabilityInfo.fromJson(m.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<Map<String, String>> allStates() async {
+    try {
+      final raw = await _method.invokeMethod<String>('all');
+      if (raw == null || raw.isEmpty) return const {};
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+      return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<String?> probe(String id) async {
+    try {
+      return await _method.invokeMethod<String>('probe', {'id': id});
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 订阅事件流。先清空本地缓存（事件不粘滞，晚订阅者不该看到历史事件）。
+  void startListening(void Function(PlatformEvent) onEvent) {
+    _events.clear();
+    _subscription ??= _event.receiveBroadcastStream().listen((dynamic raw) {
+      if (raw is! Map) return;
+      final e = PlatformEvent.fromMap(raw);
+      _events.insert(0, e);
+      if (_events.length > _maxEvents) _events.removeRange(_maxEvents, _events.length);
+      onEvent(e);
+    });
+  }
+
+  void stopListening() {
+    _subscription?.cancel();
+    _subscription = null;
+  }
+
+  void clear() => _events.clear();
+}
+
+
+/// 能力可用性摘要。
+class CapabilityInfo {
+  const CapabilityInfo({required this.id, required this.name, required this.availability});
+  final String id;
+  final String name;
+  final String availability;
+
+  factory CapabilityInfo.fromJson(Map<String, dynamic> j) => CapabilityInfo(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        availability: j['availability'] as String? ?? 'UNKNOWN',
+      );
+}
+
+
+/// 自动化脚本摘要。
+class AutomationInfo {
+  const AutomationInfo({
+    required this.id, required this.state,
+    required this.trigger, required this.action,
+  });
+  final String id;
+  final String state;
+  final String trigger;
+  final String action;
+
+  factory AutomationInfo.fromJson(Map<String, dynamic> j) => AutomationInfo(
+        id: j['id'] as String? ?? '',
+        state: j['state'] as String? ?? 'UNINSTALLED',
+        trigger: j['trigger'] as String? ?? 'manual',
+        action: j['action'] as String? ?? '',
+      );
+}

@@ -123,6 +123,19 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- 插件系统 C2 能力：只监听窗口事件并转发到事件总线，不执行自动化动作 -->
+        <service
+            android:name=".plugins.IwphoneAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <!-- ============================================================
              应用授权通道（Shizuku 那类「让别的应用以 shell 身份执行命令」）
 

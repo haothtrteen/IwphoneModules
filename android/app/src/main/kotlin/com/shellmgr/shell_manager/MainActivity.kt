@@ -48,6 +48,9 @@ class MainActivity : FlutterActivity() {
     /** 「应用授权」通道（已授权清单 / 待审批 / 调用记录）。 */
     private val appAuth = AppAuthChannel(this)
 
+    /** 「监视器 + 事件流」通道（P0，只读状态与即时事件）。 */
+    private val monitors = com.shellmgr.shell_manager.plugins.MonitorChannel(this)
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -66,6 +69,7 @@ class MainActivity : FlutterActivity() {
 
         autostart.register(flutterEngine.dartExecutor.binaryMessenger)
         appAuth.register(flutterEngine.dartExecutor.binaryMessenger)
+        monitors.register(flutterEngine.dartExecutor.binaryMessenger)
         // iwsh 式终端入口：回环服务常驻，广播接收器才来得及签发会话令牌
         AppGlobals.appContext = applicationContext
         BrokerShell.startServer()
