@@ -311,6 +311,17 @@ adb:screencap <安全路径>          → screencap -p
 `adb:` 前缀只接受白名单参数，避免自动化脚本变成任意命令执行器。
 guard 可写 `capability:adb_shell`。
 
+## 10.6 补充：可视化工作流编辑器（v1.3.29）
+
+不用写 `automation.prop` 文本，像搭积木一样编排：
+
+- 入口：自动化页 → 「可视化工作流」→ 新建 → 从模块库选步骤 → 动态表单填参数 → 保存/执行。
+- 内置积木：触发器（事件/手动）、adb 动作（点击/滑动/文本/按键/启动/停止/截图/raw）、
+  模块动作（运行 iwphone 模块）、逻辑（延时/调用其它工作流）。
+- 模块声明 `ParamDef`（text/number/boolean/enum），编辑器据此生成表单；
+  新增模块只需 Dart `ModuleCatalog` 加一条 + Kotlin `WorkflowStore.executeStep` 加分支。
+- 当前只做**顺序执行**；分支/循环（vFlow 的 BaseBlockModule）留后续。
+
 ## 11. 本次准备状态
 
 - [x] 设计文档第 13 节（vFlow 机制提炼）已完成
