@@ -437,6 +437,15 @@ abstract final class AppStrings {
       'terminal.running': '执行中…',
       'terminal.failed': '执行失败',
       'terminal.noOutput': '（无输出）',
+      'terminal.stop': '停止',
+      'terminal.streaming': '流式输出中',
+      'terminal.idleForever': '空闲不限',
+      'terminal.idleCycle': '空闲超时：点按切换',
+      'terminal.stoppedByIdle': '空闲超时，已自动停止',
+      'terminal.stoppedByMax': '达到最长运行时间，已停止',
+      'terminal.stoppedByUser': '已手动停止',
+      'terminal.trimmed': '…（前部输出已省略）',
+      'terminal.chipGetevent': '监听输入事件',
 
       // ---- 资源占用页 ----
       'resources.title': '资源占用',
@@ -1373,6 +1382,15 @@ abstract final class AppStrings {
       'terminal.running': 'Running…',
       'terminal.failed': 'Execution failed',
       'terminal.noOutput': '(No output)',
+      'terminal.stop': 'Stop',
+      'terminal.streaming': 'Streaming',
+      'terminal.idleForever': 'No idle limit',
+      'terminal.idleCycle': 'Idle timeout: tap to switch',
+      'terminal.stoppedByIdle': 'Stopped: no output within idle timeout',
+      'terminal.stoppedByMax': 'Stopped: max runtime reached',
+      'terminal.stoppedByUser': 'Stopped by user',
+      'terminal.trimmed': '…(earlier output dropped)',
+      'terminal.chipGetevent': 'Watch input events',
 
       // ---- resources ----
       'resources.title': 'Resource usage',

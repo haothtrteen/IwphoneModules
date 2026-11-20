@@ -471,6 +471,142 @@ class IwphoneService {
     }
   }
 
+  /// 流式执行一条命令（NDJSON over HTTP）。
+  ///
+  /// 与 [runShell] 的区别是这个方法是**「边跑边收」**：返回后立刻可以监听输出，
+  /// 命令不退出也不会卡住。框架侧把「总超时」换成了「空闲超时」——
+  /// 只要还在输出就一直跑，安静超过 [idleSec] 秒才收工。
+  ///
+  /// 适用：`getevent -lt`、`logcat`、`tail -f` 这类持续输出的命令。
+  /// 一次性命令继续用 [runShell] 更省事（结果带 exitCode / stdout / stderr）。
+  ///
+  /// 返回 null 表示连不上 WebUI 或框架直接拒绝了这次请求。
+  Future<ShellStream?> streamShell(
+    String cmd, {
+    String? cwd,
+    int idleSec = 30,
+    int maxSec = 1800,
+  }) async {
+    final qs = StringBuffer('/api/shell/stream?cmd=${Uri.encodeComponent(cmd)}')
+      ..write('&idle=$idleSec')
+      ..write('&max=$maxSec');
+    if (cwd != null && cwd.isNotEmpty) {
+      qs.write('&cwd=${Uri.encodeComponent(cwd)}');
+    }
+    final url = Uri.parse('$baseUrl$qs');
+
+    HttpClientRequest request;
+    HttpClientResponse response;
+    try {
+      request = await _client.openUrl('POST', url).timeout(_timeout);
+      if (_token.isNotEmpty) request.headers.set('X-Token', _token);
+      // 流式请求不能套 _timeout：响应头立即返回，但连接要挂很久。
+      response = await request.close();
+    } on TimeoutException {
+      return null;
+    } on SocketException {
+      return null;
+    } on HttpException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+
+    if (response.statusCode ~/ 100 != 2) {
+      // 400/429 会带一段 JSON 说明原因（黑名单 / 命令为空 / 流数超限）
+      String msg = AppStrings.t('iwphone.shellUnavailable');
+      try {
+        final body = await response.transform(utf8.decoder).join();
+        final o = jsonDecode(body);
+        if (o is Map && o['msg'] is String) msg = o['msg'] as String;
+      } catch (_) {}
+      return ShellStream._rejected(msg);
+    }
+
+    final ctl = StreamController<ShellStreamEvent>();
+    final state = _StreamState();
+    late final StreamSubscription<String> sub;
+
+    sub = response
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(
+      (line) {
+        if (line.trim().isEmpty) return;
+        Map<String, dynamic>? o;
+        try {
+          final decoded = jsonDecode(line);
+          if (decoded is Map<String, dynamic>) o = decoded;
+        } catch (_) {
+          return; // 半行 / 脏行直接丢弃，不打断整条流
+        }
+        if (o == null) return;
+        switch (o['type']) {
+          case 'start':
+            state.id = (o['id'] as String?) ?? '';
+            break;
+          case 'out':
+            final d = o['data'];
+            if (d is String && d.isNotEmpty) {
+              ctl.add(ShellStreamEvent(type: 'out', data: d));
+            }
+            break;
+          case 'exit':
+            ctl.add(ShellStreamEvent(
+              type: 'exit',
+              exitCode: (o['code'] is num) ? (o['code'] as num).toInt() : null,
+              reason: (o['reason'] as String?) ?? '',
+            ));
+            break;
+        }
+      },
+      onError: (Object e) {
+        // 连接被重置等：把头一个错误交给调用方，随后的 onDone 负责收尾
+        if (!ctl.isClosed) ctl.addError(e);
+      },
+      onDone: () {
+        if (!ctl.isClosed) ctl.close();
+      },
+      cancelOnError: false,
+    );
+
+    return ShellStream._(
+      events: ctl.stream,
+      onCancel: () async {
+        try {
+          await sub.cancel();
+        } catch (_) {}
+        if (!ctl.isClosed) await ctl.close();
+        // 客户端断开后框架只会在"下次要写"时才发现，安静的命令会挂到空闲超时。
+        // 显式 kill 一下，回收是即时的。
+        await _killStream(state.id);
+      },
+    );
+  }
+
+  /// 让框架立刻杀掉某个流（[streamShell] 内部已调用，这里保留给外部兜底）。
+  Future<bool> _killStream(String id) async {
+    if (id.isEmpty) return false;
+    try {
+      return await _postOk(
+        '/api/stream/kill?id=$id',
+        timeout: const Duration(seconds: 2),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 列出框架侧正在运行的流（排障：确认客户端断开后没留孤儿）。
+  Future<List<Map<String, dynamic>>> activeStreams() async {
+    final json = await _getJson('/api/streams');
+    final list = json?['streams'];
+    if (list is List) {
+      return list.whereType<Map<String, dynamic>>().toList();
+    }
+    return const [];
+  }
+
   // ---------------- 框架运行日志 ----------------
 
   /// 框架自身日志：守护扫描、模块启动、超时强杀、黑名单拒绝等。
@@ -828,4 +964,74 @@ class SnapshotInfo {
         orphan: json['orphan'] == true,
         mtime: (json['mtime'] as num?)?.toInt() ?? 0,
       );
+}
+
+// ======================================================================
+// 流式命令
+// ======================================================================
+
+/// 流式命令的一条事件。
+///
+/// 框架发的是 NDJSON，每行 `{"type":"start|out|exit", ...}`。
+/// [type] 为 `error` 时表示流没能建立（[message] 是原因）。
+class ShellStreamEvent {
+  const ShellStreamEvent({
+    required this.type,
+    this.data = '',
+    this.exitCode,
+    this.reason = '',
+    this.message = '',
+  });
+
+  /// start / out / exit / error
+  final String type;
+
+  /// 本轮输出（type == 'out'）。
+  final String data;
+
+  /// 退出码（type == 'exit'）。
+  final int? exitCode;
+
+  /// 结束原因：exit / idle / max / killed
+  final String reason;
+
+  /// 失败原因（type == 'error'）。
+  final String message;
+
+  bool get isOutput => type == 'out';
+  bool get isExit => type == 'exit';
+}
+
+/// 一个正在运行的流式命令句柄。
+///
+/// [cancel] 会关闭连接并让框架立刻杀掉进程组 —— 不要只 close 流读取，
+/// 那样框架要等到"下次有输出"才可能发现（安静命令会挂到空闲超时）。
+class ShellStream {
+  ShellStream._({required this.events, required Future<void> Function() onCancel})
+      : _onCancel = onCancel;
+
+  /// 框架拒绝建立流时的句柄：没有事件，只有一条错误。
+  factory ShellStream._rejected(String msg) {
+    final ctl = StreamController<ShellStreamEvent>();
+    ctl.add(ShellStreamEvent(type: 'error', message: msg));
+    ctl.close();
+    return ShellStream._(events: ctl.stream, onCancel: () async {});
+  }
+
+  final Stream<ShellStreamEvent> events;
+  final Future<void> Function() _onCancel;
+
+  bool _cancelled = false;
+  bool get cancelled => _cancelled;
+
+  Future<void> cancel() async {
+    if (_cancelled) return;
+    _cancelled = true;
+    await _onCancel();
+  }
+}
+
+/// streamShell 内部的可变状态（Dart 闭包不能直接改局部的 late 变量再被外部读）。
+class _StreamState {
+  String id = '';
 }

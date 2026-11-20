@@ -150,8 +150,43 @@ curl -sS --max-time 20 -G -X POST -H "X-Token: $TOKEN" \
 | `ping` | — | — | `uid`, `package`, `granted`, `denied`, `promptReady`, `frameworkUp` |
 | `request` | 任意（建议空） | — | `granted`, `code`, `once`, `msg`；未授权时触发弹窗 |
 | `exec` | 命令字符串 | `timeout`(Int), `cwd`(String) | `exitCode`, `stdout`, `stderr`, `elapsedMs`, `msg` |
+| `stream.open` | 命令字符串 | `idle`(Int, 秒，默认 30，0=不限), `cwd`(String) | `streamId`, `uri`, `idle` |
+| `stream.kill` | `streamId` | — | `killed`（Bool） |
 
 `ping` 与 `version` 不需要授权（不执行任何命令），适合客户端启动时的能力探测。
+
+### 5.1 流式命令（`getevent` / `logcat` / `tail -f`）
+
+`exec` 必须等命令退出才有输出，遇到**不自己结束**的命令只能超时（60 秒上限）。
+流式走两步，因为 `call()` 只能返回一个 Bundle，装不下持续输出：
+
+```java
+Uri uri = Uri.parse("content://com.shellmgr.shell_manager.broker");
+
+Bundle args = new Bundle();
+args.putInt("idle", 30);          // 空闲 30 秒没输出就收工；0 = 不限
+Bundle r = resolver.call(uri, "stream.open", "getevent -lt", args);
+if (!r.getBoolean("ok")) { /* r.getString("code") / "msg" */ return; }
+
+String sid = r.getString("streamId");
+InputStream in = resolver.openInputStream(
+        Uri.parse("content://com.shellmgr.shell_manager.broker/stream/" + sid));
+
+BufferedReader br = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+String line;
+while ((line = br.readLine()) != null) {
+    // 每行一条 NDJSON：{"type":"start"…} / {"type":"out","data":"…"} / {"type":"exit",…}
+}
+```
+
+- 输出是 **NDJSON**（每行一个 JSON 对象），字段与框架 `/api/shell/stream` 一致。
+- `stream.open` 里完成授权（和 `exec` 一样会弹窗）；`openFile` 只校验
+  「打开者 uid == 登记者 uid」，不再弹窗。
+- 想立刻停：`resolver.call(uri, "stream.kill", sid, null)`，或直接 `in.close()`
+  （管道写满后本端会立刻察觉并回收远端进程）。
+- 客户端断开后进程组由框架回收；安静的命令靠 `idle` 兜底，所以别把 `idle` 设成 0
+  又不主动 close。
+
 
 ## 6. 结果码
 
@@ -170,6 +205,9 @@ curl -sS --max-time 20 -G -X POST -H "X-Token: $TOKEN" \
 | `FRAMEWORK_DOWN` | iwphone 框架没在运行 | 提示用户先启动框架 |
 | `NO_TOKEN` | 本应用没配置访问密钥 | 提示用户到 设置 → 访问密钥 补一个 |
 | `REJECTED` | 框架侧拒绝（黑名单 / 超时） | 看 `msg` |
+| `TOO_MANY_STREAMS` | 同时打开的流已达上限（8） | 关掉不用的流再试 |
+| `NOT_OWNER` | `stream.kill` 的流不属于当前调用方 | 只 kill 自己开的流 |
+| `BAD_ARG` | 缺少 `streamId` | 修代码 |
 | `EMPTY_CMD` / `TOO_LONG` / `UNKNOWN_CALLER` / `NO_METHOD` | 参数错误 | 修代码 |
 | `HTTP_xxx` / `IO_ERROR` | 与框架通信失败 | 重试或检查框架状态 |
 
@@ -181,8 +219,17 @@ curl -sS --max-time 20 -G -X POST -H "X-Token: $TOKEN" \
 - **投递脚本通道默认开启**（`CONTROL_ADBSH=1`），能写 `/sdcard/iwphone/` 的应用也能让
   框架以 shell 身份执行，同样不查授权表。
 - **执行依赖框架运行中**；App 自身的 adb 通道没有拿来做兜底。
-- **不限制命令内容**，只复用框架的 `COMMAND_BLACKLIST`；单次最长 60 秒、命令 ≤4096
-  字符、stdout/stderr 各截断 20000 字符，且是**一次性非交互命令**（无 tty、无持续会话）。
+- **不限制命令内容**，只复用框架的 `COMMAND_BLACKLIST`；`exec` 单次最长 60 秒、
+  命令 ≤4096 字符、stdout/stderr 各截断 20000 字符，且是**一次性非交互命令**
+  （无 tty、无持续会话）。要跑不结束的命令请用 `stream.open`（见 §5.1），
+  它按**空闲超时**而不是总时长收工。
+- **流式通道的输出是 merged 的**：stderr 并入 stdout（终端语义），顺序保留但无法区分。
+  需要区分时请让命令自己重定向（`2>/tmp/e`）。
+- **流式默认最长 30 分钟**（框架侧 `max=1800`），到点会以
+  `{"type":"exit","reason":"max"}` 收尾 —— 防止客户端异常退出后留下长跑进程。
+- **断开检测有延迟**：框架只有在「下次要写」时才会发现连接断了。命令若一直安静，
+  实际回收时间是 `idle` 秒。所以 `idle` 不要随手设成 0。
+- **同时最多 8 条流**（管道 + 进程组各占一份资源）。
 - **悬浮窗权限**在小部分 ROM 上可能被额外拦截，即便 `canDrawOverlays` 返回 true；
   此时 `addView` 失败也会回落到降级模式。
 - **调用记录**最多 300 条，命令只存前 200 字符。

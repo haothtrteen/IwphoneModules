@@ -8,14 +8,17 @@
 #   adb forward tcp:8537 tcp:8537
 # 然后浏览器访问 http://127.0.0.1:8537
 # =====================================================
+import base64
 import json
 import os
+import queue
 import re
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
@@ -1566,29 +1569,17 @@ def modules_restart_all():
 
 # ---------------- 内置终端：命令执行 ----------------
 
-def run_shell_command(cmd, cwd=None, timeout=None):
-    """执行一条 shell 命令并返回输出，供 App 内置终端与工具调用使用。
+def check_command(cmd):
+    """命令合法性校验（一次性通道与流式通道共用）。
 
-    与框架的关系：这条通道与模块执行**互相独立**，不经过锁、不写模块日志，
-    等价于用户在 adb shell 里手敲一条命令（例如 `sh uid2pkg.sh <文件>`、
-    投递 readbsh 脚本等）。
-
-    安全约束（终端天然高危，三层一起收）：
-      1) 复用 env.sh 的 COMMAND_BLACKLIST 拦截删库级命令；
-      2) 超时强制 1~60 秒，避免长任务占死 WebUI 线程；
-      3) WebUI 本身仅绑定 127.0.0.1。
+    返回 None 表示通过，否则返回可直接展示给用户的拒绝原因。
+    把这段抽出来是因为 `/api/shell` 与 `/api/shell/stream` 必须用**同一套**
+    规则 —— 两条通道要是各写一份，迟早出现「流式能跑、一次性被拦」的缺口。
     """
     if not cmd or not cmd.strip():
-        return {"ok": False, "msg": "命令为空"}
+        return "命令为空"
     if len(cmd) > 4096:
-        return {"ok": False, "msg": "命令过长（上限 4096 字符）"}
-
-    # 超时：默认 10s，夹在 1~60s
-    try:
-        t = float(timeout) if timeout not in (None, "") else 10.0
-    except (TypeError, ValueError):
-        t = 10.0
-    t = max(1.0, min(t, 60.0))
+        return "命令过长（上限 4096 字符）"
 
     # 高危命令黑名单（与模块扫描同一套正则）。
     # 把命令写进临时文件再交给 grep -E，避免把正则拼进 shell 造成注入。
@@ -1603,7 +1594,7 @@ def run_shell_command(cmd, cwd=None, timeout=None):
             rc = subprocess.run(["grep", "-qE", bl, tmpf],
                                 capture_output=True).returncode
             if rc == 0:
-                return {"ok": False, "msg": "命令命中框架黑名单，已拒绝执行"}
+                return "命令命中框架黑名单，已拒绝执行"
         except Exception:
             # 黑名单自检失败时保守放行（终端是显式人工操作，风险由使用者承担）
             pass
@@ -1613,6 +1604,34 @@ def run_shell_command(cmd, cwd=None, timeout=None):
                     os.remove(tmpf)
                 except OSError:
                     pass
+    return None
+
+
+def run_shell_command(cmd, cwd=None, timeout=None):
+    """执行一条 shell 命令并返回输出，供 App 内置终端与工具调用使用。
+
+    与框架的关系：这条通道与模块执行**互相独立**，不经过锁、不写模块日志，
+    等价于用户在 adb shell 里手敲一条命令（例如 `sh uid2pkg.sh <文件>`、
+    投递 readbsh 脚本等）。
+
+    安全约束（终端天然高危，三层一起收）：
+      1) 复用 env.sh 的 COMMAND_BLACKLIST 拦截删库级命令；
+      2) 超时强制 1~60 秒，避免长任务占死 WebUI 线程；
+      3) WebUI 本身仅绑定 127.0.0.1。
+
+    ⚠️ 本函数是**一次性**语义：必须等命令结束才有输出。`getevent -lt` /
+    `logcat -f` 这类不退出的命令请走 `/api/shell/stream`（见 run_shell_stream）。
+    """
+    bad = check_command(cmd)
+    if bad:
+        return {"ok": False, "msg": bad}
+
+    # 超时：默认 10s，夹在 1~60s
+    try:
+        t = float(timeout) if timeout not in (None, "") else 10.0
+    except (TypeError, ValueError):
+        t = 10.0
+    t = max(1.0, min(t, 60.0))
 
     run_cwd = cwd if (cwd and os.path.isdir(cwd)) else None
     try:
@@ -1635,6 +1654,267 @@ def run_shell_command(cmd, cwd=None, timeout=None):
         "stderr": (r.stderr or "")[-20000:],
         "cwd": run_cwd or "",
     }
+
+
+# ---------------- 内置终端：流式命令（长跑 / 持续输出） ----------------
+#
+# ## 为什么必须另开一条通道
+#
+# run_shell_command() 用 subprocess.run(capture_output=True)，语义是「等你跑完
+# 我再回话」，超时还是**总时长**（1~60 秒）。于是 getevent -lt、logcat -f、
+# tail -f 这类命令在那种模式下只有两个结局：到点超时（而且输出被整个丢弃）、
+# 或者永远等不到。真机实测 getevent -lt 超时 5 秒后返回的是
+# {"ok":false,"msg":"命令执行超时（上限 5s）"}，一个字节的输出都没有。
+#
+# 流式通道把「总超时」换成「空闲超时」：只要还在输出就一直跑，安静超过 idle
+# 秒才收工。这才是终端该有的语义。
+#
+# ## 传输格式
+#
+# NDJSON（每行一个 JSON 对象），按行 flush：
+#   {"type":"start","id":"…","pid":1234,"cmd":"…"}
+#   {"type":"out","data":"…"}                 # b64=1 时改发 {"type":"out","b64":"…"}
+#   {"type":"exit","code":0,"ms":1234,"reason":"exit"}
+#   {"type":"error","code":"…","msg":"…"}     # 仅在 start 之前（走普通 JSON 响应）
+#
+# ## 为什么不用 chunked
+#
+# 本服务是 HTTP/1.0（见 Handler 的 protocol_version 说明）。HTTP/1.0 里
+# 「响应体长度 = 连接关闭前读到的全部字节」是标准语义，客户端（dart:io
+# HttpClient / java HttpURLConnection / BufferedReader）都能正确处理。
+# 手写 chunked 分块只为了省一次连接关闭，收益和风险不成比例，不做。
+
+MAX_STREAMS = 8             # 并发流上限：每流占一个线程 + 一个进程组
+DEFAULT_IDLE = 30           # 空闲超时默认值（秒）
+DEFAULT_MAX_TOTAL = 1800    # 单流最长生命周期兜底（秒），防客户端异常断开后留僵尸
+
+_streams = {}               # id -> {"proc": Popen, "pgid": int, "cmd": str, "at": float}
+_streams_lock = threading.Lock()
+
+# Windows 上没有 SIGKILL / killpg，真机（Android）上有。
+# 做一次能力探测而不是直接写 signal.SIGKILL：本地跑 WebUI 做冒烟测试时不至于
+# 连模块导入都过不去（这句 if 在 Android 上等价于原来的写法）。
+_HAS_KILLPG = hasattr(os, "killpg")
+_SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
+# 队列「本轮没有新输出」的哨兵，与 EOF 哨兵 None 区分开
+_NO_CHUNK = object()
+
+# 流式通道排障开关：IWPHONE_STREAM_DEBUG=1 时把每轮循环的时序打到 stderr
+_DEBUG_STREAM = os.environ.get("IWPHONE_STREAM_DEBUG") == "1"
+
+
+def _kill_group(pgid, sig=None):
+    """按进程组回收 —— 必须整组杀，否则 `sh -c 'x | y'` 会留下孤儿子进程。"""
+    if not pgid:
+        return
+    try:
+        if _HAS_KILLPG:
+            os.killpg(pgid, sig or _SIGKILL)
+        else:
+            os.kill(pgid, sig or signal.SIGTERM)
+    except Exception:
+        pass
+
+
+def stream_count():
+    with _streams_lock:
+        return len(_streams)
+
+
+def kill_stream(sid):
+    """按 id 杀掉一个流（客户端主动取消时调用）。"""
+    with _streams_lock:
+        st = _streams.pop(sid, None)
+    if not st:
+        return {"ok": False, "msg": "流不存在或已结束"}
+    _kill_group(st.get("pgid"))
+    return {"ok": True, "msg": "已终止", "cmd": st.get("cmd", "")}
+
+
+def run_shell_stream(handler, cmd, cwd, idle, max_total, b64):
+    """以 NDJSON 流的形式执行命令。响应头一发出去就由本函数接管整个连接。"""
+    bad = check_command(cmd)
+    if bad:
+        return handler._json(
+            {"ok": False, "code": "BAD_CMD", "msg": bad}, 400)
+
+    try:
+        idle = float(idle) if idle not in (None, "") else float(DEFAULT_IDLE)
+    except (TypeError, ValueError):
+        idle = float(DEFAULT_IDLE)
+    if idle < 0:
+        idle = 0.0                      # 0 = 不限空闲（谨慎使用）
+
+    try:
+        max_total = float(max_total) if max_total not in (None, "") \
+            else float(DEFAULT_MAX_TOTAL)
+    except (TypeError, ValueError):
+        max_total = float(DEFAULT_MAX_TOTAL)
+    if max_total < 0:
+        max_total = 0.0
+
+    run_cwd = cwd if (cwd and os.path.isdir(cwd)) else None
+    sid = os.urandom(12).hex()
+
+    # ★ 先占坑再 Popen：只在 Popen 前数一遍会有竞态（两个请求同时通过检查），
+    #   占位记录写进 _streams 后并发上限才是真的。
+    with _streams_lock:
+        if len(_streams) >= MAX_STREAMS:
+            return handler._json({
+                "ok": False, "code": "TOO_MANY_STREAMS",
+                "msg": "同时在运行的流命令已达上限（%d 个），请先停止其它流"
+                       % MAX_STREAMS,
+            }, 429)
+        _streams[sid] = {"proc": None, "pgid": 0, "cmd": cmd,
+                         "at": time.time()}
+
+    try:
+        proc = subprocess.Popen(
+            ["sh", "-c", cmd],
+            cwd=run_cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,   # 终端语义：stderr 并入同一条流
+            bufsize=0,
+            start_new_session=True,     # 独立进程组 = pgid 就是 pid
+            close_fds=True,
+        )
+    except Exception as e:
+        with _streams_lock:
+            _streams.pop(sid, None)
+        return handler._json(
+            {"ok": False, "code": "SPAWN_FAILED", "msg": "启动失败：%s" % e}, 500)
+
+    pgid = proc.pid
+    with _streams_lock:
+        if sid in _streams:
+            _streams[sid]["proc"] = proc
+            _streams[sid]["pgid"] = pgid
+
+    fd = proc.stdout.fileno()
+
+    # ★ 用「读线程 + 队列」而不是 select：
+    #   select 在 Windows 上只能选套接字（管道会直接抛错），而读线程哪儿都能跑，
+    #   真机与本地冒烟测试的行为完全一致。每个流多一个守护线程，上限 8 个，代价可忽略。
+    chunks = queue.Queue()
+
+    def _pump():
+        try:
+            while True:
+                piece = os.read(fd, 8192)
+                if not piece:
+                    break
+                chunks.put(piece)
+        except Exception:
+            pass
+        finally:
+            chunks.put(None)            # EOF 哨兵
+
+    threading.Thread(target=_pump, name="iw-stream-%s" % sid[:6],
+                     daemon=True).start()
+
+    # 响应头：HTTP/1.0 + Connection: close ⇒ 读到 EOF 即流结束
+    try:
+        handler.send_response(200)
+        handler.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("Connection", "close")
+        handler.end_headers()
+        handler.close_connection = True
+    except Exception:
+        _kill_group(pgid)
+        with _streams_lock:
+            _streams.pop(sid, None)
+        return
+
+    def emit(obj):
+        handler.wfile.write((json.dumps(obj, ensure_ascii=False) + "\n")
+                            .encode("utf-8"))
+        handler.wfile.flush()
+
+    t0 = time.time()
+    last_out = t0
+    reason = "exit"
+    proc_exited_at = None
+
+    try:
+        emit({"type": "start", "id": sid, "pid": proc.pid, "cmd": cmd,
+              "idle": idle, "max": max_total})
+        while True:
+            try:
+                chunk = chunks.get(timeout=0.2)
+            except queue.Empty:
+                chunk = _NO_CHUNK
+            now = time.time()
+            if _DEBUG_STREAM:
+                sys.stderr.write("[stream %s] t=%.2f last=%.2f idle=%.2f empty=%s\n"
+                                 % (sid[:6], now - t0, last_out - t0, idle,
+                                    chunk is _NO_CHUNK))
+                sys.stderr.flush()
+
+            if chunk is _NO_CHUNK:
+                pass                     # 这 0.2s 没有新输出
+            elif chunk is None:
+                break                    # 管道 EOF：命令（及其子进程）都退出了
+            else:
+                last_out = now
+                if b64:
+                    emit({"type": "out",
+                          "b64": base64.b64encode(chunk).decode("ascii")})
+                else:
+                    # errors="replace"：流式通道面向终端/文本，
+                    # 真二进制请带 b64=1（避免非法 UTF-8 把连接搞崩）
+                    emit({"type": "out",
+                          "data": chunk.decode("utf-8", "replace")})
+
+            # 主进程已退出但管道还没 EOF：可能有后台子进程攥着 stdout。
+            # 给它 0.5s 把尾巴吐干净，之后整组回收，避免留下孤儿。
+            if proc.poll() is not None:
+                if proc_exited_at is None:
+                    proc_exited_at = now
+                elif now - proc_exited_at > 0.5:
+                    break
+            if idle > 0 and now - last_out > idle:
+                reason = "idle"
+                break
+            if max_total > 0 and now - t0 > max_total:
+                reason = "max"
+                break
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        # 客户端断开（App 关页面 / 终端 Ctrl-C / 网络中断）
+        reason = "client"
+    except Exception:
+        reason = "error"
+    finally:
+        _kill_group(pgid)               # 无论怎么结束，进程组都不留活口
+        try:
+            code = proc.wait(timeout=2)
+        except Exception:
+            # 进程组杀不掉（平台差异 / 权限）→ 退化成单进程强杀，
+            # 再等不到就放弃等待，宁可记 -9 也不要把 WebUI 线程挂死。
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                code = proc.wait(timeout=2)
+            except Exception:
+                code = -9
+        with _streams_lock:
+            _streams.pop(sid, None)
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+        if reason != "client":
+            try:
+                emit({"type": "exit", "code": code,
+                      "ms": int((time.time() - t0) * 1000),
+                      "reason": reason})
+            except Exception:
+                pass
+    return None
 
 
 # ---------------- 整体卸载框架 ----------------
@@ -1824,6 +2104,14 @@ def export_log(scope, name="", kind="log"):
 class Handler(BaseHTTPRequestHandler):
     server_version = "iwphone-webui/3.0"
 
+    # ★ 故意保持 HTTP/1.0（BaseHTTPRequestHandler 默认值，不要改成 "HTTP/1.1"）。
+    #
+    #   /api/shell/stream 依赖 HTTP/1.0 的「读到连接关闭即响应结束」语义来做
+    #   不定长流式输出。一旦改成 HTTP/1.1，所有响应都必须有 Content-Length 或
+    #   Transfer-Encoding: chunked，否则客户端会一直等下去 —— 而本文件里
+    #   _send / _json / serve_module_webroot 都是手写头，漏一处就整站挂。
+    #   现有响应全都带 Content-Length，因此沿用 1.0 是零风险选择。
+
     def log_message(self, fmt, *args):
         sys.stderr.write("[%s] %s\n" % (time.strftime("%H:%M:%S"), fmt % args))
         sys.stderr.flush()
@@ -1890,6 +2178,16 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if path == "/api/resources":
                 return self._json({"ok": True, "resources": build_resource_map()})
+            if path == "/api/streams":
+                # 正在运行的流命令（排障用：确认客户端断开后没有留孤儿）
+                with _streams_lock:
+                    items = [{"id": k,
+                              "cmd": v.get("cmd", ""),
+                              "pid": (v.get("pgid") or 0),
+                              "seconds": int(time.time() - v.get("at", 0))}
+                             for k, v in _streams.items()]
+                return self._json({"ok": True, "streams": items,
+                                   "limit": MAX_STREAMS})
             if path == "/api/runner/log":
                 n = int(q.get("tail", ["100"])[0])
                 return self._json({"ok": True, "text": latest_runner_log(n)})
@@ -1945,6 +2243,18 @@ class Handler(BaseHTTPRequestHandler):
                     q.get("key", [""])[0],
                     q.get("value", [""])[0],
                 ))
+            if path == "/api/shell/stream":
+                # 流式执行：本函数接管连接，返回后不再写任何响应
+                return run_shell_stream(
+                    self,
+                    q.get("cmd", [""])[0],
+                    q.get("cwd", [""])[0],
+                    q.get("idle", [""])[0],
+                    q.get("max", [""])[0],
+                    q.get("b64", [""])[0] == "1",
+                )
+            if path == "/api/stream/kill":
+                return self._json(kill_stream(q.get("id", [""])[0]))
             if path == "/api/shell":
                 return self._json(run_shell_command(
                     q.get("cmd", [""])[0],

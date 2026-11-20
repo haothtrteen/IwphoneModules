@@ -19,6 +19,11 @@ import java.util.concurrent.TimeUnit;
  *   - 无参数：交互式 REPL，连续读 stdin 执行，exit / Ctrl-D 退出；
  *   - 带参数：执行一条命令后退出（保持旧调用方式兼容）。
  *
+ * ★ 交互式 REPL 走**流式**通道（/exec/stream）：命令边跑边出结果，
+ *   `getevent -lt`、`logcat`、`tail -f` 这类不自己结束的命令也能用。
+ *   一次性调用仍走 /exec（结果一次给全，省一次连接）；
+ *   想在一次性调用里也用流式，加 `-s`：`iwsh -s getevent -lt`。
+ *
  * 授权按「整个应用」：包名由 iwsh.sh 通过 IWPHONE_APPLICATION_ID 传入，
  * 首次确认后 token 缓存到工具包目录，后续调用与 REPL 内每条命令复用，
  * 不再弹窗。
@@ -33,9 +38,36 @@ public final class ShellLoader {
     private static final String RECEIVER =
             "com.shellmgr.shell_manager/.BrokerShellReceiver";
 
+    /** 流式通道的空闲超时（秒）。0 = 不限。可用 IWPHONE_STREAM_IDLE 覆盖。 */
+    private static int idleSeconds() {
+        String v = System.getenv("IWPHONE_STREAM_IDLE");
+        if (v != null && v.length() > 0) {
+            try {
+                int n = Integer.parseInt(v.trim());
+                if (n >= 0) return n;
+            } catch (Exception ignored) {
+            }
+        }
+        return 300;
+    }
+
+    /** runStream 里发现 token 失效时置位，交给调用方重新授权。 */
+    private static boolean lastInvalidToken = false;
+
     public static void main(String[] args) {
-        final boolean repl = (args.length == 0);
-        final String oneShot = join(args);
+        // -s / --stream：一次性调用也走流式
+        boolean forceStream = false;
+        int from = 0;
+        while (from < args.length
+                && (args[from].equals("-s") || args[from].equals("--stream"))) {
+            forceStream = true;
+            from++;
+        }
+        String[] rest = new String[args.length - from];
+        System.arraycopy(args, from, rest, 0, rest.length);
+
+        final boolean repl = (rest.length == 0);
+        final String oneShot = join(rest);
         String pkg = System.getenv("IWPHONE_APPLICATION_ID");
         if (pkg == null || pkg.length() == 0) pkg = "com.termux";
         String dir = System.getenv("IWPHONE_DIR");
@@ -47,6 +79,14 @@ public final class ShellLoader {
             if (token == null) System.exit(2);
             if (repl) {
                 runRepl(cache, pkg, token);
+            } else if (forceStream) {
+                runStream(token, oneShot, "", idleSeconds());
+                if (lastInvalidToken) {
+                    try { cache.delete(); } catch (Exception ignored) {}
+                    token = obtainToken(cache, pkg);
+                    if (token == null) System.exit(2);
+                    runStream(token, oneShot, "", idleSeconds());
+                }
             } else {
                 String body = execute(token, oneShot, "");
                 if (isInvalidToken(body)) {
@@ -158,8 +198,12 @@ public final class ShellLoader {
                 continue;
             }
 
-            String body = execute(token, line, cwd);
-            if (isInvalidToken(body)) {
+            // ★ 走流式通道：命令边跑边出结果。
+            //   以前这里用一次性 /exec，`getevent -lt` / `logcat` 这类命令
+            //   要等进程退出才有输出，实际上等于不可用（还会撞 60s 总超时）。
+            int idle = idleSeconds();
+            runStream(token, line, cwd, idle);
+            if (lastInvalidToken) {
                 System.err.println("[iwsh] 授权已失效，正在重新请求授权…");
                 try { cache.delete(); } catch (Exception ignored) {}
                 String fresh = obtainToken(cache, pkg);
@@ -168,9 +212,8 @@ public final class ShellLoader {
                     break;
                 }
                 token = fresh;
-                body = execute(token, line, cwd);
+                runStream(token, line, cwd, idle);
             }
-            print(body);
         }
         System.err.println("bye");
         System.err.flush();
@@ -195,6 +238,129 @@ public final class ShellLoader {
     private static boolean isInvalidToken(String body) {
         return body.contains("INVALID_TOKEN") || body.contains("GRANT_REVOKED")
                 || body.contains("NO_CONTEXT") || body.contains("NO_TOKEN");
+    }
+
+    /**
+     * 流式执行：`/exec/stream`。命令不退出也能边跑边显示。
+     *
+     * 框架回的是 NDJSON（每行一个 JSON 对象）：
+     *   {"type":"start",...} / {"type":"out","data":"..."} / {"type":"exit","code":0,...}
+     *
+     * ★ 读超时设为 0（不限）：空闲多久算结束由框架的 idle 参数判断。
+     *   客户端再压一个总超时，只会把 `logcat` 这种长跑命令提前掐断 ——
+     *   之前一次性通道的 60s 上限就是这个毛病。
+     *
+     * @return 退出码；-1 表示未知或没跑起来
+     */
+    private static int runStream(String token, String cmd, String cwd, int idleSec)
+            throws Exception {
+        lastInvalidToken = false;
+        StringBuilder url = new StringBuilder("http://127.0.0.1:8539/exec/stream?token=")
+                .append(URLEncoder.encode(token, "UTF-8"))
+                .append("&cmd=").append(URLEncoder.encode(cmd, "UTF-8"))
+                .append("&idle=").append(idleSec);
+        if (cwd != null && cwd.length() > 0) {
+            url.append("&cwd=").append(URLEncoder.encode(cwd, "UTF-8"));
+        }
+        HttpURLConnection c = (HttpURLConnection) new URL(url.toString()).openConnection();
+        c.setConnectTimeout(5000);
+        c.setReadTimeout(0);
+        int rc = c.getResponseCode();
+        InputStream in = rc == 200 ? c.getInputStream() : c.getErrorStream();
+        if (in == null) {
+            System.err.println("[iwsh] 无响应（HTTP " + rc + "）");
+            System.err.flush();
+            return -1;
+        }
+        if (rc != 200) {
+            String body = readAll(in);
+            if (isInvalidToken(body)) {
+                lastInvalidToken = true;
+                return -1;
+            }
+            String msg = jsonField(body, "msg");
+            String code = jsonField(body, "code");
+            String shown = msg != null ? unescape(msg)
+                    : code != null ? ("code=" + unescape(code))
+                    : ("HTTP " + rc + "：" + body.trim());
+            System.err.println("[iwsh] " + shown);
+            System.err.flush();
+            return -1;
+        }
+
+        BufferedReader r = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+        String line;
+        int exit = -1;
+        String reason = "";
+        boolean anyOutput = false;
+        while ((line = r.readLine()) != null) {
+            if (line.length() == 0) continue;
+            String type = jsonField(line, "type");
+            if (type == null) {
+                // 不是流事件 → 通道/框架提前拒绝时的普通 JSON（例如
+                // {"ok":false,"code":"TOO_MANY_STREAMS","msg":"…"}）。
+                // 不处理的话用户只会看到"执行完什么都没有"。
+                String msg = jsonField(line, "msg");
+                String code = jsonField(line, "code");
+                if (msg != null) {
+                    System.err.println("[iwsh] " + unescape(msg));
+                } else if (code != null) {
+                    System.err.println("[iwsh] code=" + unescape(code));
+                } else {
+                    System.err.println("[iwsh] " + line.trim());
+                }
+                System.err.flush();
+                continue;
+            }
+            if ("out".equals(type)) {
+                String data = jsonField(line, "data");
+                if (data != null && data.length() > 0) {
+                    String s = unescape(data);
+                    System.err.print(s);
+                    System.err.flush();
+                    anyOutput = true;
+                }
+            } else if ("exit".equals(type)) {
+                exit = jsonInt(line, "code", -1);
+                String rs = jsonField(line, "reason");
+                reason = rs == null ? "" : unescape(rs);
+            }
+        }
+        // 「不是命令自己退出」的结束原因必须说清楚，否则用户会以为命令跑完了
+        if ("idle".equals(reason)) {
+            System.err.println("[iwsh] 空闲超时，命令已停止"
+                    + "（IWPHONE_STREAM_IDLE 可调，0 为不限）");
+        } else if ("max".equals(reason)) {
+            System.err.println("[iwsh] 达到最长运行时间，命令已停止");
+        } else if (!anyOutput) {
+            if (exit > 0) {
+                System.err.println("[iwsh] exit " + exit);
+            } else if (exit == 0) {
+                System.err.println("[iwsh] 无输出");
+            }
+        }
+        System.err.flush();
+        return exit;
+    }
+
+    /** 数字字段（jsonField 只取字符串，退出码是裸数字）。 */
+    private static int jsonInt(String s, String key, int def) {
+        int i = s.indexOf("\"" + key + "\"");
+        if (i < 0) return def;
+        i += key.length() + 2;
+        while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
+        if (i >= s.length() || s.charAt(i) != ':') return def;
+        i++;
+        while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
+        int j = i;
+        if (j < s.length() && s.charAt(j) == '-') j++;
+        while (j < s.length() && Character.isDigit(s.charAt(j))) j++;
+        if (j == i || (j == i + 1 && s.charAt(i) == '-')) return def;
+        try {
+            return Integer.parseInt(s.substring(i, j));
+        } catch (Exception e) {
+            return def;
+        }
     }
 
     /** 没有 stdout/stderr 时也要把 code/msg 打出来，避免「执行完什么都没有」。 */

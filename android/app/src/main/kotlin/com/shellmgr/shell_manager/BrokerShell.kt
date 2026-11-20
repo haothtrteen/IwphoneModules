@@ -149,7 +149,9 @@ object BrokerShell {
                 reply(s, 200, """{"ok":true,"token":"${p.token}"}""")
                 return
             }
-            if (!target.startsWith("/exec?")) {
+            // 流式通道：/exec/stream —— 命令不结束也能边跑边回传
+            val isStream = target.startsWith("/exec/stream?")
+            if (!isStream && !target.startsWith("/exec?")) {
                 reply(s, 404, """{"ok":false,"code":"NO_METHOD"}""")
                 return
             }
@@ -180,6 +182,12 @@ object BrokerShell {
 
             // cwd 由交互式客户端维护：cd 后每条命令带上工作目录
             val cwd = params["cwd"] ?: ""
+            if (isStream) {
+                val idle = (params["idle"]?.toIntOrNull() ?: 30).coerceIn(0, 3600)
+                streamFramework(ctx, s, g, cmd, cwd, idle)
+                return
+            }
+
             val started = System.currentTimeMillis()
             val body = callFramework(ctx, cmd, cwd,
                 (params["timeout"]?.toIntOrNull() ?: 15).coerceIn(1, 60))
@@ -204,6 +212,172 @@ object BrokerShell {
         } catch (_: Exception) {
         } finally {
             try { s.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * 流式执行：把框架的 NDJSON 原样转发给客户端。
+     *
+     * 为什么不在这里「解析再重组」：NDJSON 本身就是给客户端按行读的格式，
+     * 中间再解释一遍只会多一层出错机会、也丢掉了逐块 flush 的时效性。
+     * 这里只做三件事：鉴权（已在调用方做完）、原样转发、断连时回收进程。
+     */
+    private fun streamFramework(
+        ctx: Context,
+        s: Socket,
+        g: IwshGrantStore.Grant,
+        cmd: String,
+        cwd: String,
+        idle: Int,
+    ) {
+        val started = System.currentTimeMillis()
+        val token = AutostartPrefs.webuiToken(ctx)
+        if (token.isEmpty()) {
+            reply(s, 500, """{"ok":false,"code":"NO_TOKEN"}""")
+            return
+        }
+
+        var conn: HttpURLConnection? = null
+        var streamId = ""
+        var total = 0L
+        var exitCode = -1
+        var result = "OK"
+        var clientGone = false
+
+        try {
+            val q = buildString {
+                append("/api/shell/stream?cmd=").append(URLEncoder.encode(cmd, "UTF-8"))
+                append("&idle=").append(idle)
+                if (cwd.isNotEmpty()) {
+                    append("&cwd=").append(URLEncoder.encode(cwd, "UTF-8"))
+                }
+            }
+            val c = URL("http://127.0.0.1:8537$q").openConnection() as HttpURLConnection
+            conn = c
+            c.requestMethod = "POST"
+            c.connectTimeout = 3000
+            // 0 = 不限读超时。流式命令可能长时间没有输出（tail -f 盯一个安静的文件），
+            // 定死读超时等于把空闲超时的判断权从框架抢到客户端，两处语义会打架。
+            c.readTimeout = 0
+            c.setRequestProperty("X-Token", token)
+
+            val code = c.responseCode
+            if (code != 200) {
+                val body = try {
+                    (c.errorStream ?: c.inputStream)?.bufferedReader()?.use { it.readText() } ?: ""
+                } catch (_: Exception) {
+                    ""
+                }
+                BrokerStore.appendAudit(
+                    ctx, g.pkg, g.uid, "[iwsh·stream] $cmd", "HTTP_$code", -1,
+                    System.currentTimeMillis() - started, 0,
+                )
+                reply(s, 200, body.ifEmpty { """{"ok":false,"code":"HTTP_$code"}""" })
+                return
+            }
+
+            val out = s.getOutputStream()
+            out.write(("HTTP/1.1 200 OK\r\n" +
+                "Content-Type: application/x-ndjson; charset=utf-8\r\n" +
+                "Cache-Control: no-store\r\n" +
+                "Connection: close\r\n\r\n").toByteArray(Charsets.UTF_8))
+            out.flush()
+
+            val input = java.io.BufferedInputStream(c.inputStream, 8192)
+
+            // 首行单独读（逐字节）—— 只为拿到 stream id 用于断连时立刻回收。
+            // start 事件里 id 排在 cmd 之前且全是 ASCII，逐字节不会切坏多字节字符。
+            val head = StringBuilder()
+            while (true) {
+                val b = input.read()
+                if (b < 0) break
+                out.write(b)
+                out.flush()
+                total += 1
+                if (b == '\n'.code) break
+                if (head.length < 4096) head.append(b.toChar())
+            }
+            streamId = try {
+                JSONObject(head.toString()).optString("id", "")
+            } catch (_: Exception) {
+                ""
+            }
+
+            // 之后按块转发。顺便在尾行里扒出 exit 的 code，写进审计记录 ——
+            // 只认 '\n' 与 ASCII，所以不需要完整的 JSON 解析。
+            val buf = ByteArray(8192)
+            val tail = StringBuilder()
+            var lastLine = ""
+            while (true) {
+                val n = try {
+                    input.read(buf)
+                } catch (_: Exception) {
+                    -1
+                }
+                if (n < 0) break
+                if (n == 0) continue
+                out.write(buf, 0, n)
+                out.flush()
+                total += n
+                for (i in 0 until n) {
+                    val ch = buf[i].toInt().toChar()
+                    if (ch == '\n') {
+                        if (tail.isNotEmpty()) lastLine = tail.toString()
+                        tail.setLength(0)
+                    } else if (tail.length < 2048) {
+                        tail.append(ch)
+                    }
+                }
+            }
+            if (tail.isNotEmpty()) lastLine = tail.toString()
+            exitCode = try {
+                val o = JSONObject(lastLine)
+                if (o.optString("type") == "exit") o.optInt("code", -1) else -1
+            } catch (_: Exception) {
+                -1
+            }
+        } catch (_: Exception) {
+            // 客户端断开（关终端 / Ctrl-C / 进程被杀）会在这里冒出来
+            clientGone = true
+            result = "CLIENT_GONE"
+        } finally {
+            // 客户端走了要立刻回收：框架只会在「下次要写」时才发现连接断了，
+            // 安静的流会一直挂到空闲超时。显式 kill 一下，回收是即时的。
+            if (clientGone && streamId.isNotEmpty()) killStream(ctx, streamId)
+            try {
+                conn?.disconnect()
+            } catch (_: Exception) {
+            }
+            BrokerStore.appendAudit(
+                ctx, g.pkg, g.uid, "[iwsh·stream] $cmd", result, exitCode,
+                System.currentTimeMillis() - started, total.toInt(),
+            )
+        }
+    }
+
+    /** 让框架立刻杀掉一条流（客户端断开时用）。 */
+    private fun killStream(ctx: Context, id: String) {
+        val token = AutostartPrefs.webuiToken(ctx)
+        if (token.isEmpty()) return
+        var c: HttpURLConnection? = null
+        try {
+            val url = URL("http://127.0.0.1:8537/api/stream/kill?id=$id")
+            c = url.openConnection() as HttpURLConnection
+            c.requestMethod = "POST"
+            c.connectTimeout = 1500
+            c.readTimeout = 2000
+            c.setRequestProperty("X-Token", token)
+            c.responseCode
+            try {
+                c.inputStream.close()
+            } catch (_: Exception) {
+            }
+        } catch (_: Exception) {
+        } finally {
+            try {
+                c?.disconnect()
+            } catch (_: Exception) {
+            }
         }
     }
 
