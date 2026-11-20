@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'screens/app_auth_screen.dart';
+import 'screens/automation_screen.dart';
 import 'screens/framework_missing_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/logs_screen.dart';
 import 'screens/modules_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/app_prefs.dart';
@@ -147,7 +147,7 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
   // 切回对应页时递增，触发该页重新读取设备/框架数据
   int _homeReloadToken = 0;
   int _modulesReloadToken = 0;
-  int _logsReloadToken = 0;
+  int _autoReloadToken = 0;
   int _authReloadToken = 0;
 
   /// 框架是否「确定没装」。为 true 时整个四页界面都不渲染 ——
@@ -237,7 +237,7 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
       if (index == 0) _homeReloadToken++;
       if (index == 1) _modulesReloadToken++;
       if (index == 2) _authReloadToken++;
-      if (index == 3) _logsReloadToken++;
+      if (index == 3) _autoReloadToken++;
     });
   }
 
@@ -269,7 +269,7 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
           setState(() => _frameworkMissing = false);
           _homeReloadToken++;
           _modulesReloadToken++;
-          _logsReloadToken++;
+          _autoReloadToken++;
           _refreshAutostart();
         },
       );
@@ -298,7 +298,12 @@ class _ShellManagerHomePageState extends State<ShellManagerHomePage>
                   ),
                   ModulesScreen(reloadToken: _modulesReloadToken),
                   AppAuthScreen(embedded: true, reloadToken: _authReloadToken),
-                  LogsScreen(reloadToken: _logsReloadToken),
+                  // 第 4 个 tab：自动化。日志页从底栏撤下，改由首页卡片进入 ——
+                  // 自动化是「天天配」的，日志是「出事才看」的，主次不同。
+                  AutomationScreen(
+                    embedded: true,
+                    reloadToken: _autoReloadToken,
+                  ),
                   SettingsScreen(
                     autoStart: _autoStart,
                     storageStatus: _storageStatus,

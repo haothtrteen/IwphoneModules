@@ -322,6 +322,49 @@ guard 可写 `capability:adb_shell`。
   新增模块只需 Dart `ModuleCatalog` 加一条 + Kotlin `WorkflowStore.executeStep` 加分支。
 - 当前只做**顺序执行**；分支/循环（vFlow 的 BaseBlockModule）留后续。
 
+## 10.7 补充：触发器预设与自动化模块化（v1.3.30）
+
+三件事一起做，都是为了把「自动化」从演示变成能用的东西。
+
+### (1) 触发器不再是裸事件串
+
+旧界面把 `monitor:framework`、`a11y:window` 直接摆给用户选，看不出「什么时候会触发」，
+更看不出「武装之后靠什么跑」。现在：
+
+- `TriggerPresets.kt` 把人话 key 映射到「事件前缀 + 关心的状态 + 要保活的监视器」；
+- 界面只显示中文名与一句说明（`TriggerCatalog` 与 Kotlin 侧一一对应）；
+- 触发器从「第一步动作」提升为**工作流头部属性**，`trigger.*` 积木退出选择器，
+  旧数据里的这类步骤运行时直接跳过（不再当成动作执行）。
+
+### (2) 修掉「触发只发事件、不执行」的空洞
+
+上一版 `AutomationRegistry` 命中后只往总线发一条 `trigger:xxx`，没有任何执行体，
+用户看到「武装成功」却什么都没发生。现在触发器绑定执行体，命中后在**单线程池**里跑：
+
+- 单线程 → 多个触发器同时命中时串行，不会交叉点击；
+- 不占主线程 → adb 调用与 delay 步骤不会拖住 UI；
+- 队列已在执行时，新的命中被丢弃并每 10 秒最多记一条审计，避免窗口事件把队列堆爆；
+- 武装时顺带 `subscribe` 对应监视器 —— 没有订阅就没有轮询，这是「武装了却不动」的另一半原因。
+
+武装状态持久化在 `iwphone_automation/armed`，冷启动在后台线程恢复。
+注意：`AutomationRegistry` 的构造函数**不能**读 SharedPreferences ——
+`MonitorChannel` 是 Activity 的字段初始化器，那时还没有 base context，会直接打崩启动。
+
+### (3) 自动化可以打包成 iwphone 模块
+
+细节见 `doc/automation_module.md`。要点：
+
+- 模块包放 `automation.json`（`unzip` 整包解压，装完就在 `work/<模块>/`）；
+- App 用**一段 shell 循环**一次 adb 扫完所有模块（逐模块 cat 会为每个模块起一次 libadb）；
+- 模块带来的流程只读，可「复制为我的一份」再编辑；
+- 反向支持：任意流程可「导出为模块」，生成 `iwphone.prop + main.sh + automation.json`
+  的 `.iwp` 推到 `iwphone/module/`，走的是已验证的 `importPackageBytes` 链路。
+
+### 导航调整
+
+底栏第 4 位由「日志」换成「自动化」（自动化高频、日志低频），
+日志改为首页底部常驻卡片，`LogsScreen` 增加 `standalone` 形态（自带 Scaffold + 返回按钮）。
+
 ## 11. 本次准备状态
 
 - [x] 设计文档第 13 节（vFlow 机制提炼）已完成
@@ -329,4 +372,6 @@ guard 可写 `capability:adb_shell`。
 - [x] 阶段任务与验收（第 4-8 节）已写明
 - [x] Git 同步参数与回退策略（第 9-10 节）已写明
 - [x] P0-P3 已落地（v1.3.27）+ adb shell 模式（v1.3.28）
+- [x] 可视化工作流编辑器（v1.3.29）
+- [x] 触发器预设 + 自动化模块化 + 导航调整（v1.3.30）
 - [ ] P4 可选外部能力（默认关闭）

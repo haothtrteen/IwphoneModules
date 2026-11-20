@@ -1,6 +1,8 @@
 package com.shellmgr.shell_manager.plugins
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -10,7 +12,8 @@ import org.json.JSONObject
 /**
  * 监视器 / 事件桥接层（P0）。
  *
- * MethodChannel "shellmgr/monitors"：列出监视器、查状态、订阅/退订、手动探测。
+ * MethodChannel "shellmgr/monitors"：列出监视器、查状态、订阅/退订、手动探测，
+ * 以及可视化工作流的 CRUD / 武装 / 导出。
  * EventChannel  "shellmgr/events"：即时事件流（无缓存，晚订阅收不到历史事件）。
  *
  * 零第三方依赖：事件在 Kotlin 侧用 CopyOnWriteArrayList + Handler 实现，
@@ -23,7 +26,7 @@ class MonitorChannel(private val activity: Context) {
     }
 
     private val registry = MonitorRegistry(activity)
-    private val automation = AutomationRegistry(activity)
+    private val automation = AutomationRegistry(activity, registry)
     private val capabilities = CapabilityRegistry().apply {
         register(ShellCapability())
         register(AdbShellCapability())
@@ -34,11 +37,33 @@ class MonitorChannel(private val activity: Context) {
     private var eventSink: EventChannel.EventSink? = null
     private var cancelSubscribe: (() -> Unit)? = null
 
+    private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * 把会阻塞的调用（adb / 打包 / 执行流程）挪到后台线程，结果回主线程再回给 Dart。
+     *
+     * MethodChannel 的 handler 默认在**平台主线程**执行，直接在里面跑 adb
+     * 就是拿 UI 卡顿换实现简单 —— 扫描模块自动化、执行工作流、探测都是几百毫秒起。
+     */
+    private fun background(result: MethodChannel.Result, block: () -> Any?) {
+        Thread {
+            val value = try {
+                block()
+            } catch (_: Exception) {
+                null
+            }
+            main.post { result.success(value) }
+        }.apply { isDaemon = true }.start()
+    }
+
     fun register(messenger: BinaryMessenger) {
-        // 注册内置监视器（只注册，不订阅；订阅由 Dart 侧决定）
+        // 注册内置监视器（只注册，不订阅；订阅由 Dart 侧或武装的触发器决定）
         registry.register(FrameworkMonitor())
         registry.register(AdbMonitor())
         registry.register(ModuleMonitor())
+
+        // 冷启动恢复武装状态（内部走工作线程，不阻塞首帧）
+        automation.restore()
 
         MethodChannel(messenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -68,9 +93,17 @@ class MonitorChannel(private val activity: Context) {
                 }
                 "probe" -> {
                     val id = call.argument<String>("id") ?: ""
-                    result.success(registry.probe(id, force = true).name)
+                    background(result) { registry.probe(id, force = true).name }
                 }
-                // 可视化工作流 CRUD（Dart 侧持有模块目录与表单定义）
+                // ---------------- 触发器预设 ----------------
+                "triggerPresets" -> {
+                    val arr = JSONArray()
+                    TriggerPresets.describe().forEach { (key, label, desc) ->
+                        arr.put(JSONObject().put("key", key).put("label", label).put("desc", desc))
+                    }
+                    result.success(arr.toString())
+                }
+                // ---------------- 工作流 CRUD ----------------
                 "workflowList" -> {
                     val arr = JSONArray(WorkflowStore.list(activity).map { it })
                     result.success(arr.toString())
@@ -89,9 +122,60 @@ class MonitorChannel(private val activity: Context) {
                     result.success(true)
                 }
                 "workflowRun" -> {
-                    val r = WorkflowStore.run(activity, call.argument<String>("id") ?: "")
-                    result.success(mapOf("ok" to r.ok, "msg" to r.message))
+                    val id = call.argument<String>("id") ?: ""
+                    background(result) {
+                        val r = WorkflowStore.runAny(activity, id)
+                        mapOf("ok" to r.ok, "msg" to r.message)
+                    }
                 }
+                // ---------------- 模块自带的自动化 ----------------
+                "moduleWorkflows" -> {
+                    val force = call.argument<Boolean>("force") == true
+                    background(result) {
+                        val arr = JSONArray()
+                        ModuleAutomation.scan(activity, force).forEach { arr.put(it) }
+                        arr.toString()
+                    }
+                }
+                "moduleAutomationError" -> result.success(ModuleAutomation.error())
+                // ---------------- 武装 / 解除 ----------------
+                "workflowArmed" -> {
+                    val o = JSONObject()
+                    automation.armed().forEach { (k, v) -> o.put(k, v) }
+                    result.success(o.toString())
+                }
+                "workflowArm" -> {
+                    val id = call.argument<String>("id") ?: ""
+                    val trigger = call.argument<String>("trigger") ?: "manual"
+                    val wf = WorkflowStore.resolve(activity, id)
+                    if (wf == null) {
+                        result.success(false)
+                    } else {
+                        val ok = automation.armWorkflow(id, trigger) {
+                            WorkflowStore.runWorkflow(activity, wf).ok
+                        }
+                        result.success(ok)
+                    }
+                }
+                "workflowDisarm" -> {
+                    automation.disarmWorkflow(call.argument<String>("id") ?: "")
+                    result.success(true)
+                }
+                // ---------------- 导出为 iwphone 模块 ----------------
+                "workflowExport" -> {
+                    val id = call.argument<String>("id") ?: ""
+                    val name = call.argument<String>("name") ?: ""
+                    background(result) {
+                        val wf = WorkflowStore.resolve(activity, id)
+                        if (wf == null) {
+                            mapOf("ok" to false, "msg" to "工作流不存在")
+                        } else {
+                            val r = WorkflowStore.exportModule(activity, wf, name)
+                            mapOf("ok" to r.ok, "msg" to r.message)
+                        }
+                    }
+                }
+                // ---------------- automation.prop ----------------
                 "automations" -> {
                     val arr = JSONArray()
                     automation.all().forEach { s ->
@@ -99,20 +183,27 @@ class MonitorChannel(private val activity: Context) {
                             .put("id", s.id)
                             .put("state", automation.state(s.id).name)
                             .put("trigger", s.trigger)
+                            .put("triggerLabel", TriggerPresets.label(s.on.ifEmpty { s.trigger }))
                             .put("action", s.action))
                     }
                     result.success(arr.toString())
                 }
                 "automationLoad" -> {
-                    val spec = automation.loadFromModule(call.argument<String>("module") ?: "")
-                    result.success(spec != null)
+                    val module = call.argument<String>("module") ?: ""
+                    background(result) { automation.loadFromModule(module) != null }
                 }
-                "automationArm" -> result.success(automation.arm(call.argument<String>("id") ?: ""))
+                "automationArm" -> {
+                    val id = call.argument<String>("id") ?: ""
+                    background(result) { automation.arm(id) }
+                }
                 "automationDisarm" -> {
                     automation.disarm(call.argument<String>("id") ?: "")
                     result.success(true)
                 }
-                "automationRun" -> result.success(automation.run(call.argument<String>("id") ?: ""))
+                "automationRun" -> {
+                    val id = call.argument<String>("id") ?: ""
+                    background(result) { automation.run(id) }
+                }
                 "capabilities" -> {
                     val arr = JSONArray()
                     capabilities.availabilitySnapshot(activity).forEach { (id, name, avail) ->

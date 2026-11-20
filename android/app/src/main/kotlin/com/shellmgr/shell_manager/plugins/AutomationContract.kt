@@ -69,7 +69,14 @@ abstract class ListeningTriggerHandler : TriggerHandler {
     }
 
     protected fun activeTriggers(): List<TriggerSpec> = active.toList()
-    protected fun fire(t: TriggerSpec, reason: String) {
+
+    /**
+     * 把一次命中发到事件总线。
+     *
+     * 公开而非 protected：命中判定在 [AutomationRegistry] 里做（它才知道有没有
+     * 绑定执行体），handler 只负责登记触发器，所以需要从外部调用。
+     */
+    fun fire(t: TriggerSpec, reason: String) {
         PlatformEventBus.publish(PlatformEvent(
             id = "trigger:${t.type}",
             kind = PlatformEvent.KIND_ACTION,

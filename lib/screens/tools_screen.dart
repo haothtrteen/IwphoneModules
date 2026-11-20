@@ -5,7 +5,6 @@ import '../theme/app_theme.dart';
 import '../widgets/back_icon_button.dart';
 import '../widgets/screen_app_bar.dart';
 import '../widgets/settings_rows.dart';
-import 'automation_screen.dart';
 import 'resources_screen.dart';
 import 'snapshot_screen.dart';
 import 'terminal_screen.dart';
@@ -48,13 +47,8 @@ class ToolsScreen extends StatelessWidget {
                       MaterialPageRoute(builder: (_) => const TerminalScreen()),
                     ),
                   ),
-                  NavRow(
-                    label: AppStrings.t('auto.title'),
-                    hint: AppStrings.t('auto.hint'),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const AutomationScreen()),
-                    ),
-                  ),
+                  // 「自动化」已升到底栏固定位，这里不再重复给入口 ——
+                  // 同一功能两个入口只会让人怀疑它们是不是不一样。
                   NavRow(
                     label: AppStrings.t('settings.resources'),
                     hint: AppStrings.t('settings.resourcesHint'),

@@ -5,6 +5,7 @@ import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
 import 'event_log_screen.dart';
 import '../theme/app_theme.dart';
+import '../widgets/back_icon_button.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/screen_app_bar.dart';
 
@@ -17,9 +18,13 @@ import '../widgets/screen_app_bar.dart';
 /// 左列模块列表 + 右侧（同一屏内）输出/错误/执行概览 三种日志。
 /// 设计语言沿用深色主题与圆角 12。
 class LogsScreen extends StatefulWidget {
-  const LogsScreen({super.key, required this.reloadToken});
+  const LogsScreen({super.key, required this.reloadToken, this.standalone = false});
 
   final int reloadToken;
+
+  /// true = 通过 `Navigator.push` 打开的独立页面：自带 Scaffold 与返回按钮。
+  /// false = 底栏 tab 形态，由外层 Scaffold 包裹（默认）。
+  final bool standalone;
 
   @override
   State<LogsScreen> createState() => _LogsScreenState();
@@ -228,7 +233,7 @@ class _LogsScreenState extends State<LogsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
+    final body = RefreshIndicator(
       color: AppColors.accent,
       backgroundColor: AppColors.surface,
       onRefresh: () async {
@@ -243,6 +248,9 @@ class _LogsScreenState extends State<LogsScreen> {
           children: [
             ScreenAppBar(
               title: AppStrings.t('logs.title'),
+              // 从首页卡片点进来的独立页面要自带返回入口；
+              // 底栏 tab 形态则由外层 Scaffold 承载，不需要
+              leading: widget.standalone ? const BackIconButton() : null,
               actions: [
                 AppBarActionIcon(
                   icon: Icons.bolt_outlined,
@@ -290,6 +298,14 @@ class _LogsScreenState extends State<LogsScreen> {
           ],
         ),
       ),
+    );
+
+    // 首页卡片的入口：独立成页时自己兜一层 Scaffold + SafeArea。
+    // 不这么做的话，Navigator.push 出来的页面既没有 Scaffold 也没有系统栏避让。
+    if (!widget.standalone) return body;
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(child: body),
     );
   }
 }

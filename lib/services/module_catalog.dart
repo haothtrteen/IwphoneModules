@@ -7,7 +7,7 @@ import '../models/workflow.dart';
 /// 新增模块只需在这里加一条 + Kotlin WorkflowStore.executeStep 加一个分支。
 class ModuleCatalog {
   static const List<ModuleDef> all = [
-    // ---------- 触发器 ----------
+    // ---------- 触发器（旧版：现已挪到工作流头部，仅保留给旧数据展示） ----------
     ModuleDef(
       id: 'trigger.event',
       name: '事件触发',
@@ -151,9 +151,17 @@ class ModuleCatalog {
     return null;
   }
 
+  /// 可以往流程里加的积木：**不含**触发器。
+  ///
+  /// 触发器现在是工作流的头部属性（见 [Workflow.trigger]），不再是步骤 ——
+  /// 以前的 `trigger.event` 步骤让用户以为「触发器是第一步动作」，
+  /// 选了却不知道到底什么时候跑，正是「事件触发看不懂」的根源。
+  /// 旧数据里的 trigger.* 步骤仍在 [all] 里，只做展示兼容，不进选择器。
+  static List<ModuleDef> get actions => all.where((m) => !m.trigger).toList();
+
   static List<ModuleDef> byCategory(String category) =>
-      all.where((m) => m.category == category).toList();
+      actions.where((m) => m.category == category).toList();
 
   static List<String> get categories =>
-      all.map((m) => m.category).toSet().toList();
+      actions.map((m) => m.category).toSet().toList();
 }

@@ -79,6 +79,81 @@ class MonitorService {
     } catch (e) { return (ok: false, msg: e.toString()); }
   }
 
+  // ------------------------------------------------------------------
+  // 模块自带的自动化（.iwp 包里的 automation.json）
+  // ------------------------------------------------------------------
+
+  /// 扫出所有已装模块自带的流程（只读）。
+  ///
+  /// 原生侧一次 adb 调用扫全部并带 30 秒缓存；[force] 用于「刚装完模块」后刷新。
+  Future<List<Workflow>> moduleWorkflows({bool force = false}) async {
+    try {
+      final raw = await _method
+          .invokeMethod<String>('moduleWorkflows', {'force': force});
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((m) => Workflow.fromJson(m.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<String> moduleAutomationError() async {
+    try {
+      return await _method.invokeMethod<String>('moduleAutomationError') ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 武装 / 解除（触发器挂载）
+  // ------------------------------------------------------------------
+
+  /// 已武装的工作流：id -> trigger key。原生侧持久化，重启后自动恢复。
+  Future<Map<String, String>> armedWorkflows() async {
+    try {
+      final raw = await _method.invokeMethod<String>('workflowArmed');
+      if (raw == null || raw.isEmpty) return const {};
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+      return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<bool> armWorkflow(String id, String trigger) async {
+    try {
+      return await _method.invokeMethod<bool>(
+              'workflowArm', {'id': id, 'trigger': trigger}) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> disarmWorkflow(String id) async {
+    try {
+      await _method.invokeMethod<void>('workflowDisarm', {'id': id});
+    } catch (_) {}
+  }
+
+  /// 把工作流打包成 `.iwp` 推到设备的 iwphone/module/（之后到模块页安装）。
+  Future<({bool ok, String msg})> exportWorkflow(String id, String name) async {
+    try {
+      final r = await _method.invokeMethod<Map<dynamic, dynamic>>(
+          'workflowExport', {'id': id, 'name': name});
+      return (ok: r?['ok'] == true, msg: (r?['msg'] as String?) ?? '');
+    } catch (e) {
+      return (ok: false, msg: e.toString());
+    }
+  }
+
   Future<List<AutomationInfo>> automations() async {
     try {
       final raw = await _method.invokeMethod<String>('automations');
@@ -187,21 +262,26 @@ class CapabilityInfo {
 }
 
 
-/// 自动化脚本摘要。
+/// 自动化脚本摘要（模块 automation.prop 声明的那一类）。
 class AutomationInfo {
   const AutomationInfo({
     required this.id, required this.state,
     required this.trigger, required this.action,
+    this.triggerLabel = '',
   });
   final String id;
   final String state;
   final String trigger;
+
+  /// 原生侧翻译好的中文触发器名；缺失时回退到原始 trigger 串。
+  final String triggerLabel;
   final String action;
 
   factory AutomationInfo.fromJson(Map<String, dynamic> j) => AutomationInfo(
         id: j['id'] as String? ?? '',
         state: j['state'] as String? ?? 'UNINSTALLED',
         trigger: j['trigger'] as String? ?? 'manual',
+        triggerLabel: j['triggerLabel'] as String? ?? '',
         action: j['action'] as String? ?? '',
       );
 }

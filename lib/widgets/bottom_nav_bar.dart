@@ -24,13 +24,14 @@ class BottomNavBar extends StatelessWidget {
         (Icons.home, Icons.home_outlined, AppStrings.t('nav.home')),
         (Icons.extension, Icons.extension_outlined, AppStrings.t('nav.modules')),
         // Magisk 式「超级用户」位：应用授权页（AppAuthScreen, embedded=true）。
-        // 放在模块与日志之间，与 IndexedStack 的 index 2 对应。
+        // 放在模块与自动化之间，与 IndexedStack 的 index 2 对应。
         (Icons.verified_user, Icons.verified_user_outlined,
             AppStrings.t('nav.auth')),
-        // 第 4 个 tab 的内容是 LogsScreen（见 main.dart 的 IndexedStack）。
-        // 这里曾长期写着「权限」+ security 图标 —— 那是设计稿早期的「权限/超级用户」页，
-        // 后来该位置改成日志页，标签忘了跟着改：点「权限」出来的是日志，很误导。
-        (Icons.article, Icons.article_outlined, AppStrings.t('nav.logs')),
+        // 第 4 个 tab 是自动化（AutomationScreen）。
+        // 这里原本是「日志」—— 日志属于「出事才看」的低频入口，
+        // 已挪到首页卡片；自动化是天天要调的高频页，值得占一个固定位。
+        (Icons.account_tree, Icons.account_tree_outlined,
+            AppStrings.t('nav.automation')),
         (Icons.settings, Icons.settings_outlined, AppStrings.t('nav.settings')),
       ];
 

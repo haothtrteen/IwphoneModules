@@ -12,6 +12,7 @@ import '../widgets/confirm_dialog.dart';
 import '../widgets/framework_uninstall.dart';
 import '../widgets/webui_token_dialog.dart';
 import 'framework_install_screen.dart';
+import 'logs_screen.dart';
 
 /// 主页 —— 聚焦 iwphone modrunner v3 框架状态。
 ///
@@ -236,8 +237,21 @@ class _HomeScreenState extends State<HomeScreen> {
             _StatsGrid(status: _status, info: _info, loading: _statusLoading),
             const SizedBox(height: 16),
             _SystemInfoCard(info: _info, status: _status),
+            const SizedBox(height: 16),
+            // 日志从底栏撤下来了（那个位置让给自动化），
+            // 但「日志」仍是排查问题时要找的东西 —— 在首页底部留一张常驻卡片。
+            _LogsCard(onTap: _openLogs),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 打开日志页（独立页面形态：自带 Scaffold 与返回按钮）。
+  Future<void> _openLogs() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const LogsScreen(reloadToken: 0, standalone: true),
       ),
     );
   }
@@ -732,6 +746,58 @@ class _SystemInfoCard extends StatelessWidget {
             mono: true,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 首页底部的日志入口卡片。
+///
+/// 日志页原本占着底栏第 4 个位置，现在那个位置给了自动化 —— 自动化要频繁调，
+/// 日志只在模块出问题时才看。但「找日志」的动作不能变远，所以在首页留了这张卡。
+class _LogsCard extends StatelessWidget {
+  const _LogsCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.iconBlue.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.article_outlined,
+                  size: 20, color: AppColors.iconBlue),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(AppStrings.t('home.logsCardTitle'), style: AppText.cardTitle),
+                  const SizedBox(height: 3),
+                  Text(AppStrings.t('home.logsCardDesc'), style: AppText.desc12),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: AppColors.textInactive),
+          ],
+        ),
       ),
     );
   }

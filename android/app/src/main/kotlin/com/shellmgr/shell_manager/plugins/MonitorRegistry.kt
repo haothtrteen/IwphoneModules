@@ -23,6 +23,20 @@ class MonitorRegistry(private val ctx: Context) {
     private val main = Handler(Looper.getMainLooper())
     private val tickers = ConcurrentHashMap<String, Runnable>()
 
+    /**
+     * 探测线程。
+     *
+     * ★ 为什么不在主线程探测：probe 里是实打实的 adb 调用（起进程、等输出，
+     * 200ms~2s 不等）。以前监视器只在事件日志页打开时被订阅，卡一下没人注意；
+     * 现在武装的自动化会**长期**订阅监视器，主线程每 15 秒卡一次是不能接受的。
+     */
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "iwphone-monitor").apply { isDaemon = true }
+    }
+
+    /** 防重入：上一次探测还没回来就不再排新的。 */
+    private val inflight = ConcurrentHashMap<String, Boolean>()
+
     fun register(p: MonitorPlugin) {
         if (plugins.containsKey(p.id)) return
         plugins[p.id] = p
@@ -77,7 +91,17 @@ class MonitorRegistry(private val ctx: Context) {
         val tick = object : Runnable {
             override fun run() {
                 if ((subscribers[id] ?: 0) > 0) {
-                    probe(id)
+                    // 丢到探测线程跑，探测没回来就跳过这一轮，不堆积
+                    if (inflight.putIfAbsent(id, true) == null) {
+                        io.execute {
+                            try {
+                                probe(id)
+                            } catch (_: Exception) {
+                            } finally {
+                                inflight.remove(id)
+                            }
+                        }
+                    }
                     main.postDelayed(this, p.defaultIntervalMs)
                 } else {
                     tickers.remove(id)

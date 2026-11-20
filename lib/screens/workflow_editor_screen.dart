@@ -4,6 +4,7 @@ import '../i18n/app_strings.dart';
 import '../models/workflow.dart';
 import '../services/module_catalog.dart';
 import '../services/monitor_service.dart';
+import '../services/trigger_catalog.dart';
 import '../theme/app_theme.dart';
 import '../widgets/back_icon_button.dart';
 
@@ -11,6 +12,10 @@ import '../widgets/back_icon_button.dart';
 ///
 /// 核心思想：模块声明 ParamDef，编辑器据此**动态生成表单**，
 /// 宿主不认识具体模块 —— 新增模块只改 ModuleCatalog 与 Kotlin executeStep。
+///
+/// 结构：**触发条件（头）+ 步骤（身体）**
+/// 触发器不再是「第一步」，而是整个流程的前置条件 —— 这样「什么时候跑」
+/// 与「跑什么」分开，用户不会再把触发器当成一个动作去理解。
 class WorkflowEditorScreen extends StatefulWidget {
   const WorkflowEditorScreen({super.key, required this.workflow});
 
@@ -31,13 +36,21 @@ class _WorkflowEditorScreenState extends State<WorkflowEditorScreen> {
     _name = TextEditingController(text: _wf.name);
   }
 
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
   Future<void> _save() async {
+    if (_wf.isFromModule) return;
     final w = Workflow(
       id: _wf.id,
-      name: _name.text.trim().isEmpty ? '未命名工作流' : _name.text.trim(),
+      name: _name.text.trim().isEmpty ? AppStrings.t('auto.untitled') : _name.text.trim(),
       steps: _wf.steps,
       stopOnError: _wf.stopOnError,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
+      trigger: _wf.trigger,
     );
     final ok = await MonitorService.instance.saveWorkflow(w);
     if (!mounted) return;
@@ -61,6 +74,28 @@ class _WorkflowEditorScreenState extends State<WorkflowEditorScreen> {
         ],
       ),
     );
+  }
+
+  /// 选触发器：底部弹层 + 中文名 + 一句说明。
+  ///
+  /// 不用下拉框：说明文字放不进 DropdownMenuItem，而「什么时候触发」
+  /// 恰恰是最需要解释的一格。
+  Future<void> _pickTrigger() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      builder: (_) => _TriggerPicker(current: _wf.trigger),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _wf = Workflow(
+          id: _wf.id,
+          name: _wf.name,
+          steps: _wf.steps,
+          stopOnError: _wf.stopOnError,
+          updatedAt: _wf.updatedAt,
+          trigger: picked,
+        ));
   }
 
   Future<void> _addStep() async {
@@ -90,8 +125,7 @@ class _WorkflowEditorScreenState extends State<WorkflowEditorScreen> {
     for (final p in picked.params) {
       params[p.id] = p.defaultValue;
     }
-    _wf.steps.add(WorkflowStep(moduleId: picked.id, params: params));
-    setState(() {});
+    setState(() => _wf.steps.add(WorkflowStep(moduleId: picked.id, params: params)));
   }
 
   Future<void> _editStep(int index) async {
@@ -112,38 +146,55 @@ class _WorkflowEditorScreenState extends State<WorkflowEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final readOnly = _wf.isFromModule;
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: const BackIconButton(),
-        title: Text(AppStrings.t('auto.editStep'), style: AppText.appTitle),
+        title: Text(_wf.name.isEmpty ? AppStrings.t('auto.editStep') : _wf.name,
+            style: AppText.appTitle),
         actions: [
           IconButton(icon: const Icon(Icons.play_arrow), onPressed: _run),
-          IconButton(icon: const Icon(Icons.save), onPressed: _save),
+          if (!readOnly)
+            IconButton(icon: const Icon(Icons.save), onPressed: _save),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(
-            controller: _name,
-            style: AppText.cardTitle,
-            decoration: InputDecoration(
-              labelText: AppStrings.t('auto.name'),
-              labelStyle: AppText.desc12,
-              border: const OutlineInputBorder(),
-              isDense: true,
+          if (readOnly) _ReadOnlyBanner(source: _wf.source),
+          if (!readOnly) ...[
+            TextField(
+              controller: _name,
+              style: AppText.cardTitle,
+              decoration: InputDecoration(
+                labelText: AppStrings.t('auto.name'),
+                labelStyle: AppText.desc12,
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
             ),
+            const SizedBox(height: 16),
+          ],
+
+          // ---------- 触发条件 ----------
+          _TriggerCard(
+            trigger: _wf.trigger,
+            onTap: readOnly ? null : _pickTrigger,
           ),
           const SizedBox(height: 16),
-          Text('${AppStrings.t('auto.steps')} (${_wf.steps.length})', style: AppText.sectionTitle),
+
+          // ---------- 步骤 ----------
+          Text('${AppStrings.t('auto.steps')} (${_wf.steps.length})',
+              style: AppText.sectionTitle),
           const SizedBox(height: 8),
           if (_wf.steps.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 30),
-              child: Center(child: Text(AppStrings.t('auto.noSteps'), style: AppText.desc12)),
+              child: Center(
+                  child: Text(AppStrings.t('auto.noSteps'), style: AppText.desc12)),
             )
           else
             for (int i = 0; i < _wf.steps.length; i++)
@@ -156,24 +207,156 @@ class _WorkflowEditorScreenState extends State<WorkflowEditorScreen> {
                 onDelete: () => setState(() => _wf.steps.removeAt(i)),
                 onMoveUp: i > 0
                     ? () => setState(() {
-                        final s = _wf.steps.removeAt(i);
-                        _wf.steps.insert(i - 1, s);
-                      })
+                          final s = _wf.steps.removeAt(i);
+                          _wf.steps.insert(i - 1, s);
+                        })
                     : null,
                 onMoveDown: i < _wf.steps.length - 1
                     ? () => setState(() {
-                        final s = _wf.steps.removeAt(i);
-                        _wf.steps.insert(i + 1, s);
-                      })
+                          final s = _wf.steps.removeAt(i);
+                          _wf.steps.insert(i + 1, s);
+                        })
                     : null,
               ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _addStep,
-            icon: const Icon(Icons.add),
-            label: Text(AppStrings.t('auto.addStep')),
+          if (!readOnly)
+            OutlinedButton.icon(
+              onPressed: _addStep,
+              icon: const Icon(Icons.add),
+              label: Text(AppStrings.t('auto.addStep')),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 触发条件卡片：显示「什么时候跑」，点开可换。
+class _TriggerCard extends StatelessWidget {
+  const _TriggerCard({required this.trigger, required this.onTap});
+
+  final String trigger;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final needsA11y = TriggerCatalog.needsAccessibility(trigger);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.bolt_outlined, size: 18, color: AppColors.accent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(AppStrings.t('auto.trigger'), style: AppText.rowLabel),
+                ),
+                Text(TriggerCatalog.label(trigger),
+                    style: AppText.value14.copyWith(color: AppColors.accent)),
+                if (onTap != null) ...[
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right, size: 18, color: AppColors.textInactive),
+                ],
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(TriggerCatalog.desc(trigger), style: AppText.desc12),
+            if (needsA11y) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.info_outline, size: 14, color: AppColors.iconOrange),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      AppStrings.t('auto.needsA11y'),
+                      style: AppText.desc12.copyWith(color: AppColors.iconOrange),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReadOnlyBanner extends StatelessWidget {
+  const _ReadOnlyBanner({required this.source});
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.iconBlue.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline, size: 16, color: AppColors.iconBlue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${AppStrings.t('auto.readonly')}${source.isEmpty ? '' : ' · $source'}',
+              style: AppText.desc12.copyWith(color: AppColors.iconBlue),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 触发器选择弹层。
+class _TriggerPicker extends StatelessWidget {
+  const _TriggerPicker({required this.current});
+  final String current;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            Text(AppStrings.t('auto.triggerPick'), style: AppText.sectionTitle),
+            const SizedBox(height: 4),
+            Text(AppStrings.t('auto.triggerPickHint'), style: AppText.desc12),
+            const SizedBox(height: 8),
+            for (final t in TriggerCatalog.all)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  t.key == current
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 18,
+                  color: t.key == current ? AppColors.accent : AppColors.textInactive,
+                ),
+                title: Text(t.label, style: AppText.rowLabel),
+                subtitle: Text(t.desc, style: AppText.desc12),
+                onTap: () => Navigator.pop(context, t.key),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -198,6 +381,7 @@ class _StepCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final summary = step.params.entries
+        .where((e) => e.value != null && '${e.value}'.isNotEmpty)
         .map((e) => '${e.key}=${e.value}')
         .join(' · ');
     return Container(
