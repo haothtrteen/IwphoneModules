@@ -288,10 +288,34 @@ curl -sS -L --ssl-no-revoke -o pkg.tar.gz \
 
 ---
 
+## 10.5 补充：adb shell 模式（v1.3.28）
+
+这是 P1/P3 的实用补充：**自动化动作可以不依赖无障碍**，直接走已配对的 adb shell。
+`AdbShellCapability` 把常用 UI 操作封装为命名动作，参数白名单校验防注入：
+
+```
+adb:tap x y                      → input tap
+adb:swipe x1 y1 x2 y2 [duration] → input swipe
+adb:text <text>                  → input text
+adb:key <keycode>                → input keyevent
+adb:start <pkg> / adb:stop <pkg> → am start / am force-stop
+adb:screencap <安全路径>          → screencap -p
+```
+
+与无障碍模式的取舍：
+- **adb shell**：无需用户开无障碍、不受 ROM 保活限制；只能操作当前前台界面，
+  不能读 UI 节点树做内容匹配（适合固定坐标 / 固定流程）。
+- **无障碍**：能读节点树、做内容匹配（element / gkd 触发器）；需用户手动开启。
+
+任意 raw 命令仍须显式 `shell:` 前缀（highRisk，走二次确认），
+`adb:` 前缀只接受白名单参数，避免自动化脚本变成任意命令执行器。
+guard 可写 `capability:adb_shell`。
+
 ## 11. 本次准备状态
 
 - [x] 设计文档第 13 节（vFlow 机制提炼）已完成
 - [x] 接口冻结清单（第 3 节）已写明
 - [x] 阶段任务与验收（第 4-8 节）已写明
 - [x] Git 同步参数与回退策略（第 9-10 节）已写明
-- [ ] 开始 P0.1 编码
+- [x] P0-P3 已落地（v1.3.27）+ adb shell 模式（v1.3.28）
+- [ ] P4 可选外部能力（默认关闭）
