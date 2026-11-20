@@ -26,6 +26,7 @@ class MonitorChannel(private val activity: Context) {
     private val automation = AutomationRegistry(activity)
     private val capabilities = CapabilityRegistry().apply {
         register(ShellCapability())
+        register(AdbShellCapability())
         register(WebUiCapability())
         register(AccessibilityCapability())
         register(ShizukuCapability())

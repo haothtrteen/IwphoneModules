@@ -10,7 +10,7 @@ data class AutomationSpec(
     val version: Int = 1,
     val trigger: String = "manual",       // event | cron | manual | boot
     val on: String = "",                  // trigger=event 时的事件过滤，如 "monitor:framework"
-    val action: String = "",              // "module:<名>.run" / "shell:<cmd>"
+    val action: String = "",              // "module:<名>.run" / "shell:<cmd>" / "adb:tap x y"
     val guard: String = "",               // 前置条件，如 "capability:shell"
     val timeoutSec: Int = 120,
     val onError: String = "",

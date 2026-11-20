@@ -128,7 +128,18 @@ class AutomationRegistry(private val ctx: Context) {
         states[id] = ScriptState.RUNNING
         publish(id, ScriptState.RUNNING, "running ${spec.action}")
 
-        val ok = executeAction(spec)
+        val ok = if (spec.action.startsWith(AdbShellCapability.PREFIX)) {
+            // ★ adb shell 模式：不依赖无障碍，直接走 shell 的 input/am
+            val req = ActionRequest(
+                action = "adb",
+                args = mapOf("cmd" to spec.action),
+                timeoutMs = spec.timeoutSec * 1000L,
+                highRisk = false,
+            )
+            AdbShellCapability().execute(ctx, req).ok
+        } else {
+            executeAction(spec)
+        }
         if (ok) {
             states[id] = ScriptState.SUCCESS
             bumpFailure(id, reset = true)
@@ -183,7 +194,7 @@ class AutomationRegistry(private val ctx: Context) {
         if (guard.startsWith("capability:")) {
             val id = guard.removePrefix("capability:")
             return when (id) {
-                "shell" -> AdbBootstrap.probeTransportAlive(ctx)
+                "shell", "adb_shell" -> AdbBootstrap.probeTransportAlive(ctx)
                 "accessibility" -> IwphoneAccessibilityService.isEnabled(ctx)
                 "webui" -> com.shellmgr.shell_manager.AutostartPrefs.webuiToken(ctx).isNotEmpty()
                 else -> false
