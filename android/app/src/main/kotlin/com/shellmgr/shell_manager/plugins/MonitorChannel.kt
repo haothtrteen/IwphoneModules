@@ -70,6 +70,28 @@ class MonitorChannel(private val activity: Context) {
                     val id = call.argument<String>("id") ?: ""
                     result.success(registry.probe(id, force = true).name)
                 }
+                // 可视化工作流 CRUD（Dart 侧持有模块目录与表单定义）
+                "workflowList" -> {
+                    val arr = JSONArray(WorkflowStore.list(activity).map { it })
+                    result.success(arr.toString())
+                }
+                "workflowSave" -> {
+                    val raw = call.argument<String>("json") ?: ""
+                    try {
+                        WorkflowStore.save(activity, JSONObject(raw))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "workflowDelete" -> {
+                    WorkflowStore.delete(activity, call.argument<String>("id") ?: "")
+                    result.success(true)
+                }
+                "workflowRun" -> {
+                    val r = WorkflowStore.run(activity, call.argument<String>("id") ?: "")
+                    result.success(mapOf("ok" to r.ok, "msg" to r.message))
+                }
                 "automations" -> {
                     val arr = JSONArray()
                     automation.all().forEach { s ->

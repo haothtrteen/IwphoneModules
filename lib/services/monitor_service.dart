@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 
 import '../models/monitor_event.dart';
+import '../models/workflow.dart';
 
 /// 监视器状态摘要。
 class MonitorInfo {
@@ -46,6 +47,36 @@ class MonitorService {
     } catch (_) {
       return const [];
     }
+  }
+
+  Future<List<Workflow>> workflows() async {
+    try {
+      final raw = await _method.invokeMethod<String>('workflowList');
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((m) => Workflow.fromJson(m.cast<String, dynamic>()))
+          .toList();
+    } catch (_) { return const []; }
+  }
+
+  Future<bool> saveWorkflow(Workflow w) async {
+    try {
+      return await _method.invokeMethod<bool>('workflowSave', {'json': jsonEncode(w.toJson())}) ?? false;
+    } catch (_) { return false; }
+  }
+
+  Future<void> deleteWorkflow(String id) async {
+    try { await _method.invokeMethod<void>('workflowDelete', {'id': id}); } catch (_) {}
+  }
+
+  Future<({bool ok, String msg})> runWorkflow(String id) async {
+    try {
+      final r = await _method.invokeMethod<Map<dynamic, dynamic>>('workflowRun', {'id': id});
+      return (ok: r?['ok'] == true, msg: (r?['msg'] as String?) ?? '');
+    } catch (e) { return (ok: false, msg: e.toString()); }
   }
 
   Future<List<AutomationInfo>> automations() async {

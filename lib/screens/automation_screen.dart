@@ -5,6 +5,7 @@ import '../services/monitor_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/back_icon_button.dart';
 import '../widgets/confirm_dialog.dart';
+import 'workflows_screen.dart';
 
 /// 自动化脚本管理页（P3）。
 class AutomationScreen extends StatefulWidget {
@@ -67,6 +68,14 @@ class _AutomationScreenState extends State<AutomationScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(AppStrings.t('auto.hint'), style: AppText.desc12),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const WorkflowsScreen()),
+            ),
+            icon: const Icon(Icons.account_tree_outlined),
+            label: Text(AppStrings.t('auto.workflows')),
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
