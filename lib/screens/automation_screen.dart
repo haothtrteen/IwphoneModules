@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../i18n/app_strings.dart';
 import '../models/workflow.dart';
+import '../services/app_catalog.dart';
 import '../services/monitor_service.dart';
 import '../services/trigger_catalog.dart';
 import '../theme/app_theme.dart';
@@ -43,11 +44,19 @@ class _AutomationScreenState extends State<AutomationScreen> {
   String _moduleError = '';
   bool _loading = true;
 
+  /// 两项系统授权状态。默认 true：加载完成前先不弹告警，避免闪一下。
+  bool _notifAccess = true;
+  bool _a11yAccess = true;
+
   final TextEditingController _module = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    // 应用级触发器的 key 是包名，显示要查应用清单
+    AppCatalog.instance.load().then((_) {
+      if (mounted) setState(() {});
+    });
     _load();
   }
 
@@ -70,6 +79,8 @@ class _AutomationScreenState extends State<AutomationScreen> {
       MonitorService.instance.armedWorkflows(),
       MonitorService.instance.automations(),
       MonitorService.instance.moduleAutomationError(),
+      MonitorService.instance.notificationAccess(),
+      MonitorService.instance.accessibilityAccess(),
     ]);
     if (!mounted) return;
     setState(() {
@@ -78,11 +89,21 @@ class _AutomationScreenState extends State<AutomationScreen> {
       _armed = results[2] as Map<String, String>;
       _specs = results[3] as List<AutomationInfo>;
       _moduleError = results[4] as String;
+      _notifAccess = results[5] as bool;
+      _a11yAccess = results[6] as bool;
       _loading = false;
     });
   }
 
   List<Workflow> get _all => [..._local, ..._fromModules];
+
+  /// 有流程用到「通知」触发器，但通知使用权没开。
+  bool get _needsNotifAccess =>
+      !_notifAccess && _all.any((w) => TriggerCatalog.needsNotification(w.trigger));
+
+  /// 有流程用到「前台」触发器，但无障碍没开。
+  bool get _needsA11yAccess =>
+      !_a11yAccess && _all.any((w) => TriggerCatalog.needsAccessibility(w.trigger));
 
   Future<void> _openWorkflows() async {
     await Navigator.of(context).push(
@@ -193,6 +214,24 @@ class _AutomationScreenState extends State<AutomationScreen> {
               armed: _armed.length,
               onTap: _openWorkflows,
             ),
+            if (_needsNotifAccess) ...[
+              const SizedBox(height: 12),
+              _PermBanner(
+                icon: Icons.notifications_off_outlined,
+                title: AppStrings.t('auto.permNotifTitle'),
+                desc: AppStrings.t('auto.permNotifDesc'),
+                onTap: () => MonitorService.instance.openSettings('notification'),
+              ),
+            ],
+            if (_needsA11yAccess) ...[
+              const SizedBox(height: 12),
+              _PermBanner(
+                icon: Icons.accessibility_new,
+                title: AppStrings.t('auto.permA11yTitle'),
+                desc: AppStrings.t('auto.permA11yDesc'),
+                onTap: () => MonitorService.instance.openSettings('accessibility'),
+              ),
+            ],
             const SizedBox(height: 16),
             if (_loading)
               const Padding(
@@ -526,8 +565,60 @@ class _SpecRow extends StatelessWidget {
   }
 }
 
+/// 缺授权时的提示条：说明「哪个触发器会失效」+ 一键跳系统设置。
+///
+/// 这两项权限都**不能弹窗授予**（SPECIAL 权限），只能引导用户去设置页，
+/// 所以必须在用到它们的地方明确提示，而不是让触发器静默失效。
+class _PermBanner extends StatelessWidget {
+  const _PermBanner({
+    required this.icon,
+    required this.title,
+    required this.desc,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String desc;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.iconOrange.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: AppColors.iconOrange),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: AppText.rowLabel),
+                const SizedBox(height: 3),
+                Text(desc, style: AppText.desc12),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: onTap,
+            child: Text(AppStrings.t('auto.goEnable')),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EmptyHint extends StatelessWidget {
   const _EmptyHint({required this.text});
+
   final String text;
 
   @override
@@ -571,7 +662,12 @@ class _HelpCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(AppStrings.t('auto.helpBody'), style: AppText.desc12),
           const SizedBox(height: 10),
-          for (final t in TriggerCatalog.automatable)
+          for (final item in [
+            for (final t in TriggerCatalog.automatable) (t.label, t.desc),
+            // 应用级的两类不是固定预设（后面跟包名），单独列出来
+            (AppStrings.t('auto.triggerAppForeground'), AppStrings.t('auto.helpAppFg')),
+            (AppStrings.t('auto.triggerAppNotification'), AppStrings.t('auto.helpAppNotif')),
+          ])
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
@@ -592,10 +688,10 @@ class _HelpCard extends StatelessWidget {
                         style: AppText.desc12,
                         children: [
                           TextSpan(
-                            text: '${t.label}：',
+                            text: '${item.$1}：',
                             style: AppText.desc12.copyWith(color: AppColors.textPrimary),
                           ),
-                          TextSpan(text: t.desc),
+                          TextSpan(text: item.$2),
                         ],
                       ),
                     ),

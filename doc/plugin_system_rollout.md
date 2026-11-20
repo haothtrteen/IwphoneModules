@@ -365,6 +365,36 @@ guard 可写 `capability:adb_shell`。
 底栏第 4 位由「日志」换成「自动化」（自动化高频、日志低频），
 日志改为首页底部常驻卡片，`LogsScreen` 增加 `standalone` 形态（自带 Scaffold + 返回按钮）。
 
+## 10.8 补充：应用级触发器（v1.3.31）
+
+「某应用到前台」「某应用出通知」—— 监视器从「框架/模块」扩到「具体应用」。
+
+### 事件源
+
+| 事件 id | 产生者 | 说明 |
+|---|---|---|
+| `a11y:fg:<包名>` | 无障碍服务 | 包名**变化**才发；同应用内部切页面/弹框不发；跳过自己 |
+| `notif:<包名>` | 通知监听服务 | 跳过常驻通知、分组摘要；同包 1.5s 内合并 |
+
+触发器 key 是自描述的：`app_foreground:<包名>`、`notif_post:<包名>`，包名留空表示任意应用。
+指定包名时**精确匹配**（否则 `notif:com.a` 会误命中 `notif:com.abc`）。
+
+### 为什么通知要单独一个 Service
+
+通知不是无障碍事件，必须用 `NotificationListenerService`，权限是**独立的**
+「通知使用权」（`enabled_notification_listeners`）。这带来两个后果：
+
+- 未授权时服务根本不会被系统绑定 → 触发器**静默失效**，UI 必须主动提示；
+- 声明时 `exported=false` 仍可被 system_server 绑定（system uid 绕过导出检查），
+  比 `exported=true` 更安全，不需要额外加权限守卫。
+
+### 成本与边界
+
+- 无障碍关闭时「到前台」收不到任何事件；通知同理。两者都是可选项，不影响其它触发器。
+- 事件只在 App 进程活着时有订阅者；进程被杀后武装流程会停（与 v1.3.30 的已知边界一致）。
+- 应用清单用 `queryIntentActivities(MAIN/LAUNCHER)` + manifest 的 `<queries>`，
+  只列有桌面入口的应用，排序走中文 Collator。
+
 ## 11. 本次准备状态
 
 - [x] 设计文档第 13 节（vFlow 机制提炼）已完成

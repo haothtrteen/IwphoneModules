@@ -297,15 +297,16 @@ class AutomationRegistry(
      * 这是「武装了却不动」的另一个常见原因。
      */
     fun armWorkflow(id: String, trigger: String, executor: () -> Boolean): Boolean {
-        val preset = TriggerPresets.find(trigger)
-        if (preset == null || preset.eventPrefix.isEmpty()) return false
+        // 注意不能只看预设表：应用级触发器（app_foreground:/notif_post:）不在表里，
+        // 它们的 key 自带包名。eventPrefixOf 才是统一的解析入口。
+        if (TriggerPresets.eventPrefixOf(trigger).isNullOrEmpty()) return false
         val triggerId = "wf:$id"
         handlers["event"]?.addTrigger(TriggerSpec(triggerId, "event", mapOf("on" to trigger)))
         bindings[triggerId] = executor
         armedFlows[id] = trigger
         saveArmed()
         keepMonitorAlive(trigger, +1)
-        publishWorkflow(id, "已武装：${preset.label}", false)
+        publishWorkflow(id, "已武装：${TriggerPresets.label(trigger)}", false)
         return true
     }
 

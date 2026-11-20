@@ -101,6 +101,29 @@ class AccessibilityCapability : Capability {
     }
 }
 
+/** 通知使用权（C2 的另一半）：只读通知内容，用于「某应用发通知」触发器。 */
+class NotificationCapability : Capability {
+    override val id = "notification"
+    override val displayName = "通知使用权"
+
+    override fun availability(ctx: Context): Availability =
+        if (IwphoneNotificationListener.isEnabled(ctx)) Availability.AVAILABLE
+        else Availability.NEED_GRANT
+
+    override fun getRequiredPermissions(req: ActionRequest?): List<PermissionSpec> =
+        listOf(PermissionSpec(
+            id = "notification_listener",
+            type = PermissionType.SPECIAL,
+            description = "系统设置 → 通知使用权 → 允许 Shell Manager",
+        ))
+
+    override fun execute(ctx: Context, req: ActionRequest): ActionResult {
+        val d = PermissionGateway.check(ctx, this, req)
+        return if (d.allowed) ActionResult(true, "notification access ready")
+        else ActionResult(false, d.reason)
+    }
+}
+
 /** 外部依赖能力：Shizuku 只探测与引导，不引入客户端库。 */
 class ShizukuCapability : Capability {
     override val id = "shizuku"

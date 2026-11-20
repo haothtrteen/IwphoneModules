@@ -16,6 +16,18 @@ package com.shellmgr.shell_manager.plugins
  */
 object TriggerPresets {
 
+    /**
+     * 应用级触发器的 key 前缀。
+     *
+     * 为什么单独一套写法而不是塞进预设表：预设是**有限枚举**（下拉里几项就几项），
+     * 而包名是无穷的。所以这两个前缀后面直接跟包名：
+     *   `app_foreground:com.tencent.mm` → 监听事件 `a11y:fg:com.tencent.mm`
+     *   `notif_post:com.tencent.mm`     → 监听事件 `notif:com.tencent.mm`
+     * 包名部分留空表示「任意应用」。
+     */
+    const val APP_FOREGROUND = "app_foreground:"
+    const val APP_NOTIFICATION = "notif_post:"
+
     data class Preset(
         /** 稳定 key，写进 workflow JSON 与 automation.json。 */
         val key: String,
@@ -92,8 +104,26 @@ object TriggerPresets {
 
     fun label(key: String): String = find(key)?.label ?: key
 
+    /** 应用级触发器使用的包名；非应用级返回 null。 */
+    fun appOf(key: String): String? = when {
+        key.startsWith(APP_FOREGROUND) -> key.removePrefix(APP_FOREGROUND)
+        key.startsWith(APP_NOTIFICATION) -> key.removePrefix(APP_NOTIFICATION)
+        else -> null
+    }
+
+    /** 应用级触发器映射到的事件 id 前缀。 */
+    fun eventPrefixOf(key: String): String? = when {
+        key.startsWith(APP_FOREGROUND) -> "a11y:fg:" + key.removePrefix(APP_FOREGROUND)
+        key.startsWith(APP_NOTIFICATION) -> "notif:" + key.removePrefix(APP_NOTIFICATION)
+        else -> find(key)?.eventPrefix?.takeIf { it.isNotEmpty() }
+    }
+
     /** 这个触发器是否依赖无障碍服务（UI 要提示去开）。 */
-    fun needsAccessibility(key: String): Boolean = find(key)?.monitor == "accessibility"
+    fun needsAccessibility(key: String): Boolean =
+        key.startsWith(APP_FOREGROUND) || find(key)?.monitor == "accessibility"
+
+    /** 这个触发器是否依赖通知使用权。 */
+    fun needsNotification(key: String): Boolean = key.startsWith(APP_NOTIFICATION)
 
     /**
      * 一条事件是否命中某个触发器。
@@ -101,6 +131,16 @@ object TriggerPresets {
      */
     fun matches(trigger: String, e: PlatformEvent): Boolean {
         if (trigger.isEmpty()) return false
+
+        // 应用级：事件 id 本身就是 `a11y:fg:<包名>` / `notif:<包名>`。
+        // 指定了包名就**精确匹配** —— 否则 `notif:com.a` 会误命中 `notif:com.abc`；
+        // 包名留空(`notif_post:`)才按前缀走，表示任意应用。
+        if (trigger.startsWith(APP_FOREGROUND) || trigger.startsWith(APP_NOTIFICATION)) {
+            val app = appOf(trigger).orEmpty()
+            val prefix = eventPrefixOf(trigger) ?: return false
+            return if (app.isEmpty()) e.id.startsWith(prefix) else e.id == prefix
+        }
+
         val preset = find(trigger)
         val prefix: String
         val states: Set<String>

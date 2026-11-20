@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../i18n/app_strings.dart';
 import '../models/workflow.dart';
+import '../services/app_catalog.dart';
 import '../services/module_catalog.dart';
 import '../services/monitor_service.dart';
 import '../services/trigger_catalog.dart';
@@ -34,6 +35,11 @@ class _WorkflowEditorScreenState extends State<WorkflowEditorScreen> {
     super.initState();
     _wf = widget.workflow;
     _name = TextEditingController(text: _wf.name);
+    // 应用级触发器的 key 里是包名，显示要靠应用清单；拉完再刷一次界面，
+    // 否则会先显示成 com.tencent.mm 再跳成「微信」。
+    AppCatalog.instance.load().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -327,6 +333,21 @@ class _TriggerPicker extends StatelessWidget {
   const _TriggerPicker({required this.current});
   final String current;
 
+  /// 选应用后拼成应用级触发器 key 返回。
+  Future<void> _pickApp(BuildContext context, {required bool foreground}) async {
+    final pkg = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      builder: (_) => _AppPicker(foreground: foreground),
+    );
+    if (pkg == null || !context.mounted) return;
+    Navigator.pop(
+      context,
+      foreground ? TriggerCatalog.appForeground(pkg) : TriggerCatalog.appNotification(pkg),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -354,6 +375,197 @@ class _TriggerPicker extends StatelessWidget {
                 title: Text(t.label, style: AppText.rowLabel),
                 subtitle: Text(t.desc, style: AppText.desc12),
                 onTap: () => Navigator.pop(context, t.key),
+              ),
+            Divider(height: 24, color: AppColors.divider),
+            Text(AppStrings.t('auto.triggerAppSection'), style: AppText.sectionTitle),
+            const SizedBox(height: 4),
+            Text(AppStrings.t('auto.triggerAppHint'), style: AppText.desc12),
+            const SizedBox(height: 4),
+            _AppTriggerTile(
+              icon: Icons.open_in_new,
+              label: AppStrings.t('auto.triggerAppForeground'),
+              current: current,
+              isCurrent: TriggerCatalog.isAppForeground(current),
+              selectedLabel: TriggerCatalog.isAppForeground(current)
+                  ? AppCatalog.instance.labelOf(TriggerCatalog.appOf(current))
+                  : null,
+              onTap: () => _pickApp(context, foreground: true),
+            ),
+            _AppTriggerTile(
+              icon: Icons.notifications_none,
+              label: AppStrings.t('auto.triggerAppNotification'),
+              current: current,
+              isCurrent: TriggerCatalog.isAppNotification(current),
+              selectedLabel: TriggerCatalog.isAppNotification(current)
+                  ? AppCatalog.instance.labelOf(TriggerCatalog.appOf(current))
+                  : null,
+              onTap: () => _pickApp(context, foreground: false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 应用级触发器的两种入口（点开再去选具体应用）。
+class _AppTriggerTile extends StatelessWidget {
+  const _AppTriggerTile({
+    required this.icon,
+    required this.label,
+    required this.current,
+    required this.isCurrent,
+    required this.selectedLabel,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String current;
+  final bool isCurrent;
+  final String? selectedLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        isCurrent ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        size: 18,
+        color: isCurrent ? AppColors.accent : AppColors.textInactive,
+      ),
+      title: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Expanded(child: Text(label, style: AppText.rowLabel)),
+        ],
+      ),
+      subtitle: Text(
+        isCurrent && selectedLabel != null
+            ? selectedLabel!
+            : AppStrings.t('auto.triggerAppPick'),
+        style: AppText.desc12.copyWith(
+          color: isCurrent ? AppColors.accent : AppColors.textInactive,
+        ),
+      ),
+      trailing: Icon(Icons.chevron_right, size: 18, color: AppColors.textInactive),
+      onTap: onTap,
+    );
+  }
+}
+
+/// 选应用弹层：搜索 + 列表。
+///
+/// 应用多的时候（这份设备上 60+）没搜索基本没法用，所以第一行就是输入框。
+class _AppPicker extends StatefulWidget {
+  const _AppPicker({required this.foreground});
+  final bool foreground;
+
+  @override
+  State<_AppPicker> createState() => _AppPickerState();
+}
+
+class _AppPickerState extends State<_AppPicker> {
+  List<AppEntry> _items = const [];
+  String _query = '';
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final items = await AppCatalog.instance.load(force: !AppCatalog.instance.loaded);
+    if (!mounted) return;
+    setState(() {
+      _items = items;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _query.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? _items
+        : _items
+            .where((a) =>
+                a.label.toLowerCase().contains(q) || a.pkg.toLowerCase().contains(q))
+            .toList();
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.foreground
+                        ? AppStrings.t('auto.triggerAppForeground')
+                        : AppStrings.t('auto.triggerAppNotification'),
+                    style: AppText.sectionTitle,
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    style: AppText.body13,
+                    decoration: InputDecoration(
+                      hintText: AppStrings.t('auto.appSearch'),
+                      hintStyle: AppText.desc12,
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (v) => setState(() => _query = v),
+                  ),
+                ],
+              ),
+            ),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
+              )
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    // 不限应用：适合「任何应用来通知就记录一下」这类场景
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.all_inclusive,
+                          size: 18, color: AppColors.textSecondary),
+                      title: Text(AppStrings.t('auto.appAny'), style: AppText.rowLabel),
+                      onTap: () => Navigator.pop(context, ''),
+                    ),
+                    for (final a in filtered)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(a.label, style: AppText.rowLabel),
+                        subtitle: Text(a.pkg, style: AppText.desc12),
+                        onTap: () => Navigator.pop(context, a.pkg),
+                      ),
+                    if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Text(AppStrings.t('auto.appEmpty'),
+                              style: AppText.desc12),
+                        ),
+                      ),
+                  ],
+                ),
               ),
           ],
         ),

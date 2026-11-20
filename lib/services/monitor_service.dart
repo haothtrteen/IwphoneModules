@@ -111,6 +111,54 @@ class MonitorService {
   }
 
   // ------------------------------------------------------------------
+  // 应用级触发器：应用清单 + 权限状态
+  // ------------------------------------------------------------------
+
+  /// 有桌面入口的应用（包名 + 显示名），供「选应用」弹层使用。
+  Future<List<({String pkg, String label})>> apps() async {
+    try {
+      final raw = await _method.invokeMethod<String>('appList');
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((m) => (
+                pkg: m['pkg'] as String? ?? '',
+                label: m['label'] as String? ?? '',
+              ))
+          .where((e) => e.pkg.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 通知使用权是否已授予（没授予时通知触发器收不到任何事件）。
+  Future<bool> notificationAccess() async {
+    try {
+      return await _method.invokeMethod<bool>('notificationAccess') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> accessibilityAccess() async {
+    try {
+      return await _method.invokeMethod<bool>('accessibilityAccess') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 打开系统设置页（kind: notification / accessibility）。
+  Future<void> openSettings(String kind) async {
+    try {
+      await _method.invokeMethod<bool>('openSettings', {'kind': kind});
+    } catch (_) {}
+  }
+
+  // ------------------------------------------------------------------
   // 武装 / 解除（触发器挂载）
   // ------------------------------------------------------------------
 

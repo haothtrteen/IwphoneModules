@@ -1,3 +1,5 @@
+import 'app_catalog.dart';
+
 /// 触发器预设（Dart 侧展示用）。
 ///
 /// 与 Kotlin 的 `TriggerPresets.kt` **一一对应**：key 相同、顺序相同。
@@ -5,6 +7,11 @@
 /// 避免界面上出现 `monitor:framework@STOPPED|ERROR` 这种没人看得懂的东西。
 ///
 /// 新增触发器要两边一起改 —— 只改一边的后果是：界面里能选，但永远不触发。
+///
+/// 除了下面这张固定表，还有两类**应用级**触发器，key 后面直接跟包名：
+/// - `app_foreground:<包名>`：某应用进入前台（依赖无障碍）
+/// - `notif_post:<包名>`：某应用发出通知（依赖通知使用权）
+/// 包名留空表示「任意应用」。它们不能放进固定表 —— 包名是枚举不完的。
 class TriggerDef {
   const TriggerDef({
     required this.key,
@@ -71,6 +78,32 @@ class TriggerCatalog {
   static List<TriggerDef> get automatable =>
       all.where((t) => t.key != manual).toList();
 
+  // ------------------------------------------------------------------
+  // 应用级触发器
+  // ------------------------------------------------------------------
+
+  static const String appForegroundPrefix = 'app_foreground:';
+  static const String appNotificationPrefix = 'notif_post:';
+
+  static bool isAppForeground(String key) => key.startsWith(appForegroundPrefix);
+  static bool isAppNotification(String key) => key.startsWith(appNotificationPrefix);
+  static bool isAppScoped(String key) =>
+      isAppForeground(key) || isAppNotification(key);
+
+  /// 取出 key 里的包名；空串表示「任意应用」。
+  static String appOf(String key) {
+    if (isAppForeground(key)) return key.substring(appForegroundPrefix.length);
+    if (isAppNotification(key)) return key.substring(appNotificationPrefix.length);
+    return '';
+  }
+
+  static String appForeground(String pkg) => '$appForegroundPrefix$pkg';
+  static String appNotification(String pkg) => '$appNotificationPrefix$pkg';
+
+  /// 应用显示名；取不到就回退包名。
+  static String _appLabel(String pkg) =>
+      pkg.isEmpty ? '任意应用' : AppCatalog.instance.labelOf(pkg);
+
   static TriggerDef? find(String key) {
     for (final t in all) {
       if (t.key == key) return t;
@@ -79,10 +112,26 @@ class TriggerCatalog {
   }
 
   /// 未知 key 原样返回 —— 可能是旧版/手写的裸事件前缀，别把它显示成空白。
-  static String label(String key) => find(key)?.label ?? (key.isEmpty ? '手动执行' : key);
+  static String label(String key) {
+    if (isAppForeground(key)) return '前台：${_appLabel(appOf(key))}';
+    if (isAppNotification(key)) return '通知：${_appLabel(appOf(key))}';
+    return find(key)?.label ?? (key.isEmpty ? '手动执行' : key);
+  }
 
-  static String desc(String key) => find(key)?.desc ?? '自定义事件过滤器：$key';
+  static String desc(String key) {
+    if (isAppForeground(key)) {
+      final name = _appLabel(appOf(key));
+      return '当 $name 切换到前台时触发（同一应用内部切页面不算）';
+    }
+    if (isAppNotification(key)) {
+      final name = _appLabel(appOf(key));
+      return '当 $name 发出新通知时触发（常驻通知与分组摘要不算）';
+    }
+    return find(key)?.desc ?? '自定义事件过滤器：$key';
+  }
 
   static bool needsAccessibility(String key) =>
-      find(key)?.needsAccessibility ?? false;
+      isAppForeground(key) || (find(key)?.needsAccessibility ?? false);
+
+  static bool needsNotification(String key) => isAppNotification(key);
 }

@@ -17,6 +17,14 @@ import android.view.accessibility.AccessibilityEvent as A11yEvent
  */
 class IwphoneAccessibilityService : AccessibilityService() {
 
+    /**
+     * 上一次进入前台的应用。
+     *
+     * 用来把「窗口变化」收敛成「应用切换」：同一个 App 内部弹个对话框、
+     * 切个 Activity 也会发 TYPE_WINDOW_STATE_CHANGED，包名没变就不该算一次「到前台」。
+     */
+    private var lastForeground: String? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         try {
@@ -42,14 +50,31 @@ class IwphoneAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         val cls = event.className?.toString() ?: ""
         when (event.eventType) {
-            A11yEvent.TYPE_WINDOW_STATE_CHANGED -> PlatformEventBus.publish(
-                PlatformEvent(
-                    id = "a11y:window",
-                    kind = PlatformEvent.KIND_STATE,
-                    reason = pkg,
-                    payload = mapOf("package" to pkg, "class" to cls),
-                ),
-            )
+            A11yEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                PlatformEventBus.publish(
+                    PlatformEvent(
+                        id = "a11y:window",
+                        kind = PlatformEvent.KIND_STATE,
+                        reason = pkg,
+                        payload = mapOf("package" to pkg, "class" to cls),
+                    ),
+                )
+                // 应用级事件：包名变化才发，供 "某应用到前台" 触发器使用。
+                // 跳过自己 —— 打开本 App 的界面不该触发用户配置的自动化。
+                if (pkg != lastForeground && pkg != packageName) {
+                    lastForeground = pkg
+                    PlatformEventBus.publish(
+                        PlatformEvent(
+                            id = "a11y:fg:$pkg",
+                            kind = PlatformEvent.KIND_STATE,
+                            reason = pkg,
+                            payload = mapOf("package" to pkg, "class" to cls),
+                        ),
+                    )
+                    // 与通知监听对齐：留一条日志，方便 adb 侧确认「到前台」真的投递了
+                    android.util.Log.d("IwphoneA11y", "a11y:fg:$pkg")
+                }
+            }
             A11yEvent.TYPE_WINDOW_CONTENT_CHANGED -> PlatformEventBus.publish(
                 PlatformEvent(
                     id = "a11y:content",

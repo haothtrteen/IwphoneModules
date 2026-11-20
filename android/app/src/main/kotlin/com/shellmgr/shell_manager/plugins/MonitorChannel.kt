@@ -1,8 +1,10 @@
 package com.shellmgr.shell_manager.plugins
 
 import android.content.Context
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -32,6 +34,7 @@ class MonitorChannel(private val activity: Context) {
         register(AdbShellCapability())
         register(WebUiCapability())
         register(AccessibilityCapability())
+        register(NotificationCapability())
         register(ShizukuCapability())
     }
     private var eventSink: EventChannel.EventSink? = null
@@ -211,6 +214,27 @@ class MonitorChannel(private val activity: Context) {
                     }
                     result.success(arr.toString())
                 }
+                // ---------------- 应用级触发器 ----------------
+                "appList" -> background(result) { launchableApps() }
+                "notificationAccess" -> result.success(IwphoneNotificationListener.isEnabled(activity))
+                "accessibilityAccess" -> result.success(IwphoneAccessibilityService.isEnabled(activity))
+                "openSettings" -> {
+                    val kind = call.argument<String>("kind") ?: ""
+                    val action = when (kind) {
+                        "notification" -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+                        "accessibility" -> Settings.ACTION_ACCESSIBILITY_SETTINGS
+                        else -> Settings.ACTION_SETTINGS
+                    }
+                    val ok = try {
+                        activity.startActivity(
+                            Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                    result.success(ok)
+                }
                 "subscriberCount" -> result.success(PlatformEventBus.subscriberCount())
                 else -> result.notImplemented()
             }
@@ -239,4 +263,41 @@ class MonitorChannel(private val activity: Context) {
     }
 
     fun registry(): MonitorRegistry = registry
+
+    /**
+     * 可启动应用列表（包名 + 显示名），给「某应用到前台 / 发通知」的选应用弹层用。
+     *
+     * 只列有 LAUNCHER 入口的应用：装了但没图标的系统组件出现在列表里只会干扰选择。
+     * 排序用中文 Collator，否则「微信」会排到字母后面去。
+     */
+    private fun launchableApps(): String {
+        val pm = activity.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val resolved = try {
+            pm.queryIntentActivities(intent, 0)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val seen = HashSet<String>()
+        val items = ArrayList<Pair<String, String>>()
+        for (ri in resolved) {
+            val pkg = ri.activityInfo?.packageName ?: continue
+            if (pkg == activity.packageName) continue
+            if (!seen.add(pkg)) continue
+            val label = try {
+                ri.loadLabel(pm).toString()
+            } catch (_: Exception) {
+                pkg
+            }
+            items.add(pkg to label.ifBlank { pkg })
+        }
+        val collator = java.text.Collator.getInstance(java.util.Locale.CHINA)
+        items.sortWith(compareBy(collator) { it.second })
+
+        val arr = JSONArray()
+        items.forEach { (pkg, label) ->
+            arr.put(JSONObject().put("pkg", pkg).put("label", label))
+        }
+        return arr.toString()
+    }
 }
