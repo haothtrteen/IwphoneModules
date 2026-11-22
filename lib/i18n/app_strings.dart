@@ -58,7 +58,7 @@ abstract final class AppStrings {
       'common.followSystem': '跟随系统',
 
       // ---- 首次引导 ----
-      'onboarding.welcomeTitle': '欢迎使用 Shell Manager',
+      'onboarding.welcomeTitle': '欢迎使用 IWPhone',
       'onboarding.welcomeDesc':
           '不用刷机、不用解锁 Bootloader。\n通过系统自带的「无线调试」取得 shell 权限，'
               '再用一套自带运行时、带沙箱与写前快照的框架来跑免 root 模块。',
@@ -170,7 +170,7 @@ abstract final class AppStrings {
       'settings.languageChanged': '语言已切换',
 
       // ---- 主页 ----
-      'home.title': 'Shell Manager',
+      'home.title': 'IWPhone',
       'home.framework': 'iwphone 框架',
       'home.running': '运行中',
       'home.stopped': '已停止',
@@ -989,7 +989,7 @@ abstract final class AppStrings {
       'common.followSystem': 'Follow system',
 
       // ---- onboarding ----
-      'onboarding.welcomeTitle': 'Welcome to Shell Manager',
+      'onboarding.welcomeTitle': 'Welcome to IWPhone',
       'onboarding.welcomeDesc':
           'No flashing, no bootloader unlock. It obtains shell privileges through '
               'the built-in wireless debugging, then runs root-free modules on a '
@@ -1108,7 +1108,7 @@ abstract final class AppStrings {
       'settings.languageChanged': 'Language switched',
 
       // ---- home ----
-      'home.title': 'Shell Manager',
+      'home.title': 'IWPhone',
       'home.framework': 'iwphone framework',
       'home.running': 'Running',
       'home.stopped': 'Stopped',

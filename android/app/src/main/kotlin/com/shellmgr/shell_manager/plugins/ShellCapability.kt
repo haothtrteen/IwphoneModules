@@ -114,7 +114,7 @@ class NotificationCapability : Capability {
         listOf(PermissionSpec(
             id = "notification_listener",
             type = PermissionType.SPECIAL,
-            description = "系统设置 → 通知使用权 → 允许 Shell Manager",
+            description = "系统设置 → 通知使用权 → 允许 IWPhone",
         ))
 
     override fun execute(ctx: Context, req: ActionRequest): ActionResult {

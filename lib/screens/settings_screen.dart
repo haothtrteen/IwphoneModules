@@ -284,7 +284,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           // 页脚
-          Text('Shell Manager v$kAppVersion', style: AppText.footer, textAlign: TextAlign.center),
+          Text('$kAppName v$kAppVersion', style: AppText.footer, textAlign: TextAlign.center),
           const SizedBox(height: 16),
           Text('Powered by Flutter', style: AppText.footerSub, textAlign: TextAlign.center),
         ],

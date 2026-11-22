@@ -202,7 +202,7 @@ object WorkflowStore {
             "ui.text" -> {
                 val svc = UiActions.isEnabled()
                 if (!svc) {
-                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → Shell Manager")
+                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → IWPhone")
                 } else {
                     val nodes = UiActions.dump(p.optInt("max", 300), 16)
                     val filter = p.optString("filter").trim()
@@ -225,7 +225,7 @@ object WorkflowStore {
 
             "ui.find" -> {
                 if (!UiActions.isEnabled()) {
-                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → Shell Manager")
+                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → IWPhone")
                 } else {
                     val n = UiActions.find(
                         text = p.optString("text"),
@@ -248,7 +248,7 @@ object WorkflowStore {
 
             "ui.waitText" -> {
                 if (!UiActions.isEnabled()) {
-                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → Shell Manager")
+                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → IWPhone")
                 } else {
                     val appear = p.optBoolean("appear", true)
                     val r = UiActions.waitFor(
@@ -425,7 +425,7 @@ object WorkflowStore {
             append("PackageName=").append(name).append('\n')
             append("version=1\n")
             append("versionCode=1\n")
-            append("author=Shell Manager\n")
+            append("author=IWPhone\n")
             append("description=").append(title.ifBlank { "自动化模块" }).append('\n')
         }
         val mainSh = """
@@ -447,7 +447,7 @@ object WorkflowStore {
             put("main.sh", mainSh)
             put("automation.json", automationJson)
             put("README.txt",
-                "本模块由 Shell Manager 导出，用于分发自动化工作流。\n" +
+                "本模块由 IWPhone 导出，用于分发自动化工作流。\n" +
                     "安装后可在 App 的「自动化」页看到其中的流程。\n")
         }
         return bos.toByteArray()

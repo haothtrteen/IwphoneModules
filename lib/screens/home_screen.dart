@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_info.dart';
 import '../models/iwphone_module.dart';
 import '../services/iwphone_service.dart';
 import '../services/webui_token.dart';
@@ -279,7 +280,7 @@ class _HomeAppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text('Shell Manager', style: AppText.appTitle)),
+        Expanded(child: Text(kAppName, style: AppText.appTitle)),
         SizedBox(
           width: 24,
           height: 24,

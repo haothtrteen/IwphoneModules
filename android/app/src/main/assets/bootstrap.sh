@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # =====================================================
-# Shell Manager 框架激活脚本
+# IWPhone 框架激活脚本
 #
 # 由 App 导出到：
 #   /sdcard/Android/data/com.shellmgr.shell_manager/files/bootstrap.sh
@@ -61,4 +61,4 @@ else
 fi
 
 sleep 2
-echo "✅ 已激活。回到 Shell Manager，下拉刷新即可看到框架状态。"
+echo "✅ 已激活。回到 IWPhone，下拉刷新即可看到框架状态。"

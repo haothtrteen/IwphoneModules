@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'app_info.dart';
+
 import 'screens/app_auth_screen.dart';
 import 'screens/automation_screen.dart';
 import 'screens/framework_missing_screen.dart';
@@ -106,7 +108,7 @@ class _ShellManagerAppState extends State<ShellManagerApp>
     _applySystemUi(brightness);
 
     return MaterialApp(
-      title: 'Shell Manager',
+      title: kAppName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

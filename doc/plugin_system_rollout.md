@@ -519,3 +519,37 @@ vFlow 剩余 150+ 模块（变量系统、条件分支、循环、文本/加解�
 - 框架没运行时 status 不可达，版本行显示 `—`，不假装知道版本。
 - 重部署框架后必须重启 WebUI 进程，新戳才会被“运行中的进程”读到 —— 这正是
   检测想暴露的情况。
+
+## 10.12 补充：应用改名 Shell Manager → IWPhone（v1.3.37）
+
+用户觉得 "Shell Manager" 是工程名不像产品,要求像 Magisk 一样有个正式名字。
+选定 **IWPhone**(单一名字,不加中文副名)。
+
+### 边界:什么改了、什么绝对没动
+
+| 项 | 处理 |
+|---|---|
+| 桌面显示名 / 系统设置里的应用名 | `android:label` → `IWPhone` |
+| 首页标题、引导欢迎语、设置页页脚 | 统一读 `app_info.dart` 的 `kAppName` |
+| 通知渠道名 | `IWPhone 通知监听` |
+| 第三方授权提示文案(BrokerProvider/ShellCapability) | 改名为 IWPhone |
+| bootstrap.sh / iwsh.sh 的用户提示、导出模块的 author | 改名 |
+| **包名 `com.shellmgr.shell_manager`** | **一字未动** |
+| **Provider authority / iwsh 广播组件 / 授权表签名绑定** | 跟着包名,一字未动 |
+
+包名不能动的理由:BrokerProvider 的 `content://com.shellmgr.shell_manager.broker`、
+iwsh 广播接收器组件名、`BrokerStore` 的授权记录(按 pkg+uid+签名绑定)、
+以及第三方应用的集成代码全都依赖它。改包名等于授权全废、所有已接入的 App 断掉。
+
+### 顺带修的 bug
+
+`lib/app_info.dart` 的 `kAppVersion` 还停在 `1.3.29`,而 pubspec 早已是 `1.3.35`——
+设置页页脚一直显示错的旧版本号。本次同步到 `1.3.35`,并在文件头写明
+"发版时 pubspec 与 kAppVersion 两处一起改"。
+
+### 验证
+
+- `aapt dump badging`:`application-label:'IWPhone'`、
+  `package: name='com.shellmgr.shell_manager' versionCode='165' versionName='1.3.35'`
+- 真机安装启动无崩溃,launch Activity 仍是 `com.shellmgr.shell_manager/.MainActivity`
+- 三个 shell 脚本行尾仍全 LF(CRLF 会让 mksh 语法报错)

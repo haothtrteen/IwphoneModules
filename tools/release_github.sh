@@ -151,7 +151,7 @@ if [ -f "$NOTES_FILE" ]; then
     NOTES_ARG=(--data-binary @-)
     BODY=$(cat "$NOTES_FILE")
 else
-    BODY="Shell Manager $TAG"
+    BODY="IWPhone $TAG"
 fi
 
 echo "🚀 创建 release $TAG …"
@@ -160,7 +160,7 @@ import json, sys
 tag, pre, body = sys.argv[1], sys.argv[2] == "1", sys.argv[3]
 print(json.dumps({
     "tag_name": tag,
-    "name": f"Shell Manager {tag}",
+    "name": f"IWPhone {tag}",
     "body": body,
     "draft": False,
     "prerelease": pre,

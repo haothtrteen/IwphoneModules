@@ -5,7 +5,7 @@
 #   sh iwsh.sh            进入交互式 shell（连续敲命令，exit / Ctrl-D 退出）
 #   sh iwsh.sh id         执行一条命令后退出
 #
-# 同目录需要 iwsh.dex（由 Shell Manager「接入说明 → 导出工具包」生成）。
+# 同目录需要 iwsh.dex（由 IWPhone「接入说明 → 导出工具包」生成）。
 #
 # ★ 改这里：把 com.termux 换成你使用的终端 App 包名（如 bin.mt.termex）。
 #   授权按「整个应用」生效；也可用同名环境变量覆盖，无需改脚本。

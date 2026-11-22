@@ -784,7 +784,7 @@ CMD="${1:-id}"
 AUTH='content://com.shellmgr.shell_manager.broker'
 WEBUI='http://127.0.0.1:8537'
 
-# 第三方 app 终端必填：Shell Manager → 设置 → 访问密钥
+# 第三方 app 终端必填：IWPhone → 设置 → 访问密钥
 TOKEN=''
 
 case "$(id -u)" in

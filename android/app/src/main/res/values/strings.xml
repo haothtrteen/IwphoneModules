@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="accessibility_service_desc">iwphone 插件系统的事件监视器：读取窗口状态变化以触发自动化流程，不执行自动点击。</string>
-    <string name="notification_listener_label">Shell Manager 通知监听</string>
+    <string name="notification_listener_label">IWPhone 通知监听</string>
 </resources>

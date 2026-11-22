@@ -235,7 +235,7 @@ class BrokerProvider : ContentProvider() {
         if (BrokerStore.isDenied(ctx, c.pkg, c.uid, c.sig)) {
             return AuthResult(false, "DENIED",
                 "用户已永久拒绝「${BrokerStore.labelOf(ctx, c.pkg)}」的请求。" +
-                    "可在 Shell Manager → 应用授权 → 已拒绝 中解除")
+                    "可在 IWPhone → 应用授权 → 已拒绝 中解除")
         }
 
         val label = BrokerStore.labelOf(ctx, c.pkg)
@@ -262,7 +262,7 @@ class BrokerProvider : ContentProvider() {
                 // 没开悬浮窗权限：退回旧的「待授权列表」流程，功能不中断
                 notePendingOnce(ctx, c.pkg, c.uid, c.sig)
                 AuthResult(false, "NEED_APPROVAL",
-                    "未授权：请在 Shell Manager → 设置 → 应用授权 中允许「$label」执行命令")
+                    "未授权：请在 IWPhone → 设置 → 应用授权 中允许「$label」执行命令")
             }
         }
     }

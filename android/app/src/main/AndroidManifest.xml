@@ -60,7 +60,7 @@
     </queries>
 
     <application
-        android:label="Shell Manager"
+        android:label="IWPhone"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:networkSecurityConfig="@xml/network_security_config"
