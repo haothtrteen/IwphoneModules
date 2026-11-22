@@ -105,8 +105,18 @@ my_module.iwp                (zip)
 | `module.run` | `module`, `op` | 启停其它模块（`run`/`stop`/`install`/`uninstall`） |
 | `logic.delay` | `ms` | 等待，上限 60 秒 |
 | `flow.run` | `workflow` | 调用另一个流程（递归上限 6 层） |
+| `system.toast` | `message` | 弹出一条短提示 |
+| `ui.text` | `filter`, `max` | 读取当前界面控件文字，`filter` 是正则、留空=全部 |
+| `ui.find` | `text`, `viewId`, `match`, `click`, `max` | 按文字/控件 ID 查找；`click=true` 时点中心点 |
+| `ui.waitText` | `text`, `viewId`, `match`, `appear`, `timeoutMs`, `intervalMs` | 轮询等待文字出现/消失 |
 
 所有 `adb.*` 动作都走 `input` / `am` / `screencap`，**不依赖无障碍**。
+`ui.*` 三个动作依赖**无障碍服务已开启**（系统设置 → 无障碍 → Shell Manager），
+没开时步骤直接返回失败原因，不会静默跳过。
+
+`match` 支持 `contains`（默认，忽略大小写）/ `exact` / `starts_with` / `regex`。
+`ui.*` 读的是**无障碍控件树上的文字**（text / content-desc / view-id），
+不是 OCR——Canvas 绘制、图片、验证码这类像素文字读不到。这是零第三方依赖下的明确边界。
 
 ## 6. 只读与归属
 

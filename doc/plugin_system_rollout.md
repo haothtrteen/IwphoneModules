@@ -405,3 +405,41 @@ guard 可写 `capability:adb_shell`。
 - [x] 可视化工作流编辑器（v1.3.29）
 - [x] 触发器预设 + 自动化模块化 + 导航调整（v1.3.30）
 - [ ] P4 可选外部能力（默认关闭）
+
+## 10.9 补充：vFlow 界面识别能力的最小补齐（v1.3.34）
+
+对照 `reference_projects/vFlow`：它有 171 个模块文件，我们此前只有 11 个动作。
+用户点名缺的两个 ——「识别界面文字」「弹 Toast」—— 确实没搬。
+
+### 落地（零第三方依赖）
+
+| moduleId | 实现 | 依赖 |
+|---|---|---|
+| `system.toast` | `Toast.makeText()`，切主线程 | 无 |
+| `ui.text` | BFS 扫 `rootInActiveWindow`，输出 text/desc/view-id + 中心坐标 | 无障碍服务 |
+| `ui.find` | 同上做文本/ID 匹配，命中后走既有 `input tap` 点中心 | 无障碍 + adb |
+| `ui.waitText` | 轮询上面两者，支持出现/消失与超时 | 无障碍 |
+
+新增 `plugins/UiActions.kt`；`IwphoneAccessibilityService` 增加同进程单例引用
+（`onServiceConnected` 置位、`onDestroy` 清空），此前它只转发事件、不读节点 ——
+这正是落地计划 P2 里 `AccessibilityBridgeService` 没做完的那部分。
+
+### 为什么不做 vFlow 的 OCR
+
+`vflow.interaction.ocr` 依赖 Google ML Kit（`text-recognition-chinese:16.0.1`），
+还有 PPOCR 原生库分支。两者都违反本项目零第三方依赖约束。
+控件树文字在绝大多数 App 上比 OCR 更准、更快、不需要联网模型；
+图片/验证码里的文字读不到，这是如实说明的边界，不假装覆盖。
+
+### 没搬的其它能力
+
+vFlow 剩余 150+ 模块（变量系统、条件分支、循环、文本/加解密、网络推送、
+通知操作、系统开关、Agent/AutoGLM 等）仍未迁移。当前工作流引擎没有输出变量，
+`executeStep` 只返回 `StepResult(ok, message)`，所以「识别 → 判断 → 分支」
+这类用法需要先补变量与条件模块，不是简单加动作能解决的。
+
+### 关于「运行时从 GitHub 下载扩展插件」
+
+见 `doc/extension_plugin_assessment.md`：结论是可以做，但不能直接照搬 vFlow
+的 Kotlin 模块模型；更适合把现有 `.iwp` + `automation.json` 扩成动作插件，
+并按签名/哈希校验后再加载。本次未实现。

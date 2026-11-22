@@ -1,10 +1,15 @@
 package com.shellmgr.shell_manager.plugins
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import com.shellmgr.shell_manager.AdbBootstrap
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -12,8 +17,11 @@ import java.util.zip.ZipOutputStream
  * 可视化工作流存储。
  *
  * 借鉴 vFlow：工作流 = 有序步骤列表，每步 = moduleId + parameters。
- * 模块目录由 Dart 侧声明（可视化表单的数据源），这里只负责持久化与执行，
- * 保持低耦合 —— 新增模块不需要改 Kotlin。
+ * 模块目录由 Dart 侧声明（可视化表单的数据源），这里负责持久化与执行。
+ *
+ * ★ 早期这里只有纯 adb 命令，确实「新增模块不用改 Kotlin」。
+ *   加入 `system.toast` / `ui.*` 之后不再成立：这些动作必须调 Android API，
+ *   新增这类模块仍需在 [executeStep] 加分支。纯 shell 类动作依旧不用改。
  *
  * 零第三方依赖，SharedPreferences + org.json。
  */
@@ -160,6 +168,107 @@ object WorkflowStore {
                 val sub = resolve(ctx, id) ?: return StepResult(false, "子工作流不存在: $id")
                 val r = runWorkflow(ctx, sub, depth + 1)
                 StepResult(r.ok, r.message)
+            }
+
+            // ---- 界面识别 / 提示（需要 App 进程内的 Android API） ----
+            // vFlow 的 `显示Toast` / `查找控件` / `查找直到出现` 的最小版本。
+            // 不引入 ML Kit：读无障碍控件树而不是识别图片像素，见 UiActions 的说明。
+            "system.toast" -> {
+                val msg = p.optString("message")
+                if (msg.isEmpty()) {
+                    StepResult(false, "消息为空")
+                } else {
+                    // Toast 必须切回主线程；工作流跑在后台线程上。
+                    val done = CountDownLatch(1)
+                    Handler(Looper.getMainLooper()).post {
+                        try {
+                            Toast.makeText(
+                                ctx.applicationContext, msg, Toast.LENGTH_SHORT,
+                            ).show()
+                        } catch (_: Exception) {
+                        } finally {
+                            done.countDown()
+                        }
+                    }
+                    try {
+                        done.await(2, TimeUnit.SECONDS)
+                    } catch (_: InterruptedException) {
+                    }
+                    StepResult(true, "toast: $msg")
+                }
+            }
+
+            "ui.text" -> {
+                val svc = UiActions.isEnabled()
+                if (!svc) {
+                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → Shell Manager")
+                } else {
+                    val nodes = UiActions.dump(p.optInt("max", 300), 16)
+                    val filter = p.optString("filter").trim()
+                    val lines = nodes.map { it.label() }.filter { line ->
+                        if (filter.isEmpty()) true else {
+                            try {
+                                Regex(filter).containsMatchIn(line)
+                            } catch (_: Exception) {
+                                line.contains(filter, ignoreCase = true)
+                            }
+                        }
+                    }
+                    StepResult(
+                        true,
+                        if (lines.isEmpty()) "（未读到界面文字）"
+                        else lines.take(80).joinToString("\n"),
+                    )
+                }
+            }
+
+            "ui.find" -> {
+                if (!UiActions.isEnabled()) {
+                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → Shell Manager")
+                } else {
+                    val n = UiActions.find(
+                        text = p.optString("text"),
+                        viewId = p.optString("viewId"),
+                        matchMode = p.optString("match", UiActions.MATCH_CONTAINS),
+                        maxNodes = p.optInt("max", 300),
+                    )
+                    if (n == null) {
+                        StepResult(false, "未找到匹配控件")
+                    } else if (p.optBoolean("click", true)) {
+                        // 用既有 adb 通道点击中心点：和 adb.tap 完全同一条路径，
+                        // 比 performAction(ACTION_CLICK) 更能穿过不可点击的包装层。
+                        val r = runAdb(ctx, "input tap ${n.x} ${n.y}")
+                        StepResult(r.ok, if (r.ok) "点击 ${n.label()}" else r.message)
+                    } else {
+                        StepResult(true, "找到 ${n.label()}")
+                    }
+                }
+            }
+
+            "ui.waitText" -> {
+                if (!UiActions.isEnabled()) {
+                    StepResult(false, "无障碍服务未开启：系统设置 → 无障碍 → Shell Manager")
+                } else {
+                    val appear = p.optBoolean("appear", true)
+                    val r = UiActions.waitFor(
+                        text = p.optString("text"),
+                        viewId = p.optString("viewId"),
+                        matchMode = p.optString("match", UiActions.MATCH_CONTAINS),
+                        timeoutMs = p.optLong("timeoutMs", 5_000).coerceIn(100, 60_000),
+                        intervalMs = p.optLong("intervalMs", 300),
+                        appear = appear,
+                        maxNodes = p.optInt("max", 300),
+                    )
+                    if (r.matched) {
+                        StepResult(true,
+                            if (appear) "出现 ${r.node?.label() ?: ""}"
+                            else "已消失（最后命中 ${r.node?.label() ?: "无"}）")
+                    } else {
+                        StepResult(false,
+                            if (r.timedOut) "等待超时：文字未${if (appear) "出现" else "消失"}"
+                            else "等待被中断")
+                    }
+                }
             }
 
             else -> StepResult(false, "未知模块: $moduleId")

@@ -27,6 +27,7 @@ class IwphoneAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         try {
             serviceInfo = serviceInfo.apply {
                 eventTypes = A11yEvent.TYPE_WINDOW_STATE_CHANGED or
@@ -86,6 +87,12 @@ class IwphoneAccessibilityService : AccessibilityService() {
         }
     }
 
+    override fun onDestroy() {
+        // 服务一断，UiActions 立刻不可用 —— 不留一个持有已死 Service 的静态引用
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
     override fun onInterrupt() {
         PlatformEventBus.publish(PlatformEvent(
             id = "capability:accessibility",
@@ -106,6 +113,17 @@ class IwphoneAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        /**
+         * 同进程内的服务引用，给 UiActions 读控件树用。
+         *
+         * 工作流步骤跑在 AutomationRegistry 的后台线程上，而无障碍服务与它同属
+         * 一个 App 进程（Manifest 没指定独立 process），所以直接取单例即可，
+         * 不需要再绕一层 Binder / ContentProvider。
+         */
+        @Volatile
+        @JvmStatic
+        var instance: IwphoneAccessibilityService? = null
+
         /** 用 adb 查询服务是否开启（不需要读系统安全设置）。 */
         fun isEnabled(ctx: android.content.Context): Boolean {
             val expected = ctx.packageName + "/" + IwphoneAccessibilityService::class.java.name

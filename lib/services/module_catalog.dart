@@ -123,6 +123,69 @@ class ModuleCatalog {
       ],
     ),
 
+    // ---------- 界面识别 / 提示（复用无障碍服务，不引入 OCR 依赖） ----------
+    ModuleDef(
+      id: 'system.toast',
+      name: '显示 Toast 提示',
+      category: '界面识别',
+      icon: '💬',
+      params: [
+        ParamDef(id: 'message', label: '消息内容', type: ParamType.text,
+            defaultValue: '你好'),
+      ],
+    ),
+    ModuleDef(
+      id: 'ui.text',
+      name: '读取界面文字',
+      category: '界面识别',
+      icon: '📄',
+      params: [
+        ParamDef(id: 'filter', label: '筛选（正则，留空=全部）', type: ParamType.text,
+            defaultValue: '', hint: '只保留匹配到的文字行'),
+        ParamDef(id: 'max', label: '最多扫描节点', type: ParamType.number,
+            defaultValue: 300, min: 20, max: 1000),
+      ],
+    ),
+    ModuleDef(
+      id: 'ui.find',
+      name: '查找控件并点击',
+      category: '界面识别',
+      icon: '🔍',
+      params: [
+        ParamDef(id: 'text', label: '控件文字', type: ParamType.text,
+            defaultValue: '', hint: '与内容描述也会匹配；留空则只看 viewId'),
+        ParamDef(id: 'viewId', label: '控件 ID', type: ParamType.text,
+            defaultValue: '', hint: '如 com.android.settings:id/title'),
+        ParamDef(id: 'match', label: '匹配方式', type: ParamType.enumValue,
+            options: ['contains', 'exact', 'starts_with', 'regex'],
+            defaultValue: 'contains'),
+        ParamDef(id: 'click', label: '找到后点击中心点', type: ParamType.boolean,
+            defaultValue: true),
+        ParamDef(id: 'max', label: '最多扫描节点', type: ParamType.number,
+            defaultValue: 300, min: 20, max: 1000),
+      ],
+    ),
+    ModuleDef(
+      id: 'ui.waitText',
+      name: '等待文字出现/消失',
+      category: '界面识别',
+      icon: '⏳',
+      params: [
+        ParamDef(id: 'text', label: '目标文字', type: ParamType.text, defaultValue: ''),
+        ParamDef(id: 'viewId', label: '控件 ID（可选）', type: ParamType.text,
+            defaultValue: ''),
+        ParamDef(id: 'match', label: '匹配方式', type: ParamType.enumValue,
+            options: ['contains', 'exact', 'starts_with', 'regex'],
+            defaultValue: 'contains'),
+        ParamDef(id: 'appear', label: '等待出现（关掉则等待消失）',
+            type: ParamType.boolean, defaultValue: true),
+        ParamDef(id: 'timeoutMs', label: '超时(ms)', type: ParamType.number,
+            defaultValue: 5000, min: 100, max: 60000),
+        ParamDef(id: 'intervalMs', label: '轮询间隔(ms)', type: ParamType.number,
+            defaultValue: 300, min: 50, max: 5000),
+      ],
+    ),
+
     // ---------- 逻辑 ----------
     ModuleDef(
       id: 'logic.delay',
