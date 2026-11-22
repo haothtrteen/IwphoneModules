@@ -232,6 +232,12 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
       _toast(opened
           ? AppStrings.t('onboarding.pairSent')
           : AppStrings.t('onboarding.pairSentManual'));
+
+      // ★ 配对后必须重读版本：_deployedVer 初始是 -1（未配对时查不到），
+      //   不重读的话页面永远走"首次安装"分支，更新场景的密钥验证也不会触发，
+      //   用户看到的就是首次安装文案 + 空输入框。
+      await _loadVersion();
+      await _refresh();
     } finally {
       if (mounted) {
         setState(() {
@@ -407,34 +413,47 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     String? verifiedToken;
     if (isUpdate) {
       log(AppStrings.t('log.stepKeyVerify'), LogKind.info);
-      final local = await WebuiTokenManager.instance.localToken();
-      if (local.isNotEmpty) {
-        // 部署前用本地缓存的密钥探一次活；拿不到 200 就是密钥失效/被清掉了
-        IwphoneService.instance.configure(token: local);
+
+      // 用一把候选密钥去探活。返回 true 只代表"这把密钥能打开当前 WebUI"，
+      // 不能反推"它就是设备上的密钥"—— 但对我们足够了：
+      // 能打开就说明用户知道当前密钥，没有任何理由去改它。
+      Future<bool> canOpen(String t) async {
+        if (t.isEmpty) return false;
+        IwphoneService.instance.configure(token: t);
         IwphoneService.instance.invalidate();
         final probe = await IwphoneService.instance.getStatus();
-        if (!probe.isUnavailable) {
-          verifiedToken = local;
-          log(AppStrings.t('log.keyKeep'), LogKind.ok);
-        }
+        return !probe.isUnavailable;
+      }
+
+      final local = await WebuiTokenManager.instance.localToken();
+      if (await canOpen(local)) {
+        verifiedToken = local;
+        log(AppStrings.t('log.keyKeep'), LogKind.ok);
       } else {
         log(AppStrings.t('log.keyMissingOnUpdate'), LogKind.warn);
-      }
-      if (verifiedToken == null && !_skipToken) {
-        // 缓存密钥不可用，又没选跳过 —— 要求用户显式输入新密钥
+
         final input = _tokenCtrl.text.trim();
-        if (WebuiTokenManager.validate(input) != null) {
-          log(AppStrings.t('log.keyNeedNew'), LogKind.fail);
-          return (ok: false, msg: AppStrings.t('log.keyNeedNew'));
+        if (input.isNotEmpty) {
+          if (WebuiTokenManager.validate(input) != null) {
+            log(AppStrings.t('log.keyNeedNew'), LogKind.fail);
+            return (ok: false, msg: AppStrings.t('log.keyNeedNew'));
+          }
+          if (!await canOpen(input)) {
+            // ★ 关键：验证不通过就停在这里，**绝不写入**。
+            //   上一版在这里 set() 覆盖，输错反而把设备密钥改掉，
+            //   所有已授权应用立刻掉线 —— 与"验证"的语义正好相反。
+            log(AppStrings.t('log.keyWrong'), LogKind.fail);
+            return (ok: false, msg: AppStrings.t('log.keyWrong'));
+          }
+          verifiedToken = input;
+          log(AppStrings.t('log.keyVerified'), LogKind.ok);
+        } else if (_skipToken) {
+          // 用户选择不动密钥：更新照常进行，密钥保持原值
+          log(AppStrings.t('log.keyNotTouched'), LogKind.warn);
+        } else {
+          log(AppStrings.t('log.keyNeedInput'), LogKind.fail);
+          return (ok: false, msg: AppStrings.t('log.keyNeedInput'));
         }
-        final tok = await WebuiTokenManager.instance.set(input);
-        if (!tok.ok) {
-          log('${AppStrings.t('webuiToken.applyFailed')}${tok.msg}',
-              LogKind.fail);
-          return (ok: false, msg: tok.msg);
-        }
-        verifiedToken = input;
-        log(AppStrings.t('log.keyOk'), LogKind.ok);
       }
     }
 
@@ -618,7 +637,35 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   /// 更新且已有密钥验证通过时，只展示"保留原密钥"的确认信息，不给输入框 ——
   /// 更新不该要求用户重填密钥，那样既多余又有覆盖旧密钥的风险。
   Widget _tokenCard() {
+    // 四种状态必须分清楚，否则"更新"会被说成"设置新密钥"：
+    //   fresh    首次安装，没有任何已有密钥
+    //   checking 更新中，还在验证本地缓存密钥
+    //   failed   更新中，验证失败 —— 此时才需要用户输入**之前设置的**密钥
+    //   keep     更新中，验证通过 —— 直接沿用，不给输入框
+    final checking = _isUpdate && _existingTokenValid == null;
+    final verifyFailed = _isUpdate && _existingTokenValid == false;
     final keepExisting = _isUpdate && _existingTokenValid == true;
+
+    final title = keepExisting
+        ? AppStrings.t('missing.tokenKeepTitle')
+        : checking
+            ? AppStrings.t('missing.tokenCheckingTitle')
+            : verifyFailed
+                ? AppStrings.t('missing.tokenUpdateTitle')
+                : AppStrings.t('missing.tokenTitle');
+    final desc = keepExisting
+        ? AppStrings.t('missing.tokenKeepDesc')
+        : checking
+            ? AppStrings.t('missing.tokenCheckingDesc')
+            : verifyFailed
+                ? AppStrings.t('missing.tokenUpdateDesc')
+                : AppStrings.t('missing.tokenDesc');
+    final hint = verifyFailed
+        ? AppStrings.t('missing.tokenUpdateHint')
+        : (_skipToken
+            ? AppStrings.t('missing.tokenSkipped')
+            : AppStrings.t('missing.tokenHint'));
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -628,19 +675,26 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            keepExisting
-                ? AppStrings.t('missing.tokenKeepTitle')
-                : AppStrings.t('missing.tokenTitle'),
-            style: AppText.rowLabel.copyWith(fontSize: 16),
-          ),
+          Text(title, style: AppText.rowLabel.copyWith(fontSize: 16)),
           const SizedBox(height: 4),
-          Text(
-            keepExisting
-                ? AppStrings.t('missing.tokenKeepDesc')
-                : AppStrings.t('missing.tokenDesc'),
-            style: AppText.desc12,
-          ),
+          Text(desc, style: AppText.desc12),
+          if (checking) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(AppStrings.t('missing.tokenCheckingStatus'),
+                      style: AppText.desc12),
+                ),
+              ],
+            ),
+          ],
           if (keepExisting) ...[
             const SizedBox(height: 12),
             Row(
@@ -655,13 +709,15 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                 ),
               ],
             ),
-          ] else ...[
-            if (_isUpdate && _existingTokenValid == false) ...[
+          ] else if (!checking) ...[
+            // 验证中不给输入框：否则用户以为要重填，正好是要避免的误导
+            if (verifyFailed) ...[
               const SizedBox(height: 10),
               Text(AppStrings.t('missing.tokenVerifyFailed'),
                   style: AppText.desc12
                       .copyWith(color: AppColors.iconOrange)),
             ],
+            const SizedBox(height: 10),
             TextField(
             controller: _tokenCtrl,
             enabled: !_skipToken,
@@ -674,9 +730,7 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
               isDense: true,
               filled: true,
               fillColor: AppColors.bg,
-              hintText: _skipToken
-                  ? AppStrings.t('missing.tokenSkipped')
-                  : AppStrings.t('missing.tokenHint'),
+              hintText: hint,
               hintStyle: AppText.desc12,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -753,10 +807,16 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
             child: Column(
               children: [
                 _OptRow(
-                  title: AppStrings.t('missing.optNoToken'),
-                  desc: AppStrings.t('missing.optNoTokenDesc'),
+                  // 更新场景下这个开关的含义是"不动密钥"，不是"删掉密钥" ——
+                  // 文案必须跟着变，否则用户会以为更新会把密钥清空。
+                  title: _isUpdate
+                      ? AppStrings.t('missing.optKeepTokenTitle')
+                      : AppStrings.t('missing.optNoToken'),
+                  desc: _isUpdate
+                      ? AppStrings.t('missing.optKeepTokenDesc')
+                      : AppStrings.t('missing.optNoTokenDesc'),
                   value: _skipToken,
-                  warn: _skipToken,
+                  warn: !_isUpdate && _skipToken,
                   onChanged: (v) => setState(() => _skipToken = v),
                   last: true,
                 ),

@@ -12,4 +12,4 @@
 const String kAppName = 'IWPhone';
 
 /// 界面上显示的版本号（与 pubspec.yaml `1.3.39+169` 同步）。
-const String kAppVersion = '1.3.39';
+const String kAppVersion = '1.3.40';
