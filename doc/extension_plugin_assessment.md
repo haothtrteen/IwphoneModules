@@ -127,3 +127,58 @@ vFlow 自己有 `JsModule` / `LuaModule`，靠 Rhino / LuaJ 这类第三方引�
 4. **重能力**：走伴生 App 或外部 OCR 二进制，单独评估。
 
 在此之前，"下载即运行任意 dex"不做 —— 本 App 的身份太敏感，风险收益不成比例。
+
+## 补充：App 不在后台时的授权弹窗实测（v1.3.42）
+
+### 结论：能弹
+
+复现方式（全程没有 `am start`）：
+
+```
+# 1) 确认 App 不在运行，且清掉 shell 的已有授权（否则走 ALREADY 不弹窗）
+am force-stop com.shellmgr.shell_manager
+# 清空 broker_store.xml 的 grants
+
+# 2) 直接以第三方身份调用 ContentProvider
+content call --uri content://com.shellmgr.shell_manager.broker \
+             --method exec --arg 'echo hi'
+```
+
+结果：进程被冷启动，窗口出现，且调用一直阻塞等待用户操作：
+
+```
+Window #11 Window{... com.shellmgr.shell_manager}
+  mOwnerUid=10154  package=com.shellmgr.shell_manager  appop=SYSTEM_ALERT_WINDOW
+  mAttrs={(0,0)(fillxwrap) gr=CENTER ty=APPLICATION_OVERLAY fmt=TRANSLUCENT
+```
+
+`fillxwrap` + `gr=CENTER` 与 BrokerPrompt 的布局参数完全一致，确认是我们的弹窗。
+
+### 为什么 Shizuku 说"没后台弹不出来"，我们却能
+
+| | Shizuku 的限制 | 我们的路径 |
+|---|---|---|
+| 触发方式 | 常驻进程 / 前台服务 | ContentProvider `call()` 冷启动进程 |
+| 弹窗载体 | Activity 受 Android 10+ 后台启动限制 | `TYPE_APPLICATION_OVERLAY` 悬浮窗，不受该限制 |
+| 前提 | 进程常驻 | 仅需 `SYSTEM_ALERT_WINDOW` 已授予 |
+
+关键在于 ContentProvider 的调用**会拉起进程**（实测 force-stop 的 stopped=true 状态也能拉起），
+且悬浮窗不是 Activity，不受后台启动限制。
+
+### 真正的前置条件与限制
+
+1. **必须有 `SYSTEM_ALERT_WINDOW`**（`appops get ... SYSTEM_ALERT_WINDOW` = allow）。
+   没有时 `canOverlay()` 直接返回 false → 降级 `NEED_APPROVAL`，不会弹窗。
+2. **Binder 线程会阻塞最多 45 秒**（su 式同步授权）。调用方若在主线程发起，
+   有 ANR 风险 —— 这是我们 API 形态决定的，不是 bug。
+3. MIUI 的 SmartPower 会在 3 秒后把后台进程移到 idle/hibernation，但窗口一旦加上，
+   adj 会提升，不受影响；仅"窗口还没加上"的极短窗口期可能延迟。
+
+### 顺带修掉的幽灵弹窗 bug
+
+`BrokerPrompt.show()` 的 `addView` 是 post 到主线程的。冷启动时主线程繁忙，
+如果 45 秒超时先触发，`resolve()` 看到 `p.view == null` 直接返回；随后 post 才执行
+`addView` —— 窗口加上去了，但 latch 已放行、pending 已移除，**再没有任何路径会
+removeView**，成为永不消失的幽灵弹窗。
+
+修法：post 内先检查 `p.latch.count == 0L`，已结束就不再添加窗口。

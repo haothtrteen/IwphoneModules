@@ -179,6 +179,15 @@ object BrokerPrompt {
         val app = ctx.applicationContext
         val wm = app.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         Handler(Looper.getMainLooper()).post {
+            // ★ 必须再确认一次"这次请求还没结束"才能加窗口。
+            //
+            //   进程被 ContentProvider 冷启动时主线程要初始化一大堆东西，post
+            //   可能排队很久。如果这期间 45 秒超时已经触发，resolve() 会因为
+            //   p.view 还是 null 直接 return（那时窗口还没建），随后这里再把
+            //   窗口加上去 —— 就成了**永不消失的幽灵弹窗**：latch 已放行、
+            //   pending 已移除，再没有任何路径会 removeView。
+            if (p.latch.count == 0L) return@post
+
             val root = buildView(app, p)
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
