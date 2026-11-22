@@ -479,3 +479,70 @@ iwsh 会额外打一行说明：
 （`{"ok":false,"code":…,"msg":…}`），不是 NDJSON 事件。早期 `print()` 只认
 `stdout`/`stderr`，遇到这种情况什么都不打，用户体验是"执行完什么都没有"。
 现在行内没有 `type` 字段时会退回打印 `msg` / `code`。
+
+## 16. 按需唤醒：不常驻，但调用时必须能起来（v1.3.33）
+
+### 16.1 实测前提
+
+| 场景 | 实测结果 |
+|---|---|
+| App 被 `am force-stop` 后，`content call` 走 Provider | **自动拉起** App 进程，`version=3` 正常返回 |
+| App 不在时，iwsh 连 8539 | `ECONNREFUSED`（curl rc=7） |
+| App 被强停后，`am broadcast -f 0x20 … WAKE_SHELL` | 进程被拉起（PID 从 NONE 变成 13714） |
+
+结论：只有 8539 这一条链路需要额外处理，Provider 通道**本来就会按需拉起进程**，
+不需要保活。WebUI 是独立的 Python 进程，App 不在时也照常运行。
+
+### 16.2 为什么不做"隐藏后台保活"
+
+- Android 8+ 后台限制 + HyperOS 的进程管理，"隐藏常驻"不可靠；
+  唯一合规方式是前台服务，但通知栏条目**藏不掉**，换来常驻耗电。
+- `android:persistent="true"` 需要系统签名 / priv-app，普通安装拿不到。
+- AlarmManager / JobScheduler 是分钟级，做不到"调用即响应"。
+- 流式命令的生命周期本来由框架管：App 死了管道断开，框架靠断连检测 + 空闲超时
+  回收进程组，不需要 App 活着兜底。
+
+### 16.3 选的方案：Magisk 式按需唤醒
+
+客户端发一条**轻量广播** `com.shellmgr.action.WAKE_SHELL`，接收器里只调
+`BrokerShell.startServer()`：不弹窗、不签 token、不动授权表。然后重试 8539。
+
+```
+iwsh 启动
+  ├─ 本地没有缓存 token → obtainToken() 发 REQUEST_SHELL（本来就会拉起进程 + 弹窗）
+  └─ 已有缓存 token    → ensureBroker() 发 WAKE_SHELL → waitReady(3000) → 连 8539
+```
+
+两条广播都带 `-f 0x20`（`FLAG_INCLUDE_STOPPED_PACKAGES`）：即便应用被用户
+强制停止进入 stopped 状态，这一次调用仍能唤醒它。理由是要跟 Magisk 一致 ——
+**平时不常驻没问题，但应用来申请能力时必须能给出响应**：
+- 有缓存 token：唤醒后直接放行（仍需 token 三元组校验）；
+- 没有 token：授权广播必须送到用户眼前，形成明确的允许/拒绝，
+  不能因为 stopped 状态把请求吞掉、让用户看到"点了没反应"。
+
+### 16.4 一个踩过的坑：只探 TCP 端口不够
+
+第一版 `waitPort()` 只做 `Socket.connect(127.0.0.1:8539)`。真机上出现过
+"TCP 连得上、`handle()` 线程却还没进入读循环"的窗口，curl 卡到超时退出，
+netstat 上留下一排 `CLOSE_WAIT`。
+
+改成 `waitReady()`：探一个真实的 `GET /token?nonce=<64 个 0>`。这个 nonce
+格式合法但绝不会命中待领取 token（返回 404 `NO_PENDING_TOKEN`），**拿到 HTTP
+响应才算服务就绪**。最多等 3 秒。
+
+### 16.5 边界
+
+- 唤醒本身不需要授权，8539 上的每条命令仍然走 `IwshGrantStore.valid()` 三元组复验。
+- 唤醒广播是导出的、无权限保护；`am broadcast -f 0x20` 任何应用都能发。
+  能造成的最大影响是"把 8539 监听叫起来"，不改变任何授权状态，不构成提权。
+- 如果用户长期不用 iwsh，App 进程仍会被系统回收；下次用会再唤醒一次，
+  延迟约 0.3~3 秒。
+
+### 16.6 改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `BrokerShell.kt` | 新增 `ACTION_WAKE`；Receiver 增加唤醒分支（先于授权分支，不弹窗） |
+| `AndroidManifest.xml` | Receiver intent-filter 增加 `WAKE_SHELL` |
+| `ShellLoader.java` | `ensureBroker()` / `waitReady()`；两条广播都加 `-f 0x20`；`ConnectException` 给出明确提示 |
+| `iwsh.dex` | 重新编译 |

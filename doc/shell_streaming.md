@@ -154,6 +154,21 @@ iwsh> getevent -lt
 
 `IWPHONE_STREAM_IDLE` 环境变量可覆盖空闲超时（默认 300 秒，0 = 不限）。
 
+### 5.1 不常驻，但要能唤醒
+
+8539 监听随 App 进程存活。App 被回收后，持有缓存 token 的 iwsh 不会再发授权广播，
+直连会 `ECONNREFUSED`。解决办法是**按需唤醒**而不是常驻后台：
+
+- 有缓存 token → 发 `com.shellmgr.action.WAKE_SHELL`，Receiver 只调
+  `BrokerShell.startServer()`，不弹窗、不签 token、不动授权表。
+- 没有 token → 原有 `REQUEST_SHELL` 授权广播本来就会拉起进程并弹窗。
+- 两条广播都带 `-f 0x20`（`FLAG_INCLUDE_STOPPED_PACKAGES`），
+  应用被强制停止后仍能唤醒 —— 和 Magisk 一样：平时不常驻，但应用申请能力时必须响应。
+
+客户端用 `waitReady()` 探真实的 `GET /token?nonce=<64 个 0>`（返回 404 即可），
+而不是只探 TCP connect —— 真机上出现过「连得上但 handle 线程还没就绪」的窗口。
+详见 `doc/iwsh_terminal.md §16`。
+
 ---
 
 ## 6. 第三方授权应用（ContentProvider）

@@ -7,6 +7,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +37,7 @@ import java.util.concurrent.TimeUnit;
 public final class ShellLoader {
 
     private static final String ACTION = "com.shellmgr.action.REQUEST_SHELL";
+    private static final String ACTION_WAKE = "com.shellmgr.action.WAKE_SHELL";
     private static final String RECEIVER =
             "com.shellmgr.shell_manager/.BrokerShellReceiver";
 
@@ -75,6 +78,7 @@ public final class ShellLoader {
         File cache = new File(dir, ".iwsh_token");
 
         try {
+            ensureBroker(cache);
             String token = obtainToken(cache, pkg);
             if (token == null) System.exit(2);
             if (repl) {
@@ -99,9 +103,87 @@ public final class ShellLoader {
                 }
                 print(body);
             }
+        } catch (java.net.ConnectException e) {
+            System.err.println("[iwsh] 连不上 Shell Manager 的服务端口（8539）。"
+                    + "请确认 App 已安装，且没有在 设置 → 应用 里被强制停止。");
+            System.exit(1);
         } catch (Exception e) {
             System.err.println("[iwsh] " + e);
             System.exit(1);
+        }
+    }
+
+    /**
+     * 按需唤醒：8539 监听随 App 进程存活，进程被系统回收后客户端如果还拿着缓存 token，
+     * 就不会再发授权广播（也就不会顺带拉起进程），直接连必然 ECONNREFUSED。
+     *
+     * 只有"本地已有缓存 token"时才需要这一步 —— 没有 token 时 obtainToken()
+     * 本来就会发授权广播，接收器会顺带把服务起起来。
+     *
+     * ★ 不做前台服务/常驻通知：和 Magisk 一样的模型 —— 平时不常驻，
+     *   应用型应用需要能力时把管理器叫起来。两条广播都带 0x20，
+     *   所以即便应用处于 force-stop 的 stopped 状态，这一次调用仍能唤醒它。
+     */
+    private static void ensureBroker(File cache) {
+        String t = cached(cache);
+        if (t == null || t.length() == 0) return;
+        try {
+            // ★ -f 0x20 = FLAG_INCLUDE_STOPPED_PACKAGES。
+            //   用户即使在 设置 → 应用 里强制停止了 Shell Manager，也允许这一次
+            //   唤醒把它拉起来 —— 和 Magisk 一样：平时不常驻，但有人申请能力时必须响应。
+            Process p = Runtime.getRuntime().exec(new String[]{
+                "/system/bin/am", "broadcast", "-f", "0x20", "--user", "0",
+                "-n", RECEIVER, "-a", ACTION_WAKE});
+            try {
+                p.waitFor(2, TimeUnit.SECONDS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            try {
+                p.getInputStream().close();
+                p.getErrorStream().close();
+            } catch (Exception ignored) {
+            }
+        } catch (Exception ignored) {
+        }
+        // am broadcast 返回时接收器刚 onReceive 完，ServerSocket.bind 在子线程。
+        // ★ 只探 TCP 端口不够：真机上出现过"连得上但 handle 线程还没起来"的窗口，
+        //   curl 会卡到超时。所以探一个真实的 /token 请求，拿到 HTTP 响应才算就绪。
+        waitReady(3000);
+    }
+
+    /**
+     * 等 8539 真正能处理请求（不是只等 TCP connect 成功）。
+     *
+     * 探针用一个 64 位全 0 的 nonce：格式合法，但绝不会命中任何待领取 token，
+     * 所以只会得到 404 NO_PENDING_TOKEN，不会消耗授权状态。
+     */
+    private static void waitReady(int ms) {
+        String probe = "http://127.0.0.1:8539/token?nonce="
+                + "0000000000000000000000000000000000000000000000000000000000000000";
+        long deadline = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < deadline) {
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) new URL(probe).openConnection();
+                c.setConnectTimeout(300);
+                c.setReadTimeout(600);
+                if (c.getResponseCode() > 0) return;   // 400/404 都说明服务在响应
+            } catch (Exception ignored) {
+            } finally {
+                if (c != null) {
+                    try {
+                        c.disconnect();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
     }
 
@@ -121,8 +203,11 @@ public final class ShellLoader {
 
         // 必须显式指定组件：部分 ROM 会拦截隐式自定义广播。
         // am broadcast 会等接收器 goAsync 结束（最长 45s），只短等一瞬。
+        // ★ -f 0x20 同上：应用被强停时，授权广播仍然必须送达到用户面前。
+        //   否则"应用需要授权"这件事会被系统的 stopped 状态吞掉，
+        //   用户看到的是"授权没反应"，而不是一次明确的允许/拒绝。
         Process p = Runtime.getRuntime().exec(new String[]{
-            "/system/bin/am", "broadcast", "--user", "0",
+            "/system/bin/am", "broadcast", "-f", "0x20", "--user", "0",
             "-n", RECEIVER, "-a", ACTION,
             "--es", "nonce", nonce, "--es", "pkg", pkg});
         try {

@@ -43,6 +43,16 @@ import java.util.concurrent.ConcurrentHashMap
 object BrokerShell {
 
     const val ACTION_REQUEST = "com.shellmgr.action.REQUEST_SHELL"
+
+    /**
+     * 轻量唤醒：把 8539 监听拉起来，但不弹窗、不签 token、不动授权表。
+     *
+     * 为什么需要它：授权广播只有在**首次授权 / token 失效**时才会发，
+     * 客户端之后靠缓存 token 直接连 8539。App 进程被系统杀掉后监听跟着没了，
+     * 客户端就会 ECONNREFUSED。发这条广播等于"用的时候才把服务叫起来"，
+     * 比常驻前台服务省电，也不会往通知栏塞常驻条目。
+     */
+    const val ACTION_WAKE = "com.shellmgr.action.WAKE_SHELL"
     const val PORT = 8539
 
     private var server: ServerSocket? = null
@@ -551,7 +561,16 @@ object AppGlobals {
  */
 class BrokerShellReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != BrokerShell.ACTION_REQUEST) return
+        val action = intent?.action ?: return
+
+        // ★ 唤醒分支必须在授权分支之前，且不走 goAsync / 不弹窗。
+        //   startServer() 本身只是开一个 ServerSocket + 起守护线程，不阻塞主线程。
+        if (action == BrokerShell.ACTION_WAKE) {
+            AppGlobals.appContext = context.applicationContext
+            BrokerShell.startServer()
+            return
+        }
+        if (action != BrokerShell.ACTION_REQUEST) return
         val nonce = intent.getStringExtra("nonce") ?: return
         val pkg = intent.getStringExtra("pkg") ?: return
         if (nonce.length !in 8..64 || !nonce.all { it.isLetterOrDigit() || it == '-' }) return
