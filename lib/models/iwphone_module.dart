@@ -227,6 +227,8 @@ class IwphoneStatus {
     this.abi = '',
     this.daemonUser = '',
     this.webuiUser = '',
+    this.frameworkCode = 0,
+    this.frameworkName = '',
   });
 
   final bool daemonRunning;
@@ -255,6 +257,14 @@ class IwphoneStatus {
   /// WebUI 进程的身份。
   final String webuiUser;
 
+  /// 框架进程自己读出的部署戳：App versionCode / versionName。
+  ///
+  /// 由**运行中的** WebUI 从 `.deployed` / `.deployed_name` 读取并在
+  /// `/api/status` 里返回 —— 不是 App 自己 adb cat 磁盘文件。
+  /// 0 / 空串表示旧部署没写戳（不能当成"版本 0"）。
+  final int frameworkCode;
+  final String frameworkName;
+
   /// WebUI 不可达时使用，表示「未连接」。
   static const IwphoneStatus unavailable = IwphoneStatus(
     daemonRunning: false,
@@ -278,6 +288,7 @@ class IwphoneStatus {
     final counts = json['counts'] as Map<String, dynamic>?;
     final config = json['config'] as Map<String, dynamic>?;
     final system = json['system'] as Map<String, dynamic>?;
+    final fw = json['framework'] as Map<String, dynamic>?;
     return IwphoneStatus(
       daemonRunning: daemon?['running'] == true,
       daemonPid: _asInt(daemon?['pid']),
@@ -290,6 +301,8 @@ class IwphoneStatus {
       abi: (system?['abi'] as String?) ?? '',
       daemonUser: (daemon?['user'] as String?) ?? '',
       webuiUser: (webui?['user'] as String?) ?? '',
+      frameworkCode: _asInt(fw?['code']) ?? 0,
+      frameworkName: (fw?['name'] as String?) ?? '',
     );
   }
 }

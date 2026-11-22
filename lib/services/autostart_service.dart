@@ -253,16 +253,17 @@ class AutostartService {
   ///
   /// `deployed == -1` 表示无法判定（未配对/连不上），`0` 表示没有版本标记
   /// （旧版部署或手工部署）。
-  Future<({int deployed, int app})> frameworkVersion() async {
+  Future<({int deployed, int app, String appName})> frameworkVersion() async {
     try {
       final raw =
           await _channel.invokeMethod<Map<dynamic, dynamic>>('frameworkVersion');
       return (
         deployed: (raw?['deployed'] as num?)?.toInt() ?? -1,
         app: (raw?['app'] as num?)?.toInt() ?? 0,
+        appName: (raw?['appName'] as String?) ?? '',
       );
     } catch (_) {
-      return (deployed: -1, app: 0);
+      return (deployed: -1, app: 0, appName: '');
     }
   }
 

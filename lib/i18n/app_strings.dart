@@ -660,6 +660,11 @@ abstract final class AppStrings {
       'home.daemonMissing': '请先在终端执行：\nadb shell sh /data/local/tmp/iwphone/Main.sh &',
       'home.webuiAddress': 'WebUI 地址',
       'home.runAs': '运行身份',
+      'home.frameworkVersion': '框架版本 / App',
+      'home.frameworkStaleTitle': '框架版本落后于 App',
+      'home.frameworkStaleDesc':
+          '当前框架进程还是旧版本。新功能可能不可用，请重新部署框架后再使用。',
+      'home.goUpdateFramework': '去更新框架 →',
 
       // ---- 设置页补充 ----
       'settings.autostartNeedsPair': '还未完成设备配对，开机自启无法生效，开关保持关闭',
@@ -1637,6 +1642,11 @@ abstract final class AppStrings {
           'Run this in a terminal first:\nadb shell sh /data/local/tmp/iwphone/Main.sh &',
       'home.webuiAddress': 'WebUI address',
       'home.runAs': 'Running as',
+      'home.frameworkVersion': 'Framework / App',
+      'home.frameworkStaleTitle': 'Framework is older than the app',
+      'home.frameworkStaleDesc':
+          'The running framework is from an older version. New features may not work; redeploy the framework.',
+      'home.goUpdateFramework': 'Update framework →',
 
       // ---- settings extras ----
       'settings.autostartNeedsPair':

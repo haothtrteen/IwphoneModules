@@ -2352,6 +2352,26 @@ class Handler(BaseHTTPRequestHandler):
         running, pid = daemon_status()
         mods = list_modules()
         webui_pid = os.getpid()
+        # ★ 版本由**当前这个 WebUI 进程**从部署戳文件读出来再报给 App。
+        #   不能让 App 自己 adb cat —— 那读到的是"磁盘上的文件"，不是
+        #   "此刻正在服务的这个进程对应的版本"。两者在"改了文件忘了重启"
+        #   时会不一致，而那种不一致正是用户需要看见的。
+        fw_code = 0
+        fw_name = ""
+        try:
+            p = os.path.join(FRAME_DIR, ".deployed")
+            if os.path.isfile(p):
+                with open(p, "r") as f:
+                    fw_code = int((f.read().strip() or "0"))
+        except Exception:
+            pass
+        try:
+            p = os.path.join(FRAME_DIR, ".deployed_name")
+            if os.path.isfile(p):
+                with open(p, "r") as f:
+                    fw_name = f.read().strip()
+        except Exception:
+            pass
         return self._json({
             "ok": True,
             "daemon": {
@@ -2364,6 +2384,12 @@ class Handler(BaseHTTPRequestHandler):
             "webui": {
                 "pid": webui_pid,
                 "user": proc_user(webui_pid),
+            },
+            # 框架进程对应的 App 版本戳（部署时由 App 写入）。
+            # code=0 / name="" 表示旧版部署没写戳，或手工部署 —— 不是"版本 0"。
+            "framework": {
+                "code": fw_code,
+                "name": fw_name,
             },
             "counts": {
                 "modules": len(mods),

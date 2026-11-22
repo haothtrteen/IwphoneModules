@@ -79,6 +79,7 @@ class AutostartChannel(private val activity: FlutterActivity) {
                     mapOf(
                         "deployed" to AdbBootstrap.deployedFrameworkVersion(activity),
                         "app" to AdbBootstrap.appVersionCode(activity),
+                        "appName" to AdbBootstrap.appVersionName(activity),
                     )
                 }
 

@@ -901,6 +901,7 @@ object AdbBootstrap {
         val script = File(File(shared).parentFile ?: File("/sdcard/iwphone"),
             SHARED_SCRIPT_NAME)
         val vc = appVersionCode(ctx)
+        val vn = appVersionName(ctx)
         val sh = """
 #!/system/bin/sh
 mkdir -p $FW_ROOT_PARENT || exit 1
@@ -913,6 +914,8 @@ if [ -x $FRAME_DIR/bin/busybox ]; then
 fi
 echo $vc > $FRAME_DIR/.deployed
 chmod 666 $FRAME_DIR/.deployed
+echo '$vn' > $FRAME_DIR/.deployed_name
+chmod 666 $FRAME_DIR/.deployed_name
 echo deployed
 """.trimIndent()
         try {
@@ -1009,11 +1012,14 @@ echo deployed
             // 落一个版本标记：首页据此判断「设备上的框架是否落后于 App」。
             // 用 versionCode 而不是字符串版本，比较时不用解析。
             val vc = appVersionCode(ctx)
+            val vn = appVersionName(ctx)
             run(
                 ctx,
                 listOf(
                     "-s", activeTarget, "shell",
-                    "echo $vc > $FRAME_DIR/.deployed && chmod 666 $FRAME_DIR/.deployed",
+                    "echo $vc > $FRAME_DIR/.deployed && chmod 666 $FRAME_DIR/.deployed" +
+                        " && echo '$vn' > $FRAME_DIR/.deployed_name" +
+                        " && chmod 666 $FRAME_DIR/.deployed_name",
                 ),
                 timeoutMs = 10_000,
             )
@@ -1030,6 +1036,14 @@ echo deployed
         ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionCode
     } catch (e: Exception) {
         0
+    }
+
+    /** App 的 versionName（如 `1.3.35`），给框架状态页做可读版本展示。 */
+    @Suppress("DEPRECATION")
+    fun appVersionName(ctx: Context): String = try {
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: ""
+    } catch (e: Exception) {
+        ""
     }
 
     /**

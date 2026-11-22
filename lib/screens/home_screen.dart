@@ -51,6 +51,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 框架源文件是否已部署到设备。null = 还没查到。
   bool? _frameworkInstalled;
 
+  /// 当前 App 的版本，用来和框架进程报的版本比对。
+  String _appVersionName = '';
+  int _appVersionCode = 0;
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
       SystemInfoService.instance.load(),
       WebuiTokenManager.instance.isSetOnDevice(),
       AutostartService.instance.probeFramework(),
+      AutostartService.instance.frameworkVersion(),
     ]);
     if (!mounted) return;
     final status = results[0] as IwphoneStatus;
@@ -78,6 +83,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _status = status;
       _info = results[1] as SystemInfo;
       _tokenSet = results[2] as bool;
+      final v = results[4] as ({int deployed, int app, String appName});
+      _appVersionName = v.appName;
+      _appVersionCode = v.app;
       // 部署状态必须和运行状态自洽：
       //   adb 查得到      → 以设备上的文件为准；
       //   adb 查不到      → 看 WebUI 有没有应答（没配对/连不上时就是这条路）；
@@ -200,6 +208,9 @@ class _HomeScreenState extends State<HomeScreen> {
               status: _status,
               loading: _statusLoading,
               installed: _frameworkInstalled,
+              appVersionName: _appVersionName,
+              appVersionCode: _appVersionCode,
+              onUpdateFramework: _deployFramework,
               onStop: () => _frameworkAction(
                 title: AppStrings.t('home.stop'),
                 message: AppStrings.t('home.stopMessage'),
@@ -291,6 +302,9 @@ class _FrameworkStatusCard extends StatelessWidget {
     required this.status,
     required this.loading,
     required this.installed,
+    required this.appVersionName,
+    required this.appVersionCode,
+    required this.onUpdateFramework,
     required this.onStop,
     required this.onRestart,
     required this.onSync,
@@ -303,6 +317,13 @@ class _FrameworkStatusCard extends StatelessWidget {
 
   /// 框架源文件是否已部署。null = 尚未查到。
   final bool? installed;
+
+  /// 当前 App 的版本，与 status.framework 比对。
+  final String appVersionName;
+  final int appVersionCode;
+
+  /// 版本落后时跳安装页更新。
+  final VoidCallback onUpdateFramework;
 
   /// 框架控制回调。三个操作都会先弹二次确认，由宿主层负责。
   final VoidCallback onStop;
@@ -334,6 +355,20 @@ class _FrameworkStatusCard extends StatelessWidget {
             : (running
                 ? AppStrings.t('home.daemonRunning')
                 : AppStrings.t('home.daemonMissing')));
+
+    // ★ 版本比对：框架进程自己报的版本 vs 当前 App 版本。
+    //   frameworkCode==0 且 name 为空 = 旧版部署没写戳，不能当成"版本 0 落后"。
+    final fwName = status.frameworkName;
+    final fwCode = status.frameworkCode;
+    final fwKnown = !loading && running && (fwCode > 0 || fwName.isNotEmpty);
+    final appVer = appVersionName.isEmpty ? '—' : appVersionName;
+    final fwVer = !fwKnown
+        ? '—'
+        : (fwName.isNotEmpty ? fwName : '#$fwCode');
+    // 优先比 versionCode（数字，不会因命名差异误报）；缺戳时才退化成比名字。
+    final stale = fwKnown &&
+        ((fwCode > 0 && appVersionCode > 0 && fwCode < appVersionCode) ||
+            (fwCode == 0 && fwName.isNotEmpty && fwName != appVersionName));
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -377,6 +412,43 @@ class _FrameworkStatusCard extends StatelessWidget {
             value: _dash(status.daemonUser),
             mono: true,
           ),
+          const SizedBox(height: 16),
+          // ★ 版本：框架进程自己读出来的部署戳 vs 当前 App 版本。
+          //   这是"App 升级了但忘记重新部署框架"最直接的可见信号。
+          _InfoRow(
+            label: AppStrings.t('home.frameworkVersion'),
+            value: stale ? '$fwVer  ≠  $appVer' : '$fwVer  /  $appVer',
+            mono: true,
+          ),
+          if (stale) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.iconOrange),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(AppStrings.t('home.frameworkStaleTitle'),
+                      style: AppText.body13
+                          .copyWith(color: AppColors.iconOrange)),
+                  const SizedBox(height: 4),
+                  Text(AppStrings.t('home.frameworkStaleDesc'),
+                      style: AppText.desc12),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: onUpdateFramework,
+                    child: Text(AppStrings.t('home.goUpdateFramework'),
+                        style: AppText.rowLabel
+                            .copyWith(color: AppColors.accent)),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Text(desc, style: AppText.body13),
           const SizedBox(height: 16),
