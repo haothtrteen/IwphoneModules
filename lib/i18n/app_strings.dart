@@ -908,6 +908,12 @@ abstract final class AppStrings {
       'missing.rootFail': 'Root 激活失败，可改用电脑 adb',
 
       'missing.tokenTitle': 'IWPhone 密钥',
+      'missing.tokenKeepTitle': 'WebUI 访问密钥（已有）',
+      'missing.tokenKeepDesc': '更新会保留当前密钥，不会覆盖。已授权的应用不会掉线。',
+      'missing.tokenVerified': '已验证：当前密钥有效，更新后继续沿用',
+      'missing.tokenVerifyFailed':
+          '本地缓存的密钥验证失败，或尚未配置。更新时如需沿用原密钥，请确认设备侧密钥是否仍在。',
+      'missing.updateFramework': '更新框架',
       'missing.tokenDesc': '用来挡住同设备其它应用调用 IWPhone 接口，至少 8 位。',
       'missing.tokenHint': '至少 8 位',
       'missing.tokenSkipped': '已选择不设置',
@@ -1900,6 +1906,12 @@ abstract final class AppStrings {
       'missing.rootFail': 'Root activation failed, try PC adb instead',
 
       'missing.tokenTitle': 'IWPhone key',
+      'missing.tokenKeepTitle': 'WebUI access key (existing)',
+      'missing.tokenKeepDesc': 'The update keeps the current key. Authorized apps will stay online.',
+      'missing.tokenVerified': 'Verified: the current key is valid and will be reused after the update',
+      'missing.tokenVerifyFailed':
+          'The cached key could not be verified, or none is configured. If you want to keep the existing key, check that it still exists on the device.',
+      'missing.updateFramework': 'Update framework',
       'missing.tokenDesc': 'Blocks other apps on this device from calling the IWPhone API. At least 8 characters.',
       'missing.tokenHint': 'At least 8 characters',
       'missing.tokenSkipped': 'Skipped',

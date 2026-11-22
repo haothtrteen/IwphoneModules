@@ -62,6 +62,10 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
   /// App 自身的 versionCode（与设备框架版本比较用）。
   int _appVerCode = 0;
 
+  /// 更新场景下已有密钥的验证结果。null = 还没验证 / 首次安装不适用。
+  /// true = 本地缓存密钥探活成功，更新时会原样保留，用户不必再输。
+  bool? _existingTokenValid;
+
   /// 用户从本地选的框架包；为空表示用内置包。
   String _localPath = '';
   String _localName = '';
@@ -96,6 +100,26 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
       _deployedVer = v.deployed;
       _appVerCode = v.app;
     });
+
+    // ★ 更新场景：自动验证本地已有密钥，决定密钥卡片显示"验证通过"还是输入框。
+    //   必须在 _deployedVer 拿到之后做，且要用**框架当前那把密钥**探活 ——
+    //   不能用新输入的（还没下发），也不能跳过验证直接放行。
+    if (v.deployed > 0) {
+      await _verifyExistingToken();
+    }
+  }
+
+  Future<void> _verifyExistingToken() async {
+    final local = await WebuiTokenManager.instance.localToken();
+    var valid = false;
+    if (local.isNotEmpty) {
+      IwphoneService.instance.configure(token: local);
+      IwphoneService.instance.invalidate();
+      final probe = await IwphoneService.instance.getStatus();
+      valid = !probe.isUnavailable;
+    }
+    if (!mounted) return;
+    setState(() => _existingTokenValid = valid);
   }
 
   /// 从本地选一个框架包（.bin / .tar.gz）。
@@ -128,13 +152,24 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     super.dispose();
   }
 
-  /// 密钥是否就绪（跳过或填写合法）。
-  bool get _tokenOk =>
-      _skipToken || WebuiTokenManager.validate(_tokenCtrl.text) == null;
+  /// 这次是不是覆盖更新（设备上已有框架）。
+  bool get _isUpdate => _deployedVer > 0;
+
+  /// 密钥是否就绪。
+  ///
+  /// ★ 更新场景的关键：已有密钥验证通过时**不需要**在输入框里再填一遍 ——
+  ///   旧逻辑把两种场景一视同仁，导致更新时被空输入框卡住，
+  ///   用户被迫随便输点什么才能点按钮，还可能因此把密钥覆盖掉。
+  bool get _tokenOk {
+    if (_skipToken) return true;
+    if (_isUpdate && _existingTokenValid == true) return true;
+    return WebuiTokenManager.validate(_tokenCtrl.text) == null;
+  }
 
   /// 输入框下方的错误提示；为空表示没问题。
   String get _tokenError {
     if (_skipToken) return '';
+    if (_isUpdate && _existingTokenValid == true) return '';
     final v = _tokenCtrl.text;
     if (v.isEmpty) return '';
     return WebuiTokenManager.validate(v) ?? '';
@@ -578,8 +613,12 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     );
   }
 
-  /// WebUI 访问密钥输入区。
+  /// WebUI 访问密钥区。
+  ///
+  /// 更新且已有密钥验证通过时，只展示"保留原密钥"的确认信息，不给输入框 ——
+  /// 更新不该要求用户重填密钥，那样既多余又有覆盖旧密钥的风险。
   Widget _tokenCard() {
+    final keepExisting = _isUpdate && _existingTokenValid == true;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -590,13 +629,40 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            AppStrings.t('missing.tokenTitle'),
+            keepExisting
+                ? AppStrings.t('missing.tokenKeepTitle')
+                : AppStrings.t('missing.tokenTitle'),
             style: AppText.rowLabel.copyWith(fontSize: 16),
           ),
           const SizedBox(height: 4),
-          Text(AppStrings.t('missing.tokenDesc'), style: AppText.desc12),
-          const SizedBox(height: 10),
-          TextField(
+          Text(
+            keepExisting
+                ? AppStrings.t('missing.tokenKeepDesc')
+                : AppStrings.t('missing.tokenDesc'),
+            style: AppText.desc12,
+          ),
+          if (keepExisting) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.verified_user_outlined,
+                    size: 18, color: AppColors.iconGreen),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(AppStrings.t('missing.tokenVerified'),
+                      style: AppText.body13
+                          .copyWith(color: AppColors.iconGreen)),
+                ),
+              ],
+            ),
+          ] else ...[
+            if (_isUpdate && _existingTokenValid == false) ...[
+              const SizedBox(height: 10),
+              Text(AppStrings.t('missing.tokenVerifyFailed'),
+                  style: AppText.desc12
+                      .copyWith(color: AppColors.iconOrange)),
+            ],
+            TextField(
             controller: _tokenCtrl,
             enabled: !_skipToken,
             obscureText: !_tokenVisible,
@@ -637,6 +703,7 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
               _tokenError,
               style: AppText.desc12.copyWith(color: AppColors.iconRed),
             ),
+          ],
           ],
         ],
       ),
@@ -864,8 +931,8 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
                             ? AppStrings.t('missing.goPair')
                             : (!_tokenOk
                                 ? AppStrings.t('missing.needToken')
-                                : (_deployedVer > 0
-                                    ? AppStrings.t('missing.reinstall')
+                                : (_isUpdate
+                                    ? AppStrings.t('missing.updateFramework')
                                     : AppStrings.t('missing.startInstall')))),
                     style: const TextStyle(fontSize: 15),
                   ),
