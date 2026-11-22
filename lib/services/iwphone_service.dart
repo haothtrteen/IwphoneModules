@@ -198,6 +198,14 @@ class IwphoneService {
   Future<bool> runnerRestart() =>
       _postOk('/api/runner/restart', timeout: _runnerTimeout);
 
+  /// 整个框架自重启（守护 + WebUI）—— 覆盖更新后让新代码生效。
+  ///
+  /// 与 [runnerRestart] 的区别：后者只重启守护进程，WebUI 进程内存里
+  /// 还是旧代码；这个端点会先回响应再停两者并重新拉起。
+  /// 调用后必须轮询 [getStatus] 等新进程起来（返回里的 delayMs 是参考值）。
+  Future<bool> systemRestart() =>
+      _postOk('/api/system/restart', timeout: _runnerTimeout);
+
   /// 读取模块的通用配置（声明 + 当前值）。
   ///
   /// 模块没有 config.prop 时返回 `has=false`，调用方据此决定是否显示配置入口。

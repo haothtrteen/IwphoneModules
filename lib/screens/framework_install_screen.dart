@@ -364,6 +364,45 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
       _discoverMode || !_pinPort ? LogKind.warn : LogKind.ok,
     );
 
+    // ★ 密钥策略：更新 ≠ 首次安装。
+    //   更新时必须**验证并保留**已有密钥 —— 框架侧 token 文件不会被覆盖，
+    //   但第三方 App（Termux 等）缓存的是旧 token。这时若拿输入框里的值覆盖，
+    //   所有已授权 App 立刻 403，而用户完全不知道为什么。
+    final isUpdate = _deployedVer > 0;
+    String? verifiedToken;
+    if (isUpdate) {
+      log(AppStrings.t('log.stepKeyVerify'), LogKind.info);
+      final local = await WebuiTokenManager.instance.localToken();
+      if (local.isNotEmpty) {
+        // 部署前用本地缓存的密钥探一次活；拿不到 200 就是密钥失效/被清掉了
+        IwphoneService.instance.configure(token: local);
+        IwphoneService.instance.invalidate();
+        final probe = await IwphoneService.instance.getStatus();
+        if (!probe.isUnavailable) {
+          verifiedToken = local;
+          log(AppStrings.t('log.keyKeep'), LogKind.ok);
+        }
+      } else {
+        log(AppStrings.t('log.keyMissingOnUpdate'), LogKind.warn);
+      }
+      if (verifiedToken == null && !_skipToken) {
+        // 缓存密钥不可用，又没选跳过 —— 要求用户显式输入新密钥
+        final input = _tokenCtrl.text.trim();
+        if (WebuiTokenManager.validate(input) != null) {
+          log(AppStrings.t('log.keyNeedNew'), LogKind.fail);
+          return (ok: false, msg: AppStrings.t('log.keyNeedNew'));
+        }
+        final tok = await WebuiTokenManager.instance.set(input);
+        if (!tok.ok) {
+          log('${AppStrings.t('webuiToken.applyFailed')}${tok.msg}',
+              LogKind.fail);
+          return (ok: false, msg: tok.msg);
+        }
+        verifiedToken = input;
+        log(AppStrings.t('log.keyOk'), LogKind.ok);
+      }
+    }
+
     log(AppStrings.t('log.stepDeploy'), LogKind.info);
     final r = await AutostartService.instance.deployFramework(
       path: _localPath.isEmpty ? null : _localPath,
@@ -374,46 +413,83 @@ class _FrameworkInstallScreenState extends State<FrameworkInstallScreen>
     }
     log(AppStrings.t('log.deployed'), LogKind.ok);
 
-    if (!_skipToken) {
-      log(AppStrings.t('log.stepKey'), LogKind.info);
-      final tok = await WebuiTokenManager.instance.set(_tokenCtrl.text);
-      if (tok.ok) {
-        log(AppStrings.t('log.keyOk'), LogKind.ok);
+    if (!isUpdate) {
+      // 首次安装才设置新密钥；更新时上面已验证并保留，绝不覆盖。
+      if (!_skipToken) {
+        log(AppStrings.t('log.stepKey'), LogKind.info);
+        final tok = await WebuiTokenManager.instance.set(_tokenCtrl.text);
+        if (tok.ok) {
+          log(AppStrings.t('log.keyOk'), LogKind.ok);
+        } else {
+          log('${AppStrings.t('webuiToken.applyFailed')}${tok.msg}',
+              LogKind.warn);
+        }
       } else {
-        // 框架已经装好，密钥没下发不该判定为整体失败
-        log('${AppStrings.t('webuiToken.applyFailed')}${tok.msg}',
-            LogKind.warn);
+        log(AppStrings.t('log.keySkipped'), LogKind.warn);
       }
-    } else {
-      log(AppStrings.t('log.keySkipped'), LogKind.warn);
     }
 
-    // ★ 部署只是"把文件放好"，Main.sh 从来不会自己起来。
-    //   必须显式拉起守护，否则安装完成后首页必然显示"框架未运行"。
-    log(AppStrings.t('log.stepStart'), LogKind.info);
-    final started = await AutostartService.instance.runNow();
-    if (!started.ok) {
-      log('${AppStrings.t('log.startFail')}${started.msg}', LogKind.warn);
-    } else {
-      log(
-        started.skipped
-            ? AppStrings.t('log.alreadyRunning')
-            : AppStrings.t('log.started'),
-        LogKind.ok,
-      );
+    // 部署后确保 HTTP 客户端带上正确的密钥（更新时是验证过的旧密钥）
+    final effectiveToken = verifiedToken ??
+        (await WebuiTokenManager.instance.localToken());
+    if (effectiveToken.isNotEmpty) {
+      IwphoneService.instance.configure(token: effectiveToken);
     }
 
-    // 最后一步以 WebUI 真的可访问为准，而不是以某个标记文件存在为准。
-    // 守护启动后 WebUI 可能还要一两秒，轮询几次避免误判。
+    // ★ 更新必须让进程换成新代码，不能只覆盖文件。
+    //   部署前记下旧 WebUI 的启动时刻；调自重启端点后轮询，
+    //   直到拿到一个 startedAt 更大、且 daemon 在跑的新状态。
+    //   只比 PID 不够（PID 可能复用），只比版本戳也不够（冻结值虽好，
+    //   但我们需要确认"进程真的换过"）。
+    int? oldStartedAt;
+    if (isUpdate) {
+      final before = await IwphoneService.instance.getStatus();
+      if (!before.isUnavailable) oldStartedAt = before.webuiStartedAt;
+      log(AppStrings.t('log.stepRestart'), LogKind.info);
+      IwphoneService.instance.invalidate();
+      final restarted = await IwphoneService.instance.systemRestart();
+      if (!restarted) {
+        log(AppStrings.t('log.restartFail'), LogKind.warn);
+        // 自重启失败不能装作成功：否则用户以为更新完了，实际还在跑旧代码
+        return (ok: false, msg: AppStrings.t('log.restartFail'));
+      }
+      log(AppStrings.t('log.restartSent'), LogKind.ok);
+    } else {
+      // 首次安装：Main.sh 从来不会自己起来，必须显式拉起
+      log(AppStrings.t('log.stepStart'), LogKind.info);
+      final started = await AutostartService.instance.runNow();
+      if (!started.ok) {
+        log('${AppStrings.t('log.startFail')}${started.msg}', LogKind.warn);
+      } else {
+        log(
+          started.skipped
+              ? AppStrings.t('log.alreadyRunning')
+              : AppStrings.t('log.started'),
+          LogKind.ok,
+        );
+      }
+    }
+
+    // 最后以 WebUI 真能应答为准。更新场景额外要求 startedAt 变化，
+    // 否则可能连到还没退出的旧进程上（端口短暂共存/复用）。
     log(AppStrings.t('log.stepVerify'), LogKind.info);
     IwphoneService.instance.invalidate();
     IwphoneStatus? status;
-    for (var i = 0; i < 5; i++) {
+    final deadline = DateTime.now().add(const Duration(seconds: 25));
+    while (DateTime.now().isBefore(deadline)) {
       status = await IwphoneService.instance.getStatus();
-      if (status.daemonRunning) break;
+      final daemonOk = status.daemonRunning;
+      final swapped = !isUpdate ||
+          oldStartedAt == null ||
+          status.webuiStartedAt > oldStartedAt;
+      if (daemonOk && swapped && status.webuiStartedAt > 0) break;
       await Future<void>.delayed(const Duration(milliseconds: 800));
     }
-    if (status == null || !status.daemonRunning) {
+    final daemonOk = status != null && status.daemonRunning;
+    final swapped = !isUpdate ||
+        oldStartedAt == null ||
+        (status?.webuiStartedAt ?? 0) > oldStartedAt;
+    if (status == null || !daemonOk || !swapped) {
       log(AppStrings.t('log.verifyFail'), LogKind.fail);
       return (ok: false, msg: AppStrings.t('log.verifyFail'));
     }

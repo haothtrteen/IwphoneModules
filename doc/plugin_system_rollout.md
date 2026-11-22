@@ -553,3 +553,63 @@ iwsh 广播接收器组件名、`BrokerStore` 的授权记录(按 pkg+uid+签名
   `package: name='com.shellmgr.shell_manager' versionCode='165' versionName='1.3.35'`
 - 真机安装启动无崩溃,launch Activity 仍是 `com.shellmgr.shell_manager/.MainActivity`
 - 三个 shell 脚本行尾仍全 LF(CRLF 会让 mksh 语法报错)
+
+## 10.13 补充：修复框架更新的两个真问题（v1.3.38）
+
+用户指出更新流程的疑点，实测后两个都成立，且第二个比预想严重。
+
+### 问题 1：更新时覆盖密钥
+
+原流程无条件调用 `WebuiTokenManager.set(_tokenCtrl.text)`（覆盖写设备侧
+`state/webui_token`）。更新时第三方 App（Termux 等）缓存的是旧 token，
+覆盖后全部 403，用户不知道为什么。
+
+**修法**：区分首次安装与更新（`_deployedVer > 0`）。更新时先读本地缓存 token，
+用它探 `/api/status`；200 则保留不变（日志"已有密钥有效，保留不变"）。
+只有缓存不可用且用户没勾选跳过时，才要求显式输入新密钥。
+
+### 问题 2：更新只覆盖文件，进程继续跑旧代码
+
+实测证据链：
+- `deployFramework()` 只 tar 解压覆盖文件，不碰进程；
+- `startFramework()` 里 `frameworkRunning()` 为真 → `ensureWebui()` → `return skipped`；
+- Main.sh / webui_start.sh 都有 PID 互斥，旧 PID 活着就拒绝新实例；
+- 真机覆盖文件后 WebUI PID `14316 → 14316`，纹丝不动；
+- 更糟：当时的版本戳是**实时读文件**，覆盖后 API 立刻报新版本号，
+  但进程内存里跑的还是旧代码——"假更新"，比没有版本显示更误导。
+
+**修法**：
+1. 新增 `/api/system/restart`：双 fork 脱离进程组，先回响应，
+   再 `stop_runner.sh` → `webui_stop.sh` → 重新拉起 Main.sh
+   （Main.sh 的 `ensure_webui()` 会顺带把 WebUI 起回来，避免撞 PID 文件）。
+   不依赖 adb transport，协同共存模式同样可用。
+2. 版本戳改为**进程启动时冻结**（`BOOT_VERSION`），
+   "进程报的版本"与"进程跑的代码"天然一致。
+3. 新增 `webui.startedAt`，App 更新后轮询要求它变大，
+   确认确实换了新进程（只比 PID 不够，可能复用）。
+4. 安装页更新分支改为：部署 → 调自重启 → 轮询新进程；
+   `runner_restart()` 保持原语义（只重启守护，注释已明确不重启 WebUI）。
+5. 自重启失败不再静默当成功——直接返回失败并提示手动重启。
+
+### 为什么不能复用 runner_restart()
+
+它跑在 WebUI 进程里，只停 Main.sh。WebUI 自己的 `webui_server.py` 代码
+还留在旧进程内存里。覆盖更新必须换掉 WebUI 进程，而"在 WebUI 里停 WebUI"
+不能用普通线程（会把还没 flush 的响应吞掉），所以必须双 fork 脱离。
+
+### 真机验证
+
+推送新 webui_server.py 后手动重启一次加载路由，然后：
+```
+POST /api/system/restart → {"ok":true,"msg":"框架正在重启…","delayMs":1600}
+12 秒后：Main.sh 12017→659，WebUI 32577→1004，PID 文件同步，
+         /api/status 200 且带新 startedAt
+```
+安装新 APK 后框架仍在、无启动崩溃。
+
+### 边界
+
+- 更新时运行中的模块会中断（`stop_runner.sh` 不带 all，只停守护，
+  模块进程本身不动，但失去守护管理）；确认弹窗已写明。
+- 自重启有约 1.6~3 秒端口空窗，App 轮询最多 25 秒。
+- 若用户手动强停了框架，更新走首次安装分支（无旧进程可重启）。

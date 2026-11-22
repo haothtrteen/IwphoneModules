@@ -229,6 +229,7 @@ class IwphoneStatus {
     this.webuiUser = '',
     this.frameworkCode = 0,
     this.frameworkName = '',
+    this.webuiStartedAt = 0,
   });
 
   final bool daemonRunning;
@@ -264,6 +265,9 @@ class IwphoneStatus {
   /// 0 / 空串表示旧部署没写戳（不能当成"版本 0"）。
   final int frameworkCode;
   final String frameworkName;
+
+  /// 当前 WebUI 进程的启动时刻(ms)。更新流程用它确认"确实换了新进程"。
+  final int webuiStartedAt;
 
   /// WebUI 不可达时使用，表示「未连接」。
   static const IwphoneStatus unavailable = IwphoneStatus(
@@ -303,6 +307,7 @@ class IwphoneStatus {
       webuiUser: (webui?['user'] as String?) ?? '',
       frameworkCode: _asInt(fw?['code']) ?? 0,
       frameworkName: (fw?['name'] as String?) ?? '',
+      webuiStartedAt: _asInt(webui?['startedAt']) ?? 0,
     );
   }
 }

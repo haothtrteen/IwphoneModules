@@ -1108,13 +1108,93 @@ def runner_restart():
 
     停止与启动之间留出间隔，确保 PID 文件已删除、端口与锁已释放，
     否则 Main.sh 的 already_running 检查会判定「已在运行」而拒绝启动。
+
+    ⚠️ 这个端点**不会重启 WebUI 自己** —— 它跑在 WebUI 进程里，自杀等于
+    把自己的响应吞掉。框架代码更新必须用 /api/system/restart（见下）。
     """
     sh_run(["sh", os.path.join(FRAME_DIR, "stop_runner.sh")])
     time.sleep(2)
     res = runner_start()
     if res.get("ok"):
-        return {"ok": True, "msg": "框架已重启"}
+        return {"ok": True, "msg": "守护进程已重启（WebUI 未重启）"}
     return {"ok": False, "msg": "重启失败：%s" % res.get("msg", "未知原因")}
+
+
+# --------------------------------------------------------------------
+# 框架整体重启（覆盖更新后让**新代码**真正生效）
+# --------------------------------------------------------------------
+
+def _restart_all_delayed(delay=0.6):
+    """在独立进程里完成"停 daemon → 停 WebUI → 重起两者"。
+
+    为什么必须是独立进程：
+      /api/system/restart 的处理线程属于当前 WebUI 进程。要换掉旧代码，
+      必须先让当前进程退出；在线程里直接 kill 自己会把还没 flush 的响应
+      一起干掉，客户端只看到断连。所以起一个**脱离父进程**的 sh 脚本，
+      它等响应发完再动手。
+
+    为什么不能只调 runner_restart()：那个端点只停 Main.sh，
+    webui_server.py 的代码还留在旧进程内存里 —— 覆盖文件后版本号会变
+    （我们按 mtime 读戳），但跑的仍是旧代码，是"假更新"。
+
+    覆盖更新场景必须整个换掉：Main.sh + WebUI 都停，再按原方式拉起。
+    """
+    time.sleep(delay)
+    frame = FRAME_DIR
+    log_dir = LOG_ROOT_DIR
+    try:
+        # 1) 停守护（只停 Main.sh，运行中的模块不动，避免打断用户业务）
+        sh_run(["sh", os.path.join(frame, "stop_runner.sh")], timeout=15)
+        # 2) 停 WebUI 自己（pid 文件由 webui_start.sh 维护）
+        sh_run(["sh", os.path.join(frame, "webui", "webui_stop.sh")], timeout=15)
+        time.sleep(1.0)
+        # 3) 重新拉起守护。Main.sh 的 ensure_webui() 会顺带把 WebUI 起回来，
+        #    这里无需（也不该）直接起 WebUI，否则会和它撞 PID 文件。
+        os.makedirs(log_dir, exist_ok=True)
+        logf = open(os.path.join(log_dir, "main_stdout.log"), "ab")
+        subprocess.Popen(
+            ["sh", os.path.join(frame, "Main.sh")],
+            cwd=frame, stdout=logf, stderr=subprocess.STDOUT,
+            start_new_session=True, env=os.environ.copy(),
+        )
+        logf.close()
+    except Exception:
+        # 脱离进程里的异常无处可报，只能写日志；调用方靠轮询 /api/status 判定
+        try:
+            with open(os.path.join(log_dir, "restart.log"), "ab") as f:
+                f.write((time.strftime("[%F %T] restart failed\n")).encode())
+        except Exception:
+            pass
+
+
+def system_restart():
+    """覆盖更新后调用：响应先返回，随后整个框架自行重启。
+
+    客户端拿到 ok=true 后**不要立刻发请求** —— 端口要过几秒才恢复。
+    正确姿势是轮询 /api/status 直到拿到 200 + 新的进程启动时间。
+    """
+    # 双 fork 脱离进程组，确保 WebUI 退出后它还能活
+    try:
+        pid = os.fork()
+        if pid == 0:
+            try:
+                os.setsid()
+                pid2 = os.fork()
+                if pid2 != 0:
+                    os._exit(0)
+            except Exception:
+                pass
+            _restart_all_delayed()
+            os._exit(0)
+        # 父进程立刻返回，不 wait，避免挂住响应
+    except (AttributeError, OSError):
+        # 理论上 Android 的 Python 有 fork；没有就退化成线程（风险：随进程退出被截断）
+        threading.Thread(target=_restart_all_delayed, daemon=True).start()
+    return {
+        "ok": True,
+        "msg": "框架正在重启（守护 + WebUI），请等待端口恢复后重新读取状态",
+        "delayMs": 1600,
+    }
 
 
 def _safe_module_name(name):
@@ -2275,6 +2355,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(runner_stop())
             if path == "/api/runner/restart":
                 return self._json(runner_restart())
+            if path == "/api/system/restart":
+                # 覆盖更新专用：整个框架（守护 + WebUI）自重启，让新代码生效
+                return self._json(system_restart())
             if path == "/api/log/clear":
                 return self._json(clear_logs(
                     q.get("scope", ["module"])[0],
@@ -2352,26 +2435,10 @@ class Handler(BaseHTTPRequestHandler):
         running, pid = daemon_status()
         mods = list_modules()
         webui_pid = os.getpid()
-        # ★ 版本由**当前这个 WebUI 进程**从部署戳文件读出来再报给 App。
-        #   不能让 App 自己 adb cat —— 那读到的是"磁盘上的文件"，不是
-        #   "此刻正在服务的这个进程对应的版本"。两者在"改了文件忘了重启"
-        #   时会不一致，而那种不一致正是用户需要看见的。
-        fw_code = 0
-        fw_name = ""
-        try:
-            p = os.path.join(FRAME_DIR, ".deployed")
-            if os.path.isfile(p):
-                with open(p, "r") as f:
-                    fw_code = int((f.read().strip() or "0"))
-        except Exception:
-            pass
-        try:
-            p = os.path.join(FRAME_DIR, ".deployed_name")
-            if os.path.isfile(p):
-                with open(p, "r") as f:
-                    fw_name = f.read().strip()
-        except Exception:
-            pass
+        # ★ 版本用**进程启动时冻结的快照**（见 BOOT_VERSION 的说明）。
+        #   实时读文件会在"覆盖更新但进程没重启"时谎报新版本。
+        fw_code = BOOT_VERSION["code"]
+        fw_name = BOOT_VERSION["name"]
         return self._json({
             "ok": True,
             "daemon": {
@@ -2384,8 +2451,11 @@ class Handler(BaseHTTPRequestHandler):
             "webui": {
                 "pid": webui_pid,
                 "user": proc_user(webui_pid),
+                # 当前 WebUI 进程的启动时间，App 用它判定"确实重启过了"，
+                # 而不只是看 PID/PID 文件（PID 可能被复用）。
+                "startedAt": BOOT_TIME,
             },
-            # 框架进程对应的 App 版本戳（部署时由 App 写入）。
+            # 框架进程对应的 App 版本戳（部署时由 App 写入，启动时冻结）。
             # code=0 / name="" 表示旧版部署没写戳，或手工部署 —— 不是"版本 0"。
             "framework": {
                 "code": fw_code,
@@ -2448,8 +2518,40 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": rc == 0, "msg": out})
 
 
+# ★ 版本戳在**进程启动时**读一次并冻结，之后不再随文件变化。
+#
+#   为什么不能实时读：覆盖更新会先换掉 .deployed 文件，而旧 WebUI 进程还活着。
+#   若实时读，界面会立刻显示"新版本"但进程内存里跑的还是旧代码 —— 假更新，
+#   比没有版本显示更误导。冻结后，"进程报的版本"与"进程实际跑的代码"
+#   天然一致：只有重启后的新进程才会读到新的戳。
+BOOT_VERSION = {"code": 0, "name": ""}
+BOOT_TIME = int(time.time() * 1000)   # 模块加载时刻 ≈ 进程启动时刻
+
+
+def _load_boot_version():
+    code = 0
+    name = ""
+    try:
+        p = os.path.join(FRAME_DIR, ".deployed")
+        if os.path.isfile(p):
+            with open(p, "r") as f:
+                code = int((f.read().strip() or "0"))
+    except Exception:
+        pass
+    try:
+        p = os.path.join(FRAME_DIR, ".deployed_name")
+        if os.path.isfile(p):
+            with open(p, "r") as f:
+                name = f.read().strip()
+    except Exception:
+        pass
+    BOOT_VERSION["code"] = code
+    BOOT_VERSION["name"] = name
+
+
 def main():
     os.makedirs(LOG_ROOT_DIR, exist_ok=True)
+    _load_boot_version()
     server = ThreadingHTTPServer(("127.0.0.1", WEBUI_PORT), Handler)
     print("iwphone WebUI 已启动：http://127.0.0.1:%d" % WEBUI_PORT, flush=True)
     if WEBUI_TOKEN:
