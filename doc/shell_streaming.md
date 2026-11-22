@@ -231,3 +231,73 @@ InputStream in = resolver.openInputStream(
 | `android/.../BrokerProvider.kt` | `stream.open` / `stream.kill` / `openFile()` 管道；`API_VERSION` → 3 |
 | `tools/iwsh/src/.../ShellLoader.java` | REPL 默认流式；`-s` 标志；`jsonInt()`；`IWPHONE_STREAM_IDLE` |
 | `android/app/src/main/assets/iwsh.dex` | 重新编译 |
+
+---
+
+## 9. 代码审查发现并修复的 bug（v1.3.41）
+
+对整条链路（框架 `/api/shell/stream` → BrokerShell `/exec/stream` → iwsh
+→ BrokerProvider `stream.open`）做了一次实测审查，确认三个真 bug，全部已修。
+
+### 9.1 UTF-8 多字节字符跨块被切断 → 中文乱码
+
+**现象**：`yes 中 | tr -d '\n' | head -c 9000`（3 字节周期，8192 必然切在字中间）
+收到 3001 个字符，其中 2 个是 `U+FFFD`（�）。
+
+**根因**：`os.read(fd, 8192)` 的块边界会落在 UTF-8 字符内部，
+直接 `chunk.decode("utf-8", "replace")` 把半个字符替换成 �。
+
+**修法**：改用 `codecs.getincrementaldecoder("utf-8")("replace")`，
+半字符留到下一块拼；EOF 时 `decode(b"", final=True)` 冲出残留。
+
+**验证**：同命令 3000 字符、0 个替换字符。
+
+> 注意 `yes 中文测试字符` 每行 19 字节、`yes 中` 每行 4 字节，8192 恰好对齐，
+> **测不出这个 bug**。必须用 3 字节周期（`tr -d '\n'`）才能触发。
+
+### 9.2 输出队列无界 → 慢客户端时内存暴涨
+
+**现象**：客户端 `--limit-rate 100k` 读、命令输出 50MB 时，
+WebUI RSS 从 8.5MB 在 8 秒内涨到 92MB（每分钟约 630MB），
+继续下去会被 LMK 杀掉，连带状态页/模块列表全挂。
+
+**根因**：`queue.Queue()` 无 maxsize，读线程不背压，无限堆积。
+
+**修法**：
+- `Queue(maxsize=STREAM_QUEUE_CHUNKS=64)`（≈512KB），满时 `put(timeout=0.2)`
+  阻塞 → 管道缓冲写满 → 子进程自己减速，形成正确背压。
+- 新增 `stop_pump` Event：`kill_stream` / 异常时置位，读线程立刻退出
+  （否则它卡在满队列的 put 上，进程组已死却不读 EOF）。
+- 主循环检查 `stop_pump`，保证 `idle=0 && max=0`（都不限）时也能被叫停。
+
+**验证**：同样条件 RSS 稳定在 21.8MB（基线 21.7MB），零增长。
+
+### 9.3 WebUI 停止时流命令变孤儿
+
+**现象**：起 `sleep 300` 流（`start_new_session=True`，独立进程组），
+停 WebUI 后该进程仍在跑满 300 秒。
+
+**根因**：独立进程组不会被父进程的 SIGTERM 连带杀死，
+而 `run_shell_stream` 的 `finally` 只在请求线程正常退出时执行。
+
+**修法**：`main()` 注册 SIGTERM/SIGINT handler，`_cleanup_streams_on_exit()`
+遍历 `_streams` 置 stop 并 `killpg`，然后 `os._exit(0)`。
+同时 `_Server(daemon_threads=True)`，避免慢客户端让 `serve_forever` 退不出来。
+
+**验证**：停 WebUI 后 `sleep 300` 立即消失。
+
+### 9.4 其它加固
+
+| 位置 | 问题 | 修法 |
+|---|---|---|
+| `run_shell_stream` | 写 socket 无超时，客户端不读则永久阻塞、idle/max 全失效 | `connection.settimeout(10s)`，超时走断开清理 |
+| `run_shell_stream` | 主线程 close fd 时读线程可能还在 `os.read`，fd 复用会读串数据 | `pump_thread.join(2s)` 后再 close |
+| `BrokerProvider.openFile` | 先 `pending.remove()` 再校验 uid，拿到 sid 的进程可 DoS 真正登记方 | 改为先校验、最后 `remove(k, v)` 原子消费 |
+| `BrokerShell.streamFramework` | 框架非 200 时以 200 回给客户端，HTTP 语义不一致 | 保持现状（客户端只认 NDJSON），已在注释说明 |
+
+### 9.5 未修但已知
+
+- `BrokerShell.streamFramework` 写客户端 socket 仍无超时；靠框架侧 10s
+  写超时断开 → 读到 EOF 退出来兜底。要彻底解决需 NIO，暂不做。
+- 审计里的字节数 `total.toInt()` 在 >2GB 时溢出（仅显示问题）。
+- `iwsh` 的 `runStream` 不支持断线重连续传；重跑整条命令。

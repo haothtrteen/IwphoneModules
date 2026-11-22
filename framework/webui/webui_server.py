@@ -9,6 +9,7 @@
 # 然后浏览器访问 http://127.0.0.1:8537
 # =====================================================
 import base64
+import codecs
 import json
 import os
 import queue
@@ -1768,6 +1769,19 @@ MAX_STREAMS = 8             # 并发流上限：每流占一个线程 + 一个�
 DEFAULT_IDLE = 30           # 空闲超时默认值（秒）
 DEFAULT_MAX_TOTAL = 1800    # 单流最长生命周期兜底（秒），防客户端异常断开后留僵尸
 
+# ★ 输出队列必须有界。
+#
+#   实测：客户端限速 100KB/s 读、命令 `yes | head -c 50M` 时，无界 Queue 在
+#   8 秒内把 WebUI 的 RSS 从 8.5MB 顶到 92MB —— 再久一点就被 LMK 杀掉，
+#   连带整个框架状态页、模块列表全挂。队列上限 64 块（≈512KB）足够吸收
+#   突发，超出就阻塞读线程形成背压，让子进程自己慢下来。
+STREAM_QUEUE_CHUNKS = 64
+STREAM_READ_SIZE = 8192
+
+# 写客户端时允许阻塞多久。超过就认定"客户端不读了"，走断开清理。
+# 不设的话：socket 缓冲满后 emit 永久阻塞，idle/max 检查全部失效。
+STREAM_WRITE_TIMEOUT = 10.0
+
 _streams = {}               # id -> {"proc": Popen, "pgid": int, "cmd": str, "at": float}
 _streams_lock = threading.Lock()
 
@@ -1808,6 +1822,11 @@ def kill_stream(sid):
         st = _streams.pop(sid, None)
     if not st:
         return {"ok": False, "msg": "流不存在或已结束"}
+    # 先叫停读线程，再杀进程组：读线程可能正卡在满队列的 put 上，
+    # 不置位的话它会一直等到队列被消费（而消费方已经不要了）。
+    ev = st.get("stop")
+    if ev is not None:
+        ev.set()
     _kill_group(st.get("pgid"))
     return {"ok": True, "msg": "已终止", "cmd": st.get("cmd", "")}
 
@@ -1847,7 +1866,7 @@ def run_shell_stream(handler, cmd, cwd, idle, max_total, b64):
                        % MAX_STREAMS,
             }, 429)
         _streams[sid] = {"proc": None, "pgid": 0, "cmd": cmd,
-                         "at": time.time()}
+                         "at": time.time(), "stop": None}
 
     try:
         proc = subprocess.Popen(
@@ -1877,22 +1896,64 @@ def run_shell_stream(handler, cmd, cwd, idle, max_total, b64):
     # ★ 用「读线程 + 队列」而不是 select：
     #   select 在 Windows 上只能选套接字（管道会直接抛错），而读线程哪儿都能跑，
     #   真机与本地冒烟测试的行为完全一致。每个流多一个守护线程，上限 8 个，代价可忽略。
-    chunks = queue.Queue()
+    #
+    # ★ 队列有界 + stop 标志：
+    #   无界队列在慢客户端下会无限堆积（实测 8 秒涨 84MB）。有界后 put 阻塞，
+    #   管道缓冲写满，子进程自然减速 —— 这才是正确的背压。
+    #   但要能被外部叫停：kill_stream / 连接异常时置 stop，读线程立刻退出，
+    #   否则它会永远卡在 put 上（进程组已经被杀，它却不读 EOF）。
+    chunks = queue.Queue(maxsize=STREAM_QUEUE_CHUNKS)
+    stop_pump = threading.Event()
 
     def _pump():
         try:
-            while True:
-                piece = os.read(fd, 8192)
+            while not stop_pump.is_set():
+                piece = os.read(fd, STREAM_READ_SIZE)
                 if not piece:
                     break
-                chunks.put(piece)
+                while not stop_pump.is_set():
+                    try:
+                        chunks.put(piece, timeout=0.2)
+                        break
+                    except queue.Full:
+                        continue
         except Exception:
             pass
         finally:
-            chunks.put(None)            # EOF 哨兵
+            # EOF 哨兵也要受 stop 保护：队列满时不能无限等
+            while not stop_pump.is_set():
+                try:
+                    chunks.put(None, timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
 
-    threading.Thread(target=_pump, name="iw-stream-%s" % sid[:6],
-                     daemon=True).start()
+    # 把 stop 标志登记进 _streams，让 kill_stream 能叫停读线程。
+    # 如果这里发现 sid 已被移除（启动过程中被 kill），直接收摊。
+    with _streams_lock:
+        still_alive = sid in _streams
+        if still_alive:
+            _streams[sid]["stop"] = stop_pump
+    if not still_alive:
+        stop_pump.set()
+        _kill_group(pgid)
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+        return None
+
+    pump_thread = threading.Thread(target=_pump, name="iw-stream-%s" % sid[:6],
+                                   daemon=True)
+    pump_thread.start()
+
+    # ★ 写超时：客户端不读时 socket 缓冲会填满，wfile.write 永久阻塞，
+    #   整个循环（连同 idle/max 检查）就卡死在这里，流永远不会被回收。
+    #   设了超时后 write 抛 socket.timeout（OSError 子类），走 client 断开清理。
+    try:
+        handler.connection.settimeout(STREAM_WRITE_TIMEOUT)
+    except Exception:
+        pass
 
     # 响应头：HTTP/1.0 + Connection: close ⇒ 读到 EOF 即流结束
     try:
@@ -1918,6 +1979,12 @@ def run_shell_stream(handler, cmd, cwd, idle, max_total, b64):
     reason = "exit"
     proc_exited_at = None
 
+    # ★ 增量解码：os.read 的 8KB 边界会切在多字节 UTF-8 字符中间。
+    #   直接 chunk.decode("utf-8", "replace") 会在这里产生 U+FFFD，
+    #   中文/emoji 输出只要跨过块边界就乱码（实测 `yes 中 | head -c 9000`
+    #   出现 2 处 �）。incrementaldecoder 会把"半个字符"留到下一块再拼。
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+
     try:
         emit({"type": "start", "id": sid, "pid": proc.pid, "cmd": cmd,
               "idle": idle, "max": max_total})
@@ -1933,20 +2000,35 @@ def run_shell_stream(handler, cmd, cwd, idle, max_total, b64):
                                     chunk is _NO_CHUNK))
                 sys.stderr.flush()
 
+            # 被 kill_stream 叫停：即使调用方传了 idle=0 && max=0（都不限），
+            # 也必须退出，否则这个请求线程会永远转下去。
+            if stop_pump.is_set() and chunk is _NO_CHUNK:
+                reason = "killed"
+                break
+
             if chunk is _NO_CHUNK:
                 pass                     # 这 0.2s 没有新输出
             elif chunk is None:
-                break                    # 管道 EOF：命令（及其子进程）都退出了
+                # 管道 EOF：把解码器里残留的半个字符吐出来，再结束
+                if not b64:
+                    tail = decoder.decode(b"", final=True)
+                    if tail:
+                        try:
+                            emit({"type": "out", "data": tail})
+                        except Exception:
+                            pass
+                break
             else:
                 last_out = now
                 if b64:
                     emit({"type": "out",
                           "b64": base64.b64encode(chunk).decode("ascii")})
                 else:
-                    # errors="replace"：流式通道面向终端/文本，
-                    # 真二进制请带 b64=1（避免非法 UTF-8 把连接搞崩）
-                    emit({"type": "out",
-                          "data": chunk.decode("utf-8", "replace")})
+                    # 用增量解码器，避免块边界切断多字节字符；
+                    # 真二进制请带 b64=1（非法字节会被替换，但不会崩连接）
+                    text = decoder.decode(chunk)
+                    if text:
+                        emit({"type": "out", "data": text})
 
             # 主进程已退出但管道还没 EOF：可能有后台子进程攥着 stdout。
             # 给它 0.5s 把尾巴吐干净，之后整组回收，避免留下孤儿。
@@ -1967,7 +2049,15 @@ def run_shell_stream(handler, cmd, cwd, idle, max_total, b64):
     except Exception:
         reason = "error"
     finally:
+        # 顺序很重要：先叫停读线程，再杀进程组，再等线程退出，最后才 close。
+        # 反过来的话读线程可能正阻塞在 os.read 上，而主线程已经把 fd 关了 ——
+        # fd 一旦被复用，读线程就会读到别的连接的数据。
+        stop_pump.set()
         _kill_group(pgid)               # 无论怎么结束，进程组都不留活口
+        try:
+            pump_thread.join(timeout=2.0)
+        except Exception:
+            pass
         try:
             code = proc.wait(timeout=2)
         except Exception:
@@ -2549,10 +2639,43 @@ def _load_boot_version():
     BOOT_VERSION["name"] = name
 
 
+def _cleanup_streams_on_exit(*_):
+    """进程退出前把还在跑的流命令整组杀掉。
+
+    为什么需要：`run_shell_stream` 用 `start_new_session=True` 让命令进独立
+    进程组 —— 好处是能整组回收，坏处是 **WebUI 被 SIGTERM/SIGKILL 时它们
+    不会跟着死**。不清理的话，更新/停止框架会留下一堆孤儿 shell 一直跑。
+    SIGKILL 追不到（webui_stop.sh 先发 TERM 再补 KILL，TERM 这一下足够）。
+    """
+    with _streams_lock:
+        items = list(_streams.values())
+        _streams.clear()
+    for st in items:
+        ev = st.get("stop")
+        if ev is not None:
+            try:
+                ev.set()
+            except Exception:
+                pass
+        _kill_group(st.get("pgid"))
+
+
+class _Server(ThreadingHTTPServer):
+    # 请求线程设为守护：否则 serve_forever 退出时会等所有流线程结束，
+    # 一个慢客户端就能让整个 WebUI 停不下来（只能吃 kill -9）。
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 def main():
     os.makedirs(LOG_ROOT_DIR, exist_ok=True)
     _load_boot_version()
-    server = ThreadingHTTPServer(("127.0.0.1", WEBUI_PORT), Handler)
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(_sig, lambda s, f: (_cleanup_streams_on_exit(), os._exit(0)))
+        except Exception:
+            pass
+    server = _Server(("127.0.0.1", WEBUI_PORT), Handler)
     print("iwphone WebUI 已启动：http://127.0.0.1:%d" % WEBUI_PORT, flush=True)
     if WEBUI_TOKEN:
         print("访问令牌已启用：?token=%s" % WEBUI_TOKEN, flush=True)

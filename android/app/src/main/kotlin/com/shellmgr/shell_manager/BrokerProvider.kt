@@ -131,7 +131,11 @@ class BrokerProvider : ContentProvider() {
             throw java.io.FileNotFoundException("未知路径：$uri")
         }
         val sid = segs[1]
-        val p = pending.remove(sid)
+        // ★ 先查、再校验、最后才条件移除。
+        //   旧写法 `pending.remove(sid)` 在权限校验之前就把登记删了：
+        //   任何拿到 sid 的进程调一次 openFile 就能让真正的登记方再也打不开
+        //   （DoS）。虽然 sid 是 12 字节随机数不好猜，但逻辑顺序本身是错的。
+        val p = pending[sid]
             ?: throw java.io.FileNotFoundException("流不存在或已过期（重新调 stream.open）")
 
         val caller = Binder.getCallingUid()
@@ -140,6 +144,7 @@ class BrokerProvider : ContentProvider() {
             throw SecurityException("流不属于当前调用方")
         }
         if (System.currentTimeMillis() - p.at > STREAM_TTL_MS) {
+            pending.remove(sid, p)
             throw java.io.FileNotFoundException("流登记已过期")
         }
         if (liveStreams.get() >= MAX_STREAMS) {
@@ -148,6 +153,11 @@ class BrokerProvider : ContentProvider() {
 
         val ctx = context ?: throw java.io.IOException("服务未初始化")
         if (!frameworkAlive()) throw java.io.IOException("iwphone 框架未运行")
+
+        // 全部检查通过，原子地消费掉这条登记；并发 open 只有一个能成功
+        if (!pending.remove(sid, p)) {
+            throw java.io.FileNotFoundException("流已被其它调用打开")
+        }
 
         val pipe = ParcelFileDescriptor.createPipe()
         val readEnd = pipe[0]
