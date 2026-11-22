@@ -48,6 +48,23 @@ if [ -z "$TAG" ]; then
     exit 1
 fi
 
+# ---------- 版本号三处一致性校验 ----------
+# 踩过的坑：APK 文件名一路写到 v1.3.39，pubspec 却停在 1.3.35+165，
+# 用户看到"内置框架包 v1.3.35"以为装错包。文件名是手工 TAG，两者没有
+# 任何机制保证同步。这里在发版前硬性拦住。
+PUBSPEC_VER=$(sed -n 's/^version:[[:space:]]*\([^ +]*\).*/\1/p' "$REPO_DIR/pubspec.yaml")
+UI_VER=$(sed -n "s/^const String kAppVersion = '\([^']*\)';.*/\1/p" "$REPO_DIR/lib/app_info.dart")
+TAG_VER="${TAG#v}"
+if [ "$PUBSPEC_VER" != "$UI_VER" ] || [ "$PUBSPEC_VER" != "$TAG_VER" ]; then
+    echo "❌ 版本号不一致，拒绝发版："
+    echo "   TAG        = $TAG_VER"
+    echo "   pubspec    = $PUBSPEC_VER"
+    echo "   app_info   = $UI_VER"
+    echo "   请三处改成一致后再发（pubspec 的 + 后是 versionCode，不算入版本名）。"
+    exit 1
+fi
+echo "✅ 版本号一致：$PUBSPEC_VER ($TAG)"
+
 # ---------- 0) 代理 + TLS（本机是 TLS 中间人环境，必须显式传给 curl）----------
 PROXY="${https_proxy:-${HTTPS_PROXY:-}}"
 CURL_PROXY=()

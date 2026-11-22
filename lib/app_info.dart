@@ -11,5 +11,5 @@
 ///   模块仓库引用全都绑在包名上，改了等于授权全废、第三方集成全断。
 const String kAppName = 'IWPhone';
 
-/// 界面上显示的版本号（与 pubspec.yaml `1.3.35+165` 同步）。
-const String kAppVersion = '1.3.35';
+/// 界面上显示的版本号（与 pubspec.yaml `1.3.39+169` 同步）。
+const String kAppVersion = '1.3.39';
