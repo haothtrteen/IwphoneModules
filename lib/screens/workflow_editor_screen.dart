@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../i18n/app_strings.dart';
 import '../models/workflow.dart';
 import '../services/app_catalog.dart';
+import '../services/app_prefs.dart';
 import '../services/module_catalog.dart';
 import '../services/monitor_service.dart';
 import '../services/trigger_catalog.dart';
@@ -642,6 +643,10 @@ class _ModulePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 开发者模式只在这里控制"显不显示"；原生侧 executeStep 还会再校验一次，
+    // 所以模块 automation.json 里写死 dev.* 也绕不过开关。
+    final dev = AppPrefs.instance.developerMode;
+    final cats = ModuleCatalog.categoriesFor(includeDeveloper: dev);
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.75,
@@ -649,10 +654,10 @@ class _ModulePicker extends StatelessWidget {
       builder: (_, controller) => ListView.builder(
         controller: controller,
         padding: const EdgeInsets.all(16),
-        itemCount: ModuleCatalog.categories.length,
+        itemCount: cats.length,
         itemBuilder: (context, ci) {
-          final cat = ModuleCatalog.categories[ci];
-          final mods = ModuleCatalog.byCategory(cat);
+          final cat = cats[ci];
+          final mods = ModuleCatalog.byCategory(cat, includeDeveloper: dev);
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

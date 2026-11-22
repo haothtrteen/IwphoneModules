@@ -24,6 +24,9 @@ class AppPrefs extends ChangeNotifier {
   /// 用户是否关掉了首页的「设置访问密钥」提示（密钥是可选配置）。
   bool tokenPromptDismissed = false;
 
+  /// 开发者模式：只控制高风险/实验性动作入口是否显示，**不授予任何权限**。
+  bool developerMode = false;
+
   /// 是否已从原生读过一次（未读完时不要渲染主界面，避免闪一下默认主题）。
   bool loaded = false;
 
@@ -33,6 +36,7 @@ class AppPrefs extends ChangeNotifier {
     locale = r.locale;
     onboardingDone = r.onboardingDone;
     tokenPromptDismissed = r.tokenPromptDismissed;
+    developerMode = r.developerMode;
     loaded = true;
     _applyLanguage();
     notifyListeners();
@@ -66,6 +70,14 @@ class AppPrefs extends ChangeNotifier {
     onboardingDone = true;
     notifyListeners();
     await AutostartService.instance.saveUiPrefs(onboardingDone: true);
+  }
+
+  /// 开发者模式开关：只显隐实验性积木，不改变任何权限状态。
+  Future<void> setDeveloperMode(bool value) async {
+    if (developerMode == value) return;
+    developerMode = value;
+    notifyListeners();
+    await AutostartService.instance.saveUiPrefs(developerMode: value);
   }
 
   /// 把「跟随系统」解析成具体语言。

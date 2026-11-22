@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
  * 通知监听服务（应用级触发器的数据源）。
@@ -68,6 +69,11 @@ class IwphoneNotificationListener : NotificationListenerService() {
             n.notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
         }.getOrNull().orEmpty()
 
+        // 除了发事件，也留一份最近记录给 `dev.notification` 动作读。
+        // 只留内存：进程死掉就没了，不把通知正文落盘（隐私）。
+        recent.add(NotifItem(pkg, title, text, now))
+        while (recent.size > MAX_RECENT) recent.poll()
+
         PlatformEventBus.publish(PlatformEvent(
             id = "notif:$pkg",
             kind = PlatformEvent.KIND_STATE,
@@ -83,8 +89,27 @@ class IwphoneNotificationListener : NotificationListenerService() {
         android.util.Log.d(TAG, "notif:$pkg title=${title.take(40)}")
     }
 
+    data class NotifItem(
+        val pkg: String,
+        val title: String,
+        val text: String,
+        val at: Long,
+    )
+
     companion object {
         private const val TAG = "IwphoneNotif"
+
+        private const val MAX_RECENT = 100
+
+        /** 最近通知（内存环形缓冲，最多 100 条，按时间倒序返回）。 */
+        private val recent = ConcurrentLinkedQueue<NotifItem>()
+
+        fun recentNotifications(pkg: String, limit: Int): List<NotifItem> {
+            val out = recent.filter {
+                pkg.isEmpty() || it.pkg == pkg
+            }.sortedByDescending { it.at }
+            return out.take(limit.coerceIn(1, MAX_RECENT))
+        }
         /**
          * 通知使用权是否已授予。
          *

@@ -41,6 +41,7 @@ class ModuleDef {
     this.params = const [],
     this.trigger = false,
     this.dangerous = false,
+    this.developer = false,
   });
 
   final String id;
@@ -52,6 +53,9 @@ class ModuleDef {
   /// 旧版的「触发器步骤」。触发器已挪到工作流头部，这里只为兼容旧数据保留。
   final bool trigger;
   final bool dangerous;
+
+  /// 开发者模式专属：默认不出现在积木选择器里，且原生侧也会拒绝执行。
+  final bool developer;
 }
 
 class WorkflowStep {

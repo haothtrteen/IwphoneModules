@@ -443,3 +443,47 @@ vFlow 剩余 150+ 模块（变量系统、条件分支、循环、文本/加解�
 见 `doc/extension_plugin_assessment.md`：结论是可以做，但不能直接照搬 vFlow
 的 Kotlin 模块模型；更适合把现有 `.iwp` + `automation.json` 扩成动作插件，
 并按签名/哈希校验后再加载。本次未实现。
+
+## 10.10 补充：开发者模式与通知/短信/定位（v1.3.35）
+
+用户提出「做一个开发者模式，开启后有更多权限和选项」。
+**先纠正一个技术前提：App 内开关不能授予任何系统权限。**
+`READ_SMS` / `ACCESS_FINE_LOCATION` / 通知使用权都只能由用户点系统弹窗授权。
+所以开发者模式只做两件事：显示实验性积木入口 + 在执行层再校验一次开关。
+
+### 关键发现：这三项其实不需要新增 manifest 权限
+
+真机（`IFBYCQ89WGS4EIXC`）实测：
+
+| 能力 | 通道 | 是否需要新权限 |
+|---|---|---|
+| 最近通知 | 已有的 `IwphoneNotificationListener` | 否（但用户要另外开通知使用权） |
+| 收件箱短信 | `adb shell` 下 `content query --uri content://sms/inbox` | **否**（shell uid 可读，无需给 App 声明 `READ_SMS`） |
+| 最后已知位置 | `adb shell` 下 `dumpsys location` 的 `last location=` | **否**（无需声明定位权限） |
+
+短信/定位依赖 **adb 调试连接在线**，这是代价，已在文档与确认弹窗里写明。
+定位是系统**最后已知位置**，不是实时定位。
+
+### 实现
+
+| 文件 | 改动 |
+|---|---|
+| `UiPrefs.kt` / `AutostartChannel.kt` | `developerMode` 偏好，默认 false；纳入 `snapshot` 与 `saveUiPrefs` |
+| `autostart_service.dart` / `app_prefs.dart` | 偏好跨端链路 + `setDeveloperMode()`（ChangeNotifier 通知重建） |
+| `settings_screen.dart` | 权限分组加 `_DeveloperToggle`；开启前弹二次确认，明确"不会授予权限" |
+| `IwphoneNotificationListener.kt` | 内存环形缓冲（最多 100 条），供动作读取；不落盘 |
+| `WorkflowStore.kt` | 三个 `dev.*` 分支 + `requireDeveloper()` 二次校验；短信输出解析 |
+| `ModuleCatalog.dart` / `workflow.dart` | `ModuleDef.developer` 标志；`actionsFor(includeDeveloper:)` / `categoriesFor()` |
+| `workflow_editor_screen.dart` | 按 `AppPrefs.instance.developerMode` 显隐「开发者能力」分类 |
+
+### 为什么执行层也要校验
+
+只在编辑器里隐藏是" cosmetic gate" —— 模块自带的 `automation.json` 里可以写死
+`dev.sms`。`executeStep` 里的 `requireDeveloper(ctx)` 让模块也绕不过开关。
+
+### 边界（如实）
+
+- 通知监听器有 1.5 秒同包去重，密集通知会丢；且服务刚连接时系统**不会回放旧通知**。
+- 短信正文若含 ` date=` 之类的字面量，解析可能提前截断 —— 开发者工具可接受。
+- `dumpsys location` 给的是缓存位置，可能很旧（真机上看到的是前一天的记录）。
+- 三个动作都标了 `dangerous` 或需要二次确认开启入口；不提供"一键全开"。

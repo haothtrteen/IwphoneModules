@@ -6,6 +6,7 @@ import '../app_info.dart';
 import '../i18n/app_strings.dart';
 import '../services/storage_permission_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/framework_uninstall.dart';
 import '../widgets/screen_app_bar.dart';
 import '../widgets/settings_rows.dart';
@@ -235,6 +236,7 @@ class SettingsScreen extends StatelessWidget {
                   MaterialPageRoute(builder: (_) => const AppAuthScreen()),
                 ),
               ),
+              const _DeveloperToggle(),
             ],
           ),
           const SizedBox(height: 16),
@@ -398,3 +400,49 @@ class _PermissionRow extends StatelessWidget {
 
 
 
+
+/// 开发者模式开关。
+///
+/// 刻意不是简单的一个 Switch：这里必须把「开关 ≠ 授权」说清楚，
+/// 否则用户会以为打开就能读短信/定位。实际上这三项用的都是已有通道，
+/// 通知使用权仍要去系统设置单独开。
+class _DeveloperToggle extends StatefulWidget {
+  const _DeveloperToggle();
+
+  @override
+  State<_DeveloperToggle> createState() => _DeveloperToggleState();
+}
+
+class _DeveloperToggleState extends State<_DeveloperToggle> {
+  bool get _value => AppPrefs.instance.developerMode;
+
+  Future<void> _changed(bool v) async {
+    if (v) {
+      final ok = await showConfirmDialog(
+        context,
+        title: AppStrings.t('settings.developerConfirmTitle'),
+        message: AppStrings.t('settings.developerConfirmMsg'),
+        danger: true,
+      );
+      if (!ok || !mounted) return;
+    }
+    await AppPrefs.instance.setDeveloperMode(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ToggleRow(
+          label: AppStrings.t('settings.developerMode'),
+          value: _value,
+          onChanged: _changed,
+        ),
+        const SizedBox(height: 4),
+        Text(AppStrings.t('settings.developerModeHint'),
+            style: AppText.desc12),
+      ],
+    );
+  }
+}

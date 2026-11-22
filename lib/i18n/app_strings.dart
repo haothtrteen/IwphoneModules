@@ -116,6 +116,15 @@ abstract final class AppStrings {
       'tools.section.diagnostics': '诊断',
       'tools.section.data': '数据',
       'settings.section.permissions': '权限',
+      'settings.developerMode': '开发者模式',
+      'settings.developerModeHint':
+          '显示实验性积木：读取最近通知、收件箱短信、最后已知位置。不会替你授予任何权限。',
+      'settings.developerConfirmTitle': '开启开发者模式？',
+      'settings.developerConfirmMsg':
+          '这会显示读取通知/短信/位置的实验性动作，并允许工作流执行它们。\n\n'
+          '不会授予任何系统权限：通知需要在系统设置里另开通知使用权；'
+          '短信与位置走 adb shell 通道，依赖调试连接在线。\n\n'
+          '模块自带的自动化里写有这些动作时，也会受这个开关约束。',
       'settings.section.security': '安全',
       'settings.storageAllFiles': '所有文件访问',
       'settings.hideApp': '隐藏应用',
@@ -1039,6 +1048,15 @@ abstract final class AppStrings {
       'tools.section.diagnostics': 'Diagnostics',
       'tools.section.data': 'Data',
       'settings.section.permissions': 'Permissions',
+      'settings.developerMode': 'Developer mode',
+      'settings.developerModeHint':
+          'Shows experimental steps: recent notifications, SMS inbox, last known location. Does not grant any permission.',
+      'settings.developerConfirmTitle': 'Enable developer mode?',
+      'settings.developerConfirmMsg':
+          'This reveals experimental actions for reading notifications / SMS / location and allows workflows to run them.\n\n'
+          'No system permission is granted: notification access must be enabled separately in system settings; '
+          'SMS and location go through the adb shell channel and require an active debug connection.\n\n'
+          'Actions embedded in module automation are gated by this switch too.',
       'settings.section.security': 'Security',
       'settings.storageAllFiles': 'All files access',
       'settings.hideApp': 'Hide app',

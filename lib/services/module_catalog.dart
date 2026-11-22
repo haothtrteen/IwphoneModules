@@ -186,6 +186,44 @@ class ModuleCatalog {
       ],
     ),
 
+    // ---------- 开发者能力（默认隐藏，开启开发者模式才显示） ----------
+    // ★ 这些积木不授予任何系统权限；权限仍由用户点系统弹窗。
+    ModuleDef(
+      id: 'dev.notification',
+      name: '读取最近通知',
+      category: '开发者能力',
+      icon: '🔔',
+      developer: true,
+      params: [
+        ParamDef(id: 'package', label: '包名筛选（留空=全部）', type: ParamType.text,
+            defaultValue: ''),
+        ParamDef(id: 'limit', label: '最多几条', type: ParamType.number,
+            defaultValue: 10, min: 1, max: 100),
+      ],
+    ),
+    ModuleDef(
+      id: 'dev.sms',
+      name: '读取收件箱短信',
+      category: '开发者能力',
+      icon: '✉️',
+      developer: true,
+      dangerous: true,
+      params: [
+        ParamDef(id: 'sender', label: '号码筛选（留空=全部）', type: ParamType.text,
+            defaultValue: ''),
+        ParamDef(id: 'limit', label: '最多几条', type: ParamType.number,
+            defaultValue: 10, min: 1, max: 50),
+      ],
+    ),
+    ModuleDef(
+      id: 'dev.location',
+      name: '读取最后已知位置',
+      category: '开发者能力',
+      icon: '📍',
+      developer: true,
+      dangerous: true,
+    ),
+
     // ---------- 逻辑 ----------
     ModuleDef(
       id: 'logic.delay',
@@ -222,9 +260,23 @@ class ModuleCatalog {
   /// 旧数据里的 trigger.* 步骤仍在 [all] 里，只做展示兼容，不进选择器。
   static List<ModuleDef> get actions => all.where((m) => !m.trigger).toList();
 
-  static List<ModuleDef> byCategory(String category) =>
-      actions.where((m) => m.category == category).toList();
+  /// 积木选择器用：默认不显示开发者能力。
+  static List<ModuleDef> actionsFor({bool includeDeveloper = false}) => all
+      .where((m) => !m.trigger && (includeDeveloper || !m.developer))
+      .toList();
+
+  static List<ModuleDef> byCategory(String category,
+          {bool includeDeveloper = false}) =>
+      actionsFor(includeDeveloper: includeDeveloper)
+          .where((m) => m.category == category)
+          .toList();
 
   static List<String> get categories =>
-      actions.map((m) => m.category).toSet().toList();
+      actionsFor().map((m) => m.category).toSet().toList();
+
+  static List<String> categoriesFor({bool includeDeveloper = false}) =>
+      actionsFor(includeDeveloper: includeDeveloper)
+          .map((m) => m.category)
+          .toSet()
+          .toList();
 }

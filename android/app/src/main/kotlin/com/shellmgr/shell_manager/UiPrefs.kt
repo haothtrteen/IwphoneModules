@@ -19,6 +19,7 @@ object UiPrefs {
     private const val KEY_TOKEN_PROMPT = "token_prompt_dismissed"
     private const val KEY_PIN_PORT = "pin_adb_port"
     private const val KEY_DISCOVER_MODE = "discover_mode"
+    private const val KEY_DEVELOPER_MODE = "developer_mode"
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -78,9 +79,21 @@ object UiPrefs {
         sp(ctx).edit().putBoolean(KEY_DISCOVER_MODE, value).apply()
     }
 
+    /**
+     * 开发者模式：只控制**是否显示**高风险/实验性动作的入口，
+     * 不会、也不能授予任何系统权限 —— 权限永远只能由用户点系统弹窗授权。
+     */
+    fun developerMode(ctx: Context): Boolean =
+        sp(ctx).getBoolean(KEY_DEVELOPER_MODE, false)
+
+    fun setDeveloperMode(ctx: Context, value: Boolean) {
+        sp(ctx).edit().putBoolean(KEY_DEVELOPER_MODE, value).apply()
+    }
+
     fun snapshot(ctx: Context): Map<String, Any> = mapOf(
         "pinPort" to pinPort(ctx),
         "discoverMode" to discoverMode(ctx),
+        "developerMode" to developerMode(ctx),
         "themeMode" to themeMode(ctx),
         "locale" to locale(ctx),
         "onboardingDone" to onboardingDone(ctx),

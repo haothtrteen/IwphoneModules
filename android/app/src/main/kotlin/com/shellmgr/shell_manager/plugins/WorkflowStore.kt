@@ -7,6 +7,7 @@ import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import com.shellmgr.shell_manager.AdbBootstrap
+import com.shellmgr.shell_manager.UiPrefs
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -271,8 +272,96 @@ object WorkflowStore {
                 }
             }
 
+            // ---- 开发者能力：只在开发者模式开启时可用 ----
+            // ★ 开关本身不授予任何系统权限。这三项用的都是**已有**权限/通道：
+            //   通知 → 已实现的 NotificationListenerService（用户需单独开通知使用权）；
+            //   短信 → adb shell 身份查 content://sms（不声明 READ_SMS）；
+            //   定位 → adb shell 读 dumpsys location 的最后已知位置（不声明定位权限）。
+            "dev.notification" -> {
+                requireDeveloper(ctx)?.let { return it }
+                if (!IwphoneNotificationListener.isEnabled(ctx)) {
+                    StepResult(false,
+                        "通知使用权未开启：设置 → 通知 → 通知使用权（本开关不会替你授权）")
+                } else {
+                    val items = IwphoneNotificationListener.recentNotifications(
+                        p.optString("package"), p.optInt("limit", 10))
+                    StepResult(true, if (items.isEmpty()) {
+                        "（暂无通知记录；服务刚连接时系统不会回放旧通知）"
+                    } else {
+                        items.joinToString("\n") {
+                            "${it.pkg} | ${it.title} | ${it.text}"
+                        }
+                    })
+                }
+            }
+
+            "dev.sms" -> {
+                requireDeveloper(ctx)?.let { return it }
+                val r = runAdb(ctx,
+                    "content query --uri content://sms/inbox " +
+                        "--projection address:body:date:read --sort 'date DESC'")
+                if (!r.ok) StepResult(false, r.message)
+                else {
+                    val rows = parseSmsRows(
+                        r.message, p.optString("sender"), p.optInt("limit", 10))
+                    StepResult(true,
+                        if (rows.isEmpty()) "（无匹配短信）" else rows.joinToString("\n"))
+                }
+            }
+
+            "dev.location" -> {
+                requireDeveloper(ctx)?.let { return it }
+                val r = runAdb(ctx, "dumpsys location")
+                if (!r.ok) StepResult(false, r.message)
+                else {
+                    val m = Regex(
+                        """last location=Location\[(\S+)\s+([-+]?\d+(?:\.\d+)?),([-+]?\d+(?:\.\d+)?)\s+hAcc=(\d+)"""
+                    ).find(r.message)
+                    if (m == null) {
+                        StepResult(false, "未读到已知位置（设备可能从未定位过）")
+                    } else {
+                        StepResult(true,
+                            "provider=${m.groupValues[1]} " +
+                                "lat=${m.groupValues[2]} lon=${m.groupValues[3]} " +
+                                "hAcc=${m.groupValues[4]}m（系统最后已知位置，不是实时定位）")
+                    }
+                }
+            }
+
             else -> StepResult(false, "未知模块: $moduleId")
         }
+    }
+
+    /** 开发者模式下才允许执行 dev.* 动作（模块里的 automation.json 也算）。 */
+    private fun requireDeveloper(ctx: Context): StepResult? =
+        if (UiPrefs.developerMode(ctx)) null
+        else StepResult(false, "开发者模式未开启：设置 → 开发者模式")
+
+    /**
+     * 解析 `content query --uri content://sms/inbox` 的输出。
+     *
+     * 走 adb shell（shell uid）查询，**不需要给本 App 声明 READ_SMS** ——
+     * 真机实测 shell 身份可以读 content://sms。代价是依赖 adb 通道在线。
+     * body 里若出现 " date=" 之类的字面量会被正则提前截断，开发者工具可接受。
+     */
+    private fun parseSmsRows(raw: String, sender: String, limit: Int): List<String> {
+        val re = Regex("""address=(.*?) body=(.*?) date=(\d+) read=(\d+)""")
+        val fmt = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+        val out = ArrayList<String>()
+        for (m in re.findAll(raw)) {
+            val address = m.groupValues[1]
+            if (sender.isNotEmpty() && !address.contains(sender, ignoreCase = true)) continue
+            val body = m.groupValues[2]
+            val whenAt = try {
+                fmt.format(java.util.Date(m.groupValues[3].toLong()))
+            } catch (_: Exception) {
+                m.groupValues[3]
+            }
+            val flag = if (m.groupValues[4] == "1") "已读" else "未读"
+            out.add("$whenAt | $address | $flag | $body")
+            if (out.size >= limit) break
+        }
+        return out
     }
 
     private fun runAdb(ctx: Context, cmd: String): StepResult {

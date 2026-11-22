@@ -419,6 +419,7 @@ class AutostartService {
         bool onboardingDone,
         bool tokenPromptDismissed,
         bool discoverMode,
+        bool developerMode,
         bool pinPort
       })> loadUiPrefs() async {
     try {
@@ -431,6 +432,7 @@ class AutostartService {
           onboardingDone: false,
           tokenPromptDismissed: false,
           discoverMode: false,
+          developerMode: false,
           pinPort: true,
         );
       }
@@ -440,6 +442,7 @@ class AutostartService {
         onboardingDone: raw['onboardingDone'] == true,
         tokenPromptDismissed: raw['tokenPromptDismissed'] == true,
         discoverMode: raw['discoverMode'] == true,
+        developerMode: raw['developerMode'] == true,
         pinPort: raw['pinPort'] != false,
       );
     } catch (_) {
@@ -449,6 +452,7 @@ class AutostartService {
         onboardingDone: false,
         tokenPromptDismissed: false,
         discoverMode: false,
+        developerMode: false,
         pinPort: true,
       );
     }
@@ -460,6 +464,7 @@ class AutostartService {
     String? locale,
     bool? onboardingDone,
     bool? tokenPromptDismissed,
+    bool? developerMode,
   }) async {
     try {
       await _channel.invokeMethod<Map<dynamic, dynamic>>('saveUiPrefs', {
@@ -468,6 +473,7 @@ class AutostartService {
         if (onboardingDone != null) 'onboardingDone': onboardingDone,
         if (tokenPromptDismissed != null)
           'tokenPromptDismissed': tokenPromptDismissed,
+        if (developerMode != null) 'developerMode': developerMode,
       });
     } catch (_) {
       // 存不上不阻塞使用 —— 下次启动退回默认值
