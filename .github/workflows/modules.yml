@@ -11,6 +11,7 @@ on:
       - "tools/build_modules.py"
       - "tools/build_site.py"
       - "modules.catalog.json"
+      - ".github/workflows/modules.yml"
   workflow_dispatch:
 
 permissions:
@@ -25,6 +26,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages_ready: ${{ steps.pages.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,18 +63,38 @@ jobs:
       - name: Assemble site
         run: python tools/build_site.py --out _site
 
+      # 5) Pages 是否已启用。未启用时只警告、不部署，避免整个 workflow 红掉
+      #    （构建产物已经提交回仓库，启用后手动 rerun 即可）。
+      - id: pages
+        name: Check Pages status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+          if [ "$code" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Pages 已启用，继续部署"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Pages 尚未启用（HTTP $code）。请到 Settings → Pages → Build and deployment → Source 选择「GitHub Actions」，然后重跑本 workflow。"
+          fi
+
       - uses: actions/configure-pages@v5
-        with:
-          # 首次运行时自动把 Pages 的 Source 切成 GitHub Actions，
-          # 省掉手动去 Settings 点一遍。需要 pages: write 权限（上面已给）。
-          enablement: true
+        if: steps.pages.outputs.enabled == 'true'
 
       - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outputs.enabled == 'true'
         with:
           path: _site
 
   deploy:
     needs: build
+    # Pages 没启用时整个 deploy 跳过：否则 artifact 不存在，job 会红。
+    # 构建产物已经在上面提交回仓库了，启用 Pages 后手动跑一次即可补部署。
+    if: needs.build.outputs.pages_ready == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
