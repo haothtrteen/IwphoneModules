@@ -16,7 +16,7 @@
       "runtime": "0",
       "packagePath": "modules/AnimTuner/AnimTuner.iwp",
       "sizeBytes": 2028,
-      "sha256": "58abfa7f764f730672d6eaaa8b64f5ad58e38e077d40c876e0de5721a3417b74"
+      "sha256": "d0cacb9fb0a5c524ff677efa15f8716d308c9eb8df8078f43385d865673f8115"
     },
     {
       "id": "BlurOff",
@@ -31,7 +31,7 @@
       "runtime": "0",
       "packagePath": "modules/BlurOff/BlurOff.iwp",
       "sizeBytes": 2076,
-      "sha256": "f12c66b47dd89ed68b25d25a103ca861c6abe3ee64723d6bf56db66f8301878c"
+      "sha256": "3217101bed29d2ef9d9065d45fb14cea5478a0234b4664f93ce8fef227c8e5ca"
     },
     {
       "id": "IWPhone息屏深度doze",
@@ -46,7 +46,7 @@
       "runtime": "0",
       "packagePath": "modules/IWPhone息屏深度doze/IWPhone息屏深度doze.iwp",
       "sizeBytes": 2398,
-      "sha256": "c4d236428bcb2a23811408d294dfa1610bb1a94750d1840e6790f584ce1d036f"
+      "sha256": "40956fc35de1a1294274ed34dd93f830cc285a1a795f0e2cee7e25385cc85124"
     },
     {
       "id": "NightNetOff",
@@ -61,7 +61,7 @@
       "runtime": "0",
       "packagePath": "modules/NightNetOff/NightNetOff.iwp",
       "sizeBytes": 2130,
-      "sha256": "c20454d7cde70a5424f136b53c15396048406069fafc30de33592926d6ede0fd"
+      "sha256": "6fe3c24b85e88ccf339710b78be5080c58a6d5883326826617a15bdbf4f0db63"
     },
     {
       "id": "PrivateDNS",
@@ -76,7 +76,7 @@
       "runtime": "0",
       "packagePath": "modules/PrivateDNS/PrivateDNS.iwp",
       "sizeBytes": 2106,
-      "sha256": "bbfeab42a62f69b9e5c8a2e51ad056d1b58166446aaf2a9c99f1a4febaaf8025"
+      "sha256": "4dae4ad36488430f5c9f66d03b83900d04180e61cca9b0ee79c25f510f96b1dd"
     },
     {
       "id": "应用管理aapt",
@@ -91,7 +91,7 @@
       "runtime": "60",
       "packagePath": "modules/应用管理aapt/应用管理aapt.iwp",
       "sizeBytes": 446666,
-      "sha256": "7488f52c0f54420036c14baf36a1445e623941d44926b1910a6c226c6c1bcc61"
+      "sha256": "9ea968f896ce944cd506dd80cb5064f85ccc4b3c12df489efd1dfe64eaa33c4f"
     },
     {
       "id": "SampleMagiskMod",
@@ -106,7 +106,7 @@
       "runtime": "0",
       "packagePath": "modules/SampleMagiskMod/SampleMagiskMod.iwp",
       "sizeBytes": 1419,
-      "sha256": "2ebb5abbdcdd01894c3d03de9d09bacdb72c1b3d777fc05f61fba0def5b2881c"
+      "sha256": "746d6c11ab145522424786fcc0422781eaf76daea4efdd530149154e8a4dcd4a"
     }
   ]
 }
