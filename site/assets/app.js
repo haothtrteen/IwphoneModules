@@ -23,6 +23,10 @@
     tpl: document.getElementById("card-tpl"),
   };
 
+  // 介绍页（index.html）不加载本脚本；万一被引入也直接退出，
+  // 避免在缺少 grid/tpl 的页面上抛 TypeError。
+  if (!el.grid || !el.tpl) return;
+
   /* ---------- 工具 ---------- */
 
   function sizeLabel(n) {

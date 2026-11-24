@@ -13,7 +13,8 @@
     同时包含「网页 + 清单 + 包」，否则同域下载会 404。
 
 站点根结构（组装后）：
-    index.html
+    index.html                    项目介绍页
+    modules.html                  模块库（搜索 / 筛选 / 下载）
     assets/style.css, assets/app.js
     modules.catalog.json
     modules/<id>/<id>.iwp

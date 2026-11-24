@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IWPhone 模块库</title>
+<meta name="description" content="IWPhone 免 root 模块库：浏览、搜索、下载 .iwp 模块。">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <div class="logo">IW</div>
+      <div class="brand-text">
+        <h1>IWPhone 模块库</h1>
+        <p>免 root 的 Android 模块 · 可直接在 App 内安装</p>
+      </div>
+    </a>
+    <nav class="header-actions">
+      <a class="btn ghost" href="index.html">项目介绍</a>
+      <a class="btn ghost" href="https://github.com/haothtrteen/IwphoneModules" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn primary" href="#install">安装方式</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="toolbar" aria-label="筛选与搜索">
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 104.47 10.03l4.25 4.25 1.41-1.41-4.25-4.25A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg>
+      <input id="q" type="search" placeholder="搜索模块名称、描述或作者…" autocomplete="off" aria-label="搜索模块">
+    </div>
+    <div id="chips" class="chips" role="group" aria-label="分类筛选"></div>
+  </section>
+
+  <section class="meta-line">
+    <span id="stat">正在加载模块清单…</span>
+    <button id="reload" class="link-btn" type="button">刷新</button>
+  </section>
+
+  <section id="grid" class="grid" aria-live="polite"></section>
+
+  <section id="install" class="panel">
+    <h2>安装方式</h2>
+    <div class="steps">
+      <article class="step">
+        <div class="step-no">1</div>
+        <h3>在 App 内安装（推荐）</h3>
+        <p>打开 IWPhone → 模块 → 云模块库，点模块右侧的「安装」。App 会自动下载并校验 SHA-256。</p>
+      </article>
+      <article class="step">
+        <div class="step-no">2</div>
+        <h3>下载 .iwp 手动安装</h3>
+        <p>在本页点「下载」，把文件放到手机 <code>/sdcard/iwphone/</code>，然后在 App 的模块页选择本地安装。</p>
+      </article>
+      <article class="step">
+        <div class="step-no">3</div>
+        <h3>校验完整性</h3>
+        <p>每个模块都列出 SHA-256。手动下载后可用 <code>sha256sum 文件.iwp</code> 对照，不一致就不要装。</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="submit" class="panel">
+    <h2>提交模块</h2>
+    <p class="panel-lead">仓库已改为「源码即模块」结构，提交时不需要手工改清单。</p>
+    <pre class="code"><code>modules/
+└── 你的模块名/
+    ├── module.json     # 元数据：id / name / version / author / description / category
+    ├── main.sh         # 入口（Magisk 兼容模块可用 service.sh）
+    ├── iwphone.prop
+    ├── config.prop     # 可选，带配置界面的模块需要
+    └── uninstall.sh    # 可选</code></pre>
+    <p>把目录 push 到 <code>main</code> 分支后，GitHub Actions 会自动打包 <code>.iwp</code>、计算 SHA-256、重建
+      <code>modules.catalog.json</code> 并更新本页。</p>
+    <p class="muted">注意：<code>module.json</code> 与 <code>README.md</code> 不会被打进 <code>.iwp</code>；<code>.sh</code> 会保留可执行位。</p>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>IWPhone · 免 root 模块框架</span>
+    <span class="dot">·</span>
+    <a href="index.html">项目介绍</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/haothtrteen/IwphoneModules" target="_blank" rel="noopener">源码与模块库</a>
+  </div>
+</footer>
+
+<template id="card-tpl">
+  <article class="card">
+    <div class="card-top">
+      <div class="badge" data-icon></div>
+      <div class="card-title">
+        <h3 data-name></h3>
+        <span class="ver" data-ver></span>
+      </div>
+    </div>
+    <p class="desc" data-desc></p>
+    <div class="card-meta">
+      <span data-size></span>
+      <span class="sep">·</span>
+      <span data-author></span>
+    </div>
+    <div class="card-actions">
+      <a class="btn primary sm" data-download download>下载</a>
+      <button class="btn ghost sm" type="button" data-detail>详情</button>
+    </div>
+    <div class="detail" hidden>
+      <dl>
+        <dt>模块 ID</dt><dd data-id></dd>
+        <dt>分类</dt><dd data-cat></dd>
+        <dt>大小</dt><dd data-size2></dd>
+        <dt>SHA-256</dt><dd class="hash" data-sha></dd>
+      </dl>
+      <p class="hint">在 App 内安装时会自动校验 SHA-256；手动安装可用 sha256sum 对照。</p>
+    </div>
+  </article>
+</template>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

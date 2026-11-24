@@ -159,6 +159,7 @@ modules/
 
 在线浏览与下载：**https://haothtrteen.github.io/IwphoneModules/**
 
+> 站点根是项目介绍页，模块库在同域 `/modules.html`；两者都由 `tools/build_site.py` 组装。
 > 首次启用需要仓库设置一次：`Settings → Pages → Build and deployment → Source` 选
 > **GitHub Actions**。之后 push 到 `main` 会自动构建并部署。
 

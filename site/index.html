@@ -3,79 +3,196 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IWPhone 模块库</title>
-<meta name="description" content="IWPhone 免 root 模块库：浏览、搜索、下载 .iwp 模块。">
+<title>IWPhone · 免 root 的 Android 模块管理器</title>
+<meta name="description" content="IWPhone：不用 Root、不刷机，通过系统自带的无线调试取得 shell 权限，运行可管理、可回滚的 Android 模块。">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
 <header class="site-header">
   <div class="wrap">
-    <div class="brand">
+    <a class="brand" href="index.html">
       <div class="logo">IW</div>
       <div class="brand-text">
-        <h1>IWPhone 模块库</h1>
-        <p>免 root 的 Android 模块 · 可直接在 App 内安装</p>
+        <h1>IWPhone</h1>
+        <p>免 root 的 Android 模块管理器</p>
       </div>
-    </div>
+    </a>
     <nav class="header-actions">
+      <a class="btn ghost" href="modules.html">模块库</a>
       <a class="btn ghost" href="https://github.com/haothtrteen/IwphoneModules" target="_blank" rel="noopener">GitHub</a>
-      <a class="btn primary" href="#install">安装方式</a>
+      <a class="btn primary" href="#get-started">开始使用</a>
     </nav>
   </div>
 </header>
 
-<main class="wrap">
+<main>
 
-  <section class="toolbar" aria-label="筛选与搜索">
-    <div class="search-box">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 104.47 10.03l4.25 4.25 1.41-1.41-4.25-4.25A6 6 0 0010 4zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg>
-      <input id="q" type="search" placeholder="搜索模块名称、描述或作者…" autocomplete="off" aria-label="搜索模块">
-    </div>
-    <div id="chips" class="chips" role="group" aria-label="分类筛选"></div>
-  </section>
-
-  <section class="meta-line">
-    <span id="stat">正在加载模块清单…</span>
-    <button id="reload" class="link-btn" type="button">刷新</button>
-  </section>
-
-  <section id="grid" class="grid" aria-live="polite"></section>
-
-  <section id="install" class="panel">
-    <h2>安装方式</h2>
-    <div class="steps">
-      <article class="step">
-        <div class="step-no">1</div>
-        <h3>在 App 内安装（推荐）</h3>
-        <p>打开 IWPhone → 模块 → 云模块库，点模块右侧的「安装」。App 会自动下载并校验 SHA-256。</p>
-      </article>
-      <article class="step">
-        <div class="step-no">2</div>
-        <h3>下载 .iwp 手动安装</h3>
-        <p>在本页点「下载」，把文件放到手机 <code>/sdcard/iwphone/</code>，然后在 App 的模块页选择本地安装。</p>
-      </article>
-      <article class="step">
-        <div class="step-no">3</div>
-        <h3>校验完整性</h3>
-        <p>每个模块都列出 SHA-256。手动下载后可用 <code>sha256sum 文件.iwp</code> 对照，不一致就不要装。</p>
-      </article>
+  <!-- ---------- Hero ---------- -->
+  <section class="hero">
+    <div class="wrap">
+      <span class="hero-badge">免 Root · 不刷机 · 不解锁 Bootloader</span>
+      <h1 class="hero-title">不用 Root，<br>也能跑系统级模块</h1>
+      <p class="hero-lead">
+        IWPhone 通过系统自带的「无线调试」取得 shell 权限，再用一套自带运行时、沙箱与写前快照的框架，
+        来跑各种免 root 模块。模块可启停、可配置、<strong>改坏了能一键还原</strong> ——
+        从配对到部署，全程在手机里完成，不需要电脑。
+      </p>
+      <div class="cta-row">
+        <a class="btn primary lg" href="modules.html">浏览模块库</a>
+        <a class="btn ghost lg" href="https://github.com/haothtrteen/IwphoneModules/releases" target="_blank" rel="noopener">下载 APK</a>
+        <a class="btn ghost lg" href="https://github.com/haothtrteen/IwphoneModules" target="_blank" rel="noopener">查看源码</a>
+      </div>
+      <div class="hero-stats">
+        <div><b>0</b><span>Root / 刷机</span></div>
+        <div><b>3 分钟</b><span>配对到部署</span></div>
+        <div><b>358</b><span>内置 BusyBox applet</span></div>
+        <div><b>GPL-3.0</b><span>开源许可</span></div>
+      </div>
     </div>
   </section>
 
-  <section id="submit" class="panel">
-    <h2>提交模块</h2>
-    <p class="panel-lead">仓库已改为「源码即模块」结构，提交时不需要手工改清单。</p>
-    <pre class="code"><code>modules/
-└── 你的模块名/
-    ├── module.json     # 元数据：id / name / version / author / description / category
-    ├── main.sh         # 入口（Magisk 兼容模块可用 service.sh）
-    ├── iwphone.prop
-    ├── config.prop     # 可选，带配置界面的模块需要
-    └── uninstall.sh    # 可选</code></pre>
-    <p>把目录 push 到 <code>main</code> 分支后，GitHub Actions 会自动打包 <code>.iwp</code>、计算 SHA-256、重建
-      <code>modules.catalog.json</code> 并更新本页。</p>
-    <p class="muted">注意：<code>module.json</code> 与 <code>README.md</code> 不会被打进 <code>.iwp</code>；<code>.sh</code> 会保留可执行位。</p>
+  <!-- ---------- 问题与做法 ---------- -->
+  <section class="section" id="why">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>它解决什么问题</h2>
+        <p>Android 上做系统级调整（省电、性能调度、动画调速、隐私开关），传统路径是 Root + Magisk 模块。
+          但 Root 门槛高、有风险、影响保修。</p>
+      </div>
+      <div class="compare">
+        <article class="compare-card">
+          <h3>Root + Magisk</h3>
+          <p>能力最全，但要解锁 Bootloader、刷机，有变砖风险，部分应用还会检测 Root。</p>
+          <span class="tag bad">门槛高</span>
+        </article>
+        <article class="compare-card">
+          <h3>Shizuku / APatch 类</h3>
+          <p>能拿到 shell 权限，但没有好用的模块生态：脚本散落各处，没有生命周期管理，改坏回不去。</p>
+          <span class="tag warn">无生态</span>
+        </article>
+        <article class="compare-card accent">
+          <h3>IWPhone</h3>
+          <p>把「拿权限 + 跑模块 + 兜底回滚」合成一件事：配对后即可安装模块，框架统一管理，写入前自动留底。</p>
+          <span class="tag good">免 Root 也有生态</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 核心能力 ---------- -->
+  <section class="section alt" id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>核心能力</h2>
+        <p>不只是「给 App 提权」，而是一套能长期运行、可管理、可回滚的模块运行时。</p>
+      </div>
+      <div class="features">
+        <article class="feature">
+          <div class="feature-icon">adb</div>
+          <h3>自持 adb，全程手机内完成</h3>
+          <p>应用内捆绑 adb 二进制，自己配对（mDNS 发现配对端口）、自己连接、固定 5555 端口，并支持开机自启。</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon">mod</div>
+          <h3>模块运行时</h3>
+          <p>启停、冲突检测、沙箱记账、配置页（<code>config.prop</code>）、动作按钮（<code>action.sh</code>）、三类日志分离。</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon">snap</div>
+          <h3>写前快照与一键还原</h3>
+          <p>模块首次写入系统资源前记录原值，还原前先展示「当前值 → 还原值」。卸载模块也不会删快照。</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon">compat</div>
+          <h3>兼容现有模块生态</h3>
+          <p>Magisk / KernelSU / AxManager 式模块可直接安装：自动适配 <code>module.prop</code>、<code>service.sh</code>、
+            <code>webroot/</code> 等，并自带 BusyBox。</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon">auto</div>
+          <h3>自动化与工作流</h3>
+          <p>模块包内可带 <code>automation.json</code>，装好即出现在「自动化」页；支持事件触发、状态机与工作流编排。</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon">iwsh</div>
+          <h3>iwsh 终端通道</h3>
+          <p>授权后可在系统终端里使用 shell 能力。凭据不落盘：一次性 nonce 领取、60 秒过期，并记录调用审计。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 三步上手 ---------- -->
+  <section class="section" id="get-started">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>三步就能用起来</h2>
+        <p>App 内有首次激活向导，按顺序点完即可。</p>
+      </div>
+      <div class="steps-lg">
+        <article class="step-lg">
+          <div class="step-no">1</div>
+          <h3>配对设备</h3>
+          <p>打开开发者选项 → 无线调试，在通知栏输入配对码。配对端口由 mDNS 自动发现，不用手抄。</p>
+        </article>
+        <article class="step-lg">
+          <div class="step-no">2</div>
+          <h3>部署框架</h3>
+          <p>框架包内置在 App 里，一键部署到设备并自动固定 ADB 端口。之后开机自动连上并拉起框架。</p>
+        </article>
+        <article class="step-lg">
+          <div class="step-no">3</div>
+          <h3>安装模块</h3>
+          <p>从模块库下载 <code>.iwp</code>，或在 App 内直接打开云模块库安装。安装前会做包内容审计。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- 边界 ---------- -->
+  <section class="section alt" id="limits">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>能力边界</h2>
+        <p>诚实列出做不到的事，比夸大能力更有用。</p>
+      </div>
+      <div class="spec-grid">
+        <div class="spec">
+          <h3>可以做到</h3>
+          <ul class="ok">
+            <li>修改 <code>settings</code> / <code>appops</code> / 系统属性等可写配置</li>
+            <li>运行 Magisk / KernelSU / AxManager 式模块的脚本层</li>
+            <li>模块配置界面、动作按钮、日志与快照还原</li>
+            <li>按事件触发的自动化与工作流</li>
+          </ul>
+        </div>
+        <div class="spec">
+          <h3>做不到</h3>
+          <ul class="no">
+            <li>systemless 挂载（免 root 环境没有挂载前阶段）</li>
+            <li>Zygisk / 内核类模块</li>
+            <li>任何需要 <code>su</code> 的操作</li>
+            <li>拦截绝对路径调用（如 <code>/system/bin/settings</code>），这类写法也不会有快照</li>
+          </ul>
+        </div>
+      </div>
+      <p class="muted">安装时会对模块做兼容性预检并给出判定（预计兼容 / 需要 Root / 无法判断）与原因；
+        预检是静态扫描，注释里的关键词也会命中，偏保守。</p>
+    </div>
+  </section>
+
+  <!-- ---------- CTA ---------- -->
+  <section class="section">
+    <div class="wrap">
+      <div class="cta-panel">
+        <div>
+          <h2>先看看有哪些模块</h2>
+          <p>模块库里的每个包都带 SHA-256，可直接下载，也可在 App 内一键安装。</p>
+        </div>
+        <a class="btn primary lg" href="modules.html">进入模块库</a>
+      </div>
+    </div>
   </section>
 
 </main>
@@ -84,41 +201,13 @@
   <div class="wrap">
     <span>IWPhone · 免 root 模块框架</span>
     <span class="dot">·</span>
-    <a href="https://github.com/haothtrteen/IwphoneModules" target="_blank" rel="noopener">源码与模块库</a>
+    <a href="modules.html">模块库</a>
+    <span class="dot">·</span>
+    <a href="https://github.com/haothtrteen/IwphoneModules" target="_blank" rel="noopener">源码</a>
+    <span class="dot">·</span>
+    <span>GPL-3.0</span>
   </div>
 </footer>
 
-<template id="card-tpl">
-  <article class="card">
-    <div class="card-top">
-      <div class="badge" data-icon></div>
-      <div class="card-title">
-        <h3 data-name></h3>
-        <span class="ver" data-ver></span>
-      </div>
-    </div>
-    <p class="desc" data-desc></p>
-    <div class="card-meta">
-      <span data-size></span>
-      <span class="sep">·</span>
-      <span data-author></span>
-    </div>
-    <div class="card-actions">
-      <a class="btn primary sm" data-download download>下载</a>
-      <button class="btn ghost sm" type="button" data-detail>详情</button>
-    </div>
-    <div class="detail" hidden>
-      <dl>
-        <dt>模块 ID</dt><dd data-id></dd>
-        <dt>分类</dt><dd data-cat></dd>
-        <dt>大小</dt><dd data-size2></dd>
-        <dt>SHA-256</dt><dd class="hash" data-sha></dd>
-      </dl>
-      <p class="hint">在 App 内安装时会自动校验 SHA-256；手动安装可用 sha256sum 对照。</p>
-    </div>
-  </article>
-</template>
-
-<script src="assets/app.js"></script>
 </body>
 </html>
