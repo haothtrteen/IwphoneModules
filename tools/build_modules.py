@@ -101,6 +101,33 @@ def load_meta(mod_dir):
         return json.load(f)
 
 
+# 需要强制 LF 的文本类型。.bat 排除（cmd.exe 要 CRLF），无扩展名跳过（可能是二进制）。
+TEXT_EXT = {".sh", ".prop", ".json", ".md", ".txt", ".conf", ".cfg"}
+
+
+def check_eol(mod_dir):
+    """检查文本文件是否夹带 CRLF。
+
+    设备上跑的是 mksh，CRLF 会直接报 `syntax error: unexpected 'fi'`（踩过）。
+    .gitattributes 对 modules/ 关闭了行尾转换，所以这里必须自己把关 ——
+    否则作者在 Windows 编辑器里保存一次就带进去了。
+    """
+    errs = []
+    for base, dirs, files in os.walk(mod_dir):
+        dirs.sort()
+        for fn in sorted(files):
+            if fn.endswith(".iwp"):
+                continue
+            if os.path.splitext(fn)[1].lower() not in TEXT_EXT:
+                continue
+            full = os.path.join(base, fn)
+            with open(full, "rb") as f:
+                if b"\r\n" in f.read():
+                    rel = os.path.relpath(full, mod_dir).replace(os.sep, "/")
+                    errs.append("%s 含 CRLF（需要 LF，否则设备上 mksh 会报语法错误）" % rel)
+    return errs
+
+
 def validate(meta, dirname, mod_dir):
     """返回错误列表；空列表表示通过。"""
     errs = []
@@ -117,6 +144,7 @@ def validate(meta, dirname, mod_dir):
     entries = ("main.sh", "service.sh", "post-fs-data.sh")
     if not any(os.path.isfile(os.path.join(mod_dir, e)) for e in entries):
         errs.append("缺少入口脚本（main.sh / service.sh / post-fs-data.sh）")
+    errs.extend(check_eol(mod_dir))
     return errs
 
 

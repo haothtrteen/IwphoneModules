@@ -41,3 +41,15 @@
 *.ttf    binary
 *.woff   binary
 *.woff2  binary
+
+# =====================================================
+# 模块源码：禁止任何行尾转换
+#
+# modules/ 下的文件会被 tools/build_modules.py 原样打进 .iwp 并计算
+# SHA-256。如果 git 在检出时改了字节（上面的 *.bat → CRLF、text=auto），
+# 同一份源码在本地和 CI 就会打出不同的包、不同的 sha256，
+# catalog 每次构建都会变。这里关掉转换，改由构建脚本强制校验：
+#   .sh / .prop / .json / .md / .txt 出现 CRLF 直接报错。
+# .bat 允许 CRLF（cmd.exe 的要求），二进制文件不受影响。
+# =====================================================
+modules/** -text
