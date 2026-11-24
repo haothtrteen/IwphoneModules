@@ -1,0 +1,12 @@
+{
+  "id": "NightNetOff",
+  "name": "NightNetOff",
+  "version": "1.0.0",
+  "author": "Shell Manager",
+  "description": "按时间段自动关闭/恢复移动数据与 WiFi。跨零点的时间段也支持。",
+  "category": "网络",
+  "order": 40,
+  "icon": "network",
+  "exclusive": "svc.data.disable,svc.data.enable,svc.wifi.disable,svc.wifi.enable",
+  "runtime": "0"
+}

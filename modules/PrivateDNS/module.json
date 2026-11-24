@@ -1,0 +1,12 @@
+{
+  "id": "PrivateDNS",
+  "name": "PrivateDNS",
+  "version": "1.0.0",
+  "author": "Shell Manager",
+  "description": "设置系统私有 DNS（DoT）。可一键切到 AdGuard / Cloudflare 等。",
+  "category": "网络",
+  "order": 50,
+  "icon": "dns",
+  "exclusive": "global.private_dns_mode,global.private_dns_specifier",
+  "runtime": "0"
+}

@@ -1,0 +1,81 @@
+name: Build modules & deploy site
+
+# 触发条件刻意收窄到"模块/站点/构建脚本"变化：
+# 改 Flutter 源码不该触发一次模块重打包 + Pages 部署。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "modules/**"
+      - "site/**"
+      - "tools/build_modules.py"
+      - "tools/build_site.py"
+      - "modules.catalog.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write      # 回写重建后的 catalog 与 .iwp
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 1) 打包：modules/<id>/ → modules/<id>/<id>.iwp，并重建 catalog
+      - name: Build .iwp packages and catalog
+        run: python tools/build_modules.py
+
+      # 2) 把产物提交回仓库，让 raw/镜像 链接也能拿到最新包。
+      #    提交信息带 [skip ci]，避免自己触发自己。
+      - name: Commit build output
+        run: |
+          if [ -z "$(git status --porcelain -- modules modules.catalog.json)" ]; then
+            echo "构建产物无变化"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add modules modules.catalog.json
+          git commit -m "chore: rebuild modules catalog [skip ci]"
+          git push
+
+      # 3) 校验（提交后再确认一次，防止 commit 步骤漏掉东西）
+      - name: Verify catalog is up to date
+        run: python tools/build_modules.py --check
+
+      # 4) 组装站点：网页 + 清单 + 包放同一站点根，实现同域下载
+      - name: Assemble site
+        run: python tools/build_site.py --out _site
+
+      - uses: actions/configure-pages@v5
+        with:
+          # 首次运行时自动把 Pages 的 Source 切成 GitHub Actions，
+          # 省掉手动去 Settings 点一遍。需要 pages: write 权限（上面已给）。
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

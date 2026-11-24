@@ -1,0 +1,12 @@
+{
+  "id": "应用管理aapt",
+  "name": "IWPhone应用管理aapt",
+  "version": "1.0.0",
+  "author": "IWPhone.lnc",
+  "description": "iwphone官方插件，用于拓展应用管理功能",
+  "category": "工具",
+  "order": 60,
+  "icon": "app",
+  "exclusive": null,
+  "runtime": "60"
+}

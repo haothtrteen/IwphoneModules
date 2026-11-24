@@ -1,0 +1,6 @@
+id=sample_magisk_mod
+name=示例 Magisk 式模块
+version=v1.2
+versionCode=12
+author=兼容层测试
+description=用于验证 iwphone 对 Magisk/KernelSU/AxManager 式模块的兼容层

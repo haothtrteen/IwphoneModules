@@ -1,0 +1,12 @@
+{
+  "id": "AnimTuner",
+  "name": "AnimTuner",
+  "version": "1.0.0",
+  "author": "Shell Manager",
+  "description": "调节系统动画速度。0 为完全关闭动画，1 为系统默认。",
+  "category": "显示",
+  "order": 10,
+  "icon": "motion",
+  "exclusive": "global.window_animation_scale,global.transition_animation_scale,global.animator_duration_scale",
+  "runtime": "0"
+}

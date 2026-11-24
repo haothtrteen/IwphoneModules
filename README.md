@@ -1,4 +1,4 @@
-# Shell Manager
+# IWPhone
 
 **简体中文** | [English](README_EN.md)
 
@@ -142,7 +142,50 @@ App 用 `jniLibs` 技巧自带 adb 二进制（避免 `noexec` 限制），密�
 
 ---
 
+## 模块库（网页 + 自动构建）
+
+模块不再手工维护清单，仓库里的 `modules/` 就是唯一事实来源：
+
+```
+modules/
+└── AnimTuner/
+    ├── module.json     # 元数据：id / name / version / author / description / category
+    ├── main.sh         # 入口（Magisk 兼容模块可用 service.sh / post-fs-data.sh）
+    ├── iwphone.prop
+    ├── config.prop     # 可选：带配置界面的模块
+    ├── uninstall.sh    # 可选
+    └── AnimTuner.iwp   # 构建产物（自动生成，勿手改）
+```
+
+在线浏览与下载：**https://haothtrteen.github.io/IwphoneModules/**
+
+> 首次启用需要仓库设置一次：`Settings → Pages → Build and deployment → Source` 选
+> **GitHub Actions**。之后 push 到 `main` 会自动构建并部署。
+
+### 提交一个新模块
+
+1. 新建 `modules/<模块ID>/`，放 `module.json` 与入口脚本；
+2. push 到 `main`；
+3. GitHub Actions 自动完成：打包 `.iwp` → 计算 SHA-256 → 重建
+   `modules.catalog.json` → 部署网页。
+
+**不要手改 `modules.catalog.json`**，它每次都由脚本从 `module.json` 重新生成。
+
+### 本地构建与预览
+
+```bash
+python tools/build_modules.py          # 打包 .iwp + 重建清单
+python tools/build_modules.py --check  # 只校验清单是否最新（CI 用）
+python tools/build_site.py --serve     # 组装站点并起本地服务（默认 8080）
+```
+
+构建是**可复现**的：zip 内时间戳固定、文件按名排序，同样的源码永远得到同样的
+SHA-256，不会因为构建时间不同而产生无意义的 catalog 变更。
+
+`framework/module/` 下的旧包为兼容保留，新代码请以 `modules/` 为准。
+
 ## 目录结构
+
 
 ```
 README.md / LICENSE          仓库说明与许可证（GPL-3.0）
@@ -154,9 +197,13 @@ framework/                   框架源码（可读、可改、可重新打包）
   ├── compat.sh              Magisk / KernelSU / AxManager 兼容层
   ├── mod_install/run/stop   安装、执行、停止
   ├── restore_snapshot.sh    快照还原
-  ├── module/                内置模块（.iwp）
+  ├── module/                旧版内置模块（兼容保留，新模块放顶层 modules/）
   ├── webui/                 内置 WebUI（Python）+ 前端页面
   └── tools/                 运行时构建、framework.bin 打包
+modules/                    模块源码（每个目录一个模块，含 module.json + 脚本）
+site/                       模块库网页（GitHub Pages，纯静态、零依赖）
+tools/build_modules.py      打包 .iwp + 生成 modules.catalog.json
+tools/build_site.py         组装站点（网页 + 清单 + 包）
 lib/                         Flutter 侧
   screens/                   主页 / 模块 / 安装 / 配置 / 快照 / 日志 / 设置 / 终端 / 自启 / 资源
   services/                  WebUI 客户端 · 自启通道 · 密钥管理 · 系统信息 · shell 执行

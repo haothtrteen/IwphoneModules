@@ -1,0 +1,7 @@
+name="示例 Magisk 式模块"
+version="v1.2"
+author="兼容层测试"
+description="用于验证 iwphone 对 Magisk/KernelSU/AxManager 式模块的兼容层"
+icon="module"
+compat="magisk,ksu,axmanager"
+runtime="0"

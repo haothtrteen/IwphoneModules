@@ -1,0 +1,4 @@
+# 键|类型|标签|默认值|可选值|说明
+mode|enum|模式|hostname|off,opportunistic,hostname|off 关闭；opportunistic 自动；hostname 使用下面填的服务器
+host|text|DNS 主机名|dns.adguard.com||仅 hostname 模式生效，如 dns.adguard.com / one.one.one.one
+guard|int|重新应用间隔|30||秒

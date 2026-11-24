@@ -1,0 +1,12 @@
+{
+  "id": "SampleMagiskMod",
+  "name": "示例 Magisk 式模块",
+  "version": "1.2",
+  "author": "兼容层测试",
+  "description": "用于验证 iwphone 对 Magisk/KernelSU/AxManager 式模块的兼容层",
+  "category": "示例",
+  "order": 90,
+  "icon": "module",
+  "exclusive": null,
+  "runtime": "0"
+}

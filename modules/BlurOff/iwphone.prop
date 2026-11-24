@@ -1,0 +1,7 @@
+name="BlurOff"
+version="1.0.0"
+author="Shell Manager"
+description="关闭系统窗口模糊与（可选）降低界面透明度，滑动更顺、也更省电。"
+icon="visual"
+exclusive="global.disable_window_blurs,global.accessibility_reduce_transparency"
+runtime="0"
