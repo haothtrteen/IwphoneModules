@@ -86,6 +86,10 @@ def build_package(mod_dir, mid):
         for full, rel in files:
             zi = zipfile.ZipInfo(rel, date_time=FIXED_DATE)
             zi.compress_type = zipfile.ZIP_DEFLATED
+            # ★ 必须显式指定 Unix，否则 Windows 上 create_system=0(MS-DOS)、
+            #   Linux 上=3(Unix)，同一份源码打出的 zip 字节不同、sha256 不同。
+            #   实测：不加这行时 CI 每次构建都会重写全部 .iwp。
+            zi.create_system = 3
             zi.external_attr = ((0o755 if is_executable(rel) else 0o644) << 16)
             with open(full, "rb") as f:
                 z.writestr(zi, f.read())
